@@ -1,0 +1,33 @@
+name: Actualizar version
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'index.html'
+
+permissions:
+  contents: write
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calcular fecha/hora Argentina
+        id: fecha
+        run: echo "stamp=$(TZ='America/Argentina/Buenos_Aires' date +'v%Y-%m-%d.%H:%M')" >> "$GITHUB_OUTPUT"
+
+      - name: Reemplazar stamp de version en index.html
+        run: |
+          sed -i -E 's/v[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]{2}:[0-9]{2}/${{ steps.fecha.outputs.stamp }}/' index.html
+
+      - name: Commitear si hubo cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git diff --cached --quiet && echo "Sin cambios" || (git commit -m "chore: actualizar stamp de version [skip ci]" && git push)
