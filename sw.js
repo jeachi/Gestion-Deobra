@@ -1,8 +1,8 @@
 // Service Worker de "Gestión de Obra". Su único trabajo es guardar una copia de la app en el
 // celular para que abra rápido y funcione aunque no haya señal en ese momento — los datos en sí
 // (Firebase, Gemini) siguen necesitando conexión real, esto no los reemplaza.
-const CACHE_NAME = "gdo-cache-v1";
-const ARCHIVOS_CACHE = ["./", "./index.html", "./icon-192.png", "./icon-512.png"];
+const CACHE_NAME = "gdo-cache-v2";
+const ARCHIVOS_CACHE = ["./", "./index.html", "./icon-192.png?v=2", "./icon-512.png?v=2"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
