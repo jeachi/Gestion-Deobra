@@ -1511,10 +1511,29 @@ table.print-grid td.code-PDPN{background:var(--sereno);}
 .btn-mini-editar{border:none;background:none;font-size:14px;cursor:pointer;padding:2px 6px;flex-shrink:0;}
 .btn-mini-eliminar{border:none;background:none;font-size:14px;cursor:pointer;padding:2px 6px;flex-shrink:0;}
 .btn-mini-eliminar.confirmar-activo{background:#FBD5D5;color:#B42318;font-size:10.5px;font-weight:800;border-radius:6px;padding:2px 8px;}
-.zoom-controles{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;}
-.zoom-controles button{width:36px;height:36px;border-radius:8px;border:1.5px solid var(--borde);background:#fff;font-size:16px;font-weight:800;color:var(--verde-oscuro);cursor:pointer;}
-.zoom-controles .zoom-pct{font-size:12px;font-weight:700;color:var(--verde-oscuro);min-width:44px;text-align:center;}
-.zoom-controles .btn-ajustar{width:auto;padding:0 10px;font-size:11.5px;}
+.grilla-planos{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.plano-card{background:#fff;border:1.5px solid var(--borde);border-radius:10px;overflow:hidden;cursor:pointer;}
+.plano-card.sel{border-color:var(--verde);box-shadow:0 0 0 2px rgba(14,148,136,.25);}
+.plano-thumb{height:64px;background:#e8e8e8;display:flex;align-items:center;justify-content:center;}
+.plano-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.plano-info{padding:7px 8px;}
+.plano-info .nombre{font-size:11px;font-weight:800;color:var(--verde-oscuro);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.plano-info .meta{font-size:9px;color:var(--tinta-suave);margin-top:2px;}
+.chip-contratista{display:inline-block;background:var(--verde-claro);color:var(--verde-oscuro);font-size:8.5px;font-weight:700;padding:1px 6px;border-radius:10px;margin-top:4px;}
+.plano-card-nuevo{background:#fff;border:1.5px dashed var(--borde);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--tinta-suave);font-size:10.5px;font-weight:700;gap:4px;min-height:112px;cursor:pointer;}
+.plano-card-nuevo .ico{font-size:20px;}
+.toolbar-cat{background:#fff;border:1px solid var(--borde);border-radius:10px;padding:7px 6px;margin-bottom:8px;}
+.fila-tb{display:flex;align-items:center;gap:3px;}
+.fila-tb:first-child{margin-bottom:5px;}
+.btn-cat{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;flex:1;min-width:0;padding:5px 1px;border-radius:7px;border:1px solid var(--borde);background:#fff;cursor:pointer;}
+.btn-cat .ico{font-size:14px;line-height:1;}
+.btn-cat .lbl{font-size:7px;font-weight:700;color:var(--tinta-suave);text-align:center;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+.btn-cat.btn-primary,.btn-cat.verde-fill{background:var(--verde);border-color:var(--verde);}
+.btn-cat.btn-primary .lbl,.btn-cat.verde-fill .lbl{color:#fff;}
+.btn-cat.rojo{border-color:#FBD5D5;}
+.btn-cat.rojo .lbl{color:#B42318;}
+.btn-cat:disabled{opacity:.4;}
+.div-v{width:1px;align-self:stretch;background:var(--fondo);margin:0 2px;flex-shrink:0;}
 
 .estado-dibujo{font-size:11.5px;color:var(--verde-oscuro);background:var(--verde-claro);border-radius:8px;padding:8px 10px;margin-top:8px;display:none;}
 
@@ -2663,10 +2682,9 @@ table.print-grid td.code-PDPN{background:var(--sereno);}
     <div class="card">
       <h2>📐 Planos de avance — <span id="pa-obra-actual"></span></h2>
       <p class="helper" style="margin-bottom:10px;">Podés tener varios planos independientes por obra (ej: "Solados PB", "Durlock 1er piso") — cada uno con sus propias actividades y capas, sin mezclarse entre sí.</p>
-      <div class="row-flex" id="pa-selector-planos" style="margin-bottom:10px;"></div>
+      <div id="pa-selector-planos" style="margin-bottom:10px;"></div>
       <input type="file" id="input-plano" accept="application/pdf,image/*" style="display:none;" onchange="cargarPlano(this.files[0])">
-      <button type="button" class="btn btn-outline" style="width:100%;" onclick="elegirArchivoPlano()">➕ Agregar plano</button>
-      <button type="button" class="btn btn-danger btn-sm" style="width:100%;margin-top:8px;display:none;" id="btn-eliminar-plano-actual" onclick="eliminarPlanoActual(this)">🗑 Eliminar plano actual</button>
+      <button type="button" class="btn btn-danger btn-sm" style="width:100%;display:none;" id="btn-eliminar-plano-actual" onclick="eliminarPlanoActual(this)">🗑 Eliminar plano actual</button>
     </div>
 
   <div class="card" id="card-canvas" style="display:none;">
@@ -2710,22 +2728,28 @@ table.print-grid td.code-PDPN{background:var(--sereno);}
       <button class="btn btn-outline" onclick="iniciarDibujoRectangulo()">▭ Rectángulo (2 puntos)</button>
     </div>
     <div class="estado-dibujo" id="estado-dibujo"></div>
-    <div class="row-flex" style="margin-bottom:10px;">
-      <button class="btn btn-outline" id="btn-modo-mover" onclick="toggleModoMover()">✋ Mover el plano</button>
-      <button class="btn btn-outline" id="btn-bloqueo-orto" onclick="toggleBloqueoOrtogonal()">📐 Bloqueo 90°</button>
-      <button class="btn btn-outline" id="btn-seguir-pared" onclick="toggleModoSeguirPared()">🧱 Seguir pared</button>
-      <button class="btn btn-outline" id="btn-borrar-punto" onclick="toggleModoBorrarPunto()">🧹 Borrar un punto</button>
-      <button class="btn btn-outline" onclick="deshacerPunto()">↩ Deshacer último punto</button>
-      <button class="btn btn-primary" onclick="cerrarPoligono()" id="btn-cerrar" disabled>✓ Cerrar área</button>
-      <button class="btn btn-danger" onclick="cancelarDibujo()">✕ Cancelar</button>
-    </div>
-    <div class="zoom-controles">
-      <button onclick="zoomOut()" title="Alejar">−</button>
-      <span class="zoom-pct" id="zoom-pct">100%</span>
-      <button onclick="zoomIn()" title="Acercar">+</button>
-      <button class="btn-ajustar" onclick="zoomAjustar()">↔ Ajustar al ancho</button>
-      <button class="btn-ajustar" onclick="zoom100()">1:1</button>
-      <button class="btn-ajustar" onclick="deshacerGeneral()" title="Deshace la última acción (cerrar área, editar, eliminar, duplicar, ajustar %)">↩️ Deshacer</button>
+    <div class="toolbar-cat">
+      <div class="fila-tb">
+        <button class="btn-cat" onclick="zoomOut()"><span class="ico">−</span><span class="lbl">Alejar</span></button>
+        <button class="btn-cat" onclick="zoomIn()"><span class="ico">+</span><span class="lbl">Acercar</span></button>
+        <button class="btn-cat" onclick="zoomAjustar()"><span class="ico">⛶</span><span class="lbl">Ajustar</span></button>
+        <button class="btn-cat" onclick="zoom100()"><span class="ico">1:1</span><span class="lbl">Real</span></button>
+        <div class="div-v"></div>
+        <button class="btn-cat" id="btn-modo-mover" onclick="toggleModoMover()"><span class="ico">✋</span><span class="lbl">Mover</span></button>
+        <button class="btn-cat" id="btn-bloqueo-orto" onclick="toggleBloqueoOrtogonal()"><span class="ico">📐</span><span class="lbl">90°</span></button>
+        <button class="btn-cat" id="btn-seguir-pared" onclick="toggleModoSeguirPared()"><span class="ico">🧱</span><span class="lbl">Pared</span></button>
+      </div>
+      <div class="fila-tb">
+        <button class="btn-cat" onclick="iniciarDibujo()"><span class="ico">✏️</span><span class="lbl">Marcar</span></button>
+        <button class="btn-cat" onclick="iniciarDibujoRectangulo()"><span class="ico">▭</span><span class="lbl">Rectáng.</span></button>
+        <button class="btn-cat" id="btn-borrar-punto" onclick="toggleModoBorrarPunto()"><span class="ico">🧹</span><span class="lbl">Borrar pto</span></button>
+        <div class="div-v"></div>
+        <button class="btn-cat" onclick="deshacerPunto()"><span class="ico">↩</span><span class="lbl">Deshacer pto</span></button>
+        <button class="btn-cat" onclick="deshacerGeneral()" title="Deshace la última acción (cerrar área, editar, eliminar, duplicar, ajustar %)"><span class="ico">↩️</span><span class="lbl">Deshacer</span></button>
+        <button class="btn-cat verde-fill" onclick="cerrarPoligono()" id="btn-cerrar" disabled><span class="ico">✓</span><span class="lbl">Cerrar</span></button>
+        <button class="btn-cat rojo" onclick="cancelarDibujo()"><span class="ico">✕</span><span class="lbl">Cancelar</span></button>
+      </div>
+      <div style="text-align:center;font-size:9px;color:var(--tinta-suave);margin-top:5px;">Zoom actual: <span id="zoom-pct">100%</span></div>
     </div>
     <div id="canvas-wrap">
       <canvas id="canvas-plano"></canvas>
@@ -13043,13 +13067,26 @@ function renderSelectorPlanos(){
   const btnEliminar = document.getElementById("btn-eliminar-plano-actual");
   if(!cont) return;
   if(btnEliminar) btnEliminar.style.display = planoActualId ? "block" : "none";
+  const tarjetaAgregar = `
+    <div class="plano-card-nuevo" onclick="elegirArchivoPlano()">
+      <div class="ico">➕</div>
+      Agregar plano
+    </div>`;
   if(planosIndex.length===0){
-    cont.innerHTML = `<p class="helper" style="margin:0;">Todavía no cargaste ningún plano para esta obra. Tocá "➕ Agregar plano" para cargar el primero.</p>`;
+    cont.innerHTML = `<p class="helper" style="margin:0 0 8px;">Todavía no cargaste ningún plano para esta obra.</p>` + `<div class="grilla-planos">${tarjetaAgregar}</div>`;
     return;
   }
-  cont.innerHTML = planosIndex.map(p=>`
-    <button class="btn ${p.id===planoActualId?'btn-primary':'btn-outline'} btn-sm" onclick="seleccionarPlano('${p.id}')">${esc(p.nombre)}</button>
+  const tarjetas = planosIndex.map(p=>`
+    <div class="plano-card${p.id===planoActualId?' sel':''}" onclick="seleccionarPlano('${p.id}')">
+      <div class="plano-thumb">${p.miniatura ? `<img src="${p.miniatura}">` : ""}</div>
+      <div class="plano-info">
+        <div class="nombre">${esc(p.nombre)}</div>
+        <div class="meta">${fechaRelativaCorta(p.fecha)}</div>
+        ${p.contratistaNombre ? `<span class="chip-contratista">${esc(p.contratistaNombre)}</span>` : ""}
+      </div>
+    </div>
   `).join("");
+  cont.innerHTML = `<div class="grilla-planos">${tarjetas}${tarjetaAgregar}</div>`;
 }
 async function seleccionarPlano(id){
   planoActualId = id;
@@ -13181,6 +13218,27 @@ async function procesarNuevoPlano(file, nombre){
     await finalizarCargaPlano(dataUrlEditado, nombre);
   }, true);
 }
+// Miniatura chica del plano, para la grilla de selección (no la imagen completa -- eso ya vive
+// aparte, comprimida, en su propio documento). Pesa muy poco (una imagen de ~70px), no repite el
+// problema de tamaño que tuvimos con las fotos de Herramientas.
+function generarMiniaturaPlano(img){
+  const maxDim = 70;
+  let w = img.width, h = img.height;
+  if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
+  else if(h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL("image/jpeg", 0.55);
+}
+// "hace 2 días", "hoy", "ayer" -- para mostrar en la grilla de planos, a partir de una fecha ISO.
+function fechaRelativaCorta(fechaISO){
+  if(!fechaISO) return "";
+  const dias = Math.floor((new Date(hoyISO()+"T00:00:00") - new Date(fechaISO+"T00:00:00")) / 86400000);
+  if(dias<=0) return "hoy";
+  if(dias===1) return "ayer";
+  return `hace ${dias} días`;
+}
 async function finalizarCargaPlano(dataUrlEditado, nombre){
   const imgEditada = new Image();
   await new Promise((resolve,reject)=>{ imgEditada.onload=resolve; imgEditada.onerror=reject; imgEditada.src=dataUrlEditado; });
@@ -13190,7 +13248,8 @@ async function finalizarCargaPlano(dataUrlEditado, nombre){
   planosIndex.push({
     id: nuevoId, nombre, fecha: hoyISO(),
     contratistaId: contratistaOverridePlanoAvance || null,
-    contratistaNombre: contratistaVinculado ? contratistaVinculado.nombre : null
+    contratistaNombre: contratistaVinculado ? contratistaVinculado.nombre : null,
+    miniatura: generarMiniaturaPlano(imgComprimida)
   });
   await guardarPlanosIndex();
   planoActualId = nuevoId;
@@ -13661,7 +13720,7 @@ function toggleModoMover(){
   modoMoverActivo = !modoMoverActivo;
   const btn = document.getElementById("btn-modo-mover");
   btn.classList.toggle("btn-primary", modoMoverActivo);
-  btn.textContent = modoMoverActivo ? "✏️ Tocá acá para volver a marcar" : "✋ Mover el plano";
+  btn.querySelector(".lbl").textContent = modoMoverActivo ? "Tocá p/marcar" : "Mover";
 }
 function toggleBloqueoOrtogonal(){
   bloqueoOrtogonal = !bloqueoOrtogonal;
@@ -13683,8 +13742,7 @@ function toggleModoBorrarPunto(){
   modoBorrarPunto = !modoBorrarPunto;
   const btn = document.getElementById("btn-borrar-punto");
   btn.classList.toggle("btn-danger", modoBorrarPunto);
-  btn.classList.toggle("btn-outline", !modoBorrarPunto);
-  btn.textContent = modoBorrarPunto ? "🧹 Tocá el punto a borrar (tocá acá para salir)" : "🧹 Borrar un punto";
+  btn.querySelector(".lbl").textContent = modoBorrarPunto ? "Tocá pto" : "Borrar pto";
 }
 function borrarPuntoCercano(e){
   const punto = e.touches ? e.changedTouches[0] : e;
@@ -13961,11 +14019,10 @@ function prepararInicioDibujo(){
   primerEsquinaRectangulo = null;
   modoMoverActivo = false;
   document.getElementById("btn-modo-mover").classList.remove("btn-primary");
-  document.getElementById("btn-modo-mover").textContent = "✋ Mover el plano";
+  document.getElementById("btn-modo-mover").querySelector(".lbl").textContent = "Mover";
   modoBorrarPunto = false;
   document.getElementById("btn-borrar-punto").classList.remove("btn-danger");
-  document.getElementById("btn-borrar-punto").classList.add("btn-outline");
-  document.getElementById("btn-borrar-punto").textContent = "🧹 Borrar un punto";
+  document.getElementById("btn-borrar-punto").querySelector(".lbl").textContent = "Borrar pto";
   document.getElementById("btn-cerrar").disabled = true;
   renderPorcentajesFlotantes(); // se ocultan apenas se entra en modo dibujo
   return nombreParaMostrar;
