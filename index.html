@@ -13899,6 +13899,51 @@ function moverColocarPunto(e){
   if(!dibujando) return;
   e.preventDefault();
   actualizarPosicionPunto(e);
+  const punto = e.touches ? e.touches[0] : e;
+  gestionarAutoScrollBorde(punto.clientX, punto.clientY);
+}
+// ---------------- Auto-scroll al borde mientras se ubica un punto con la lupa ----------------
+// Antes, para trazar un rectángulo/polígono más grande que lo que entra en pantalla había que
+// soltar, activar "Mover", paniar a mano, apagar "Mover" y volver a marcar -- muy incómodo con
+// zoom. Ahora, arrastrando el dedo hacia el borde del recuadro visible del plano (sin soltar),
+// la vista se desplaza sola por debajo del dedo, y alcanza con volver el dedo hacia el centro
+// para afinar con la lupa antes de soltar y confirmar el punto.
+let intervaloAutoScrollBorde = null;
+let ultimoClientParaAutoScroll = null;
+const MARGEN_AUTOSCROLL = 42; // px de pantalla desde el borde del recuadro donde empieza a activarse
+const VELOCIDAD_AUTOSCROLL = 14; // px que se desplaza la vista por cada "tick"
+function calcularDeltaAutoScroll(clientX, clientY, rect){
+  let dx = 0, dy = 0;
+  if(clientX - rect.left < MARGEN_AUTOSCROLL) dx = -VELOCIDAD_AUTOSCROLL;
+  else if(rect.right - clientX < MARGEN_AUTOSCROLL) dx = VELOCIDAD_AUTOSCROLL;
+  if(clientY - rect.top < MARGEN_AUTOSCROLL) dy = -VELOCIDAD_AUTOSCROLL;
+  else if(rect.bottom - clientY < MARGEN_AUTOSCROLL) dy = VELOCIDAD_AUTOSCROLL;
+  return [dx, dy];
+}
+function gestionarAutoScrollBorde(clientX, clientY){
+  ultimoClientParaAutoScroll = {clientX, clientY};
+  const wrap = document.getElementById("canvas-wrap");
+  const [dx, dy] = calcularDeltaAutoScroll(clientX, clientY, wrap.getBoundingClientRect());
+  if(dx===0 && dy===0){ detenerAutoScrollBorde(); return; }
+  if(intervaloAutoScrollBorde) return; // ya está corriendo -- el tick de abajo relee la posición más reciente del dedo
+  intervaloAutoScrollBorde = setInterval(()=>{
+    if(!colocandoPunto || !ultimoClientParaAutoScroll){ detenerAutoScrollBorde(); return; }
+    const wrap2 = document.getElementById("canvas-wrap");
+    const {clientX:cx, clientY:cy} = ultimoClientParaAutoScroll;
+    const [ddx, ddy] = calcularDeltaAutoScroll(cx, cy, wrap2.getBoundingClientRect());
+    if(ddx===0 && ddy===0){ detenerAutoScrollBorde(); return; }
+    const antesL = wrap2.scrollLeft, antesT = wrap2.scrollTop;
+    wrap2.scrollLeft += ddx;
+    wrap2.scrollTop += ddy;
+    if(wrap2.scrollLeft===antesL && wrap2.scrollTop===antesT){ detenerAutoScrollBorde(); return; } // llegó al límite del plano, no hay más para dónde ir
+    // El dedo no se movió, pero la vista sí -- recalculamos dónde cae el punto ahora que el plano
+    // se desplazó por debajo, para que la lupa y la cruz de posición sigan correctas.
+    actualizarPosicionPunto({touches:[{clientX:cx, clientY:cy}]});
+  }, 16);
+}
+function detenerAutoScrollBorde(){
+  if(intervaloAutoScrollBorde){ clearInterval(intervaloAutoScrollBorde); intervaloAutoScrollBorde = null; }
+  ultimoClientParaAutoScroll = null;
 }
 function actualizarPosicionPunto(e){
   const punto = e.touches ? e.touches[0] : e;
@@ -13991,6 +14036,7 @@ function terminarColocarPunto(e){
   document.removeEventListener("touchmove", moverColocarPunto);
   document.removeEventListener("mouseup", terminarColocarPunto);
   document.removeEventListener("touchend", terminarColocarPunto);
+  detenerAutoScrollBorde();
   ocultarLupa();
   if(colocandoPunto && dibujando){
     if(modoRectangulo){
