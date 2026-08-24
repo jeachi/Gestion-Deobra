@@ -27,18 +27,15 @@ self.addEventListener("fetch", (event) => {
   // queremos "cachear por error" nada de eso.
   if (url.origin !== self.location.origin) return;
 
+  // Red primero, cache como plan B -- así, cada vez que hay señal, se ve la version MAS
+  // RECIENTE de una sola vez (no la guardada de la vez pasada). La copia guardada solo entra
+  // en juego si no hay conexión en ese momento, que es exactamente para lo que sirve.
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      // Mostramos la copia guardada al toque (carga rápida, funciona sin señal), y de paso
-      // pedimos la versión fresca por atrás para la PRÓXIMA vez que se abra — así, cuando subís
-      // una actualización, no queda pegada para siempre.
-      const fetchPromise = fetch(event.request)
-        .then((networkResponse) => {
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse.clone()));
-          return networkResponse;
-        })
-        .catch(() => cachedResponse);
-      return cachedResponse || fetchPromise;
-    })
+    fetch(event.request)
+      .then((networkResponse) => {
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse.clone()));
+        return networkResponse;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
