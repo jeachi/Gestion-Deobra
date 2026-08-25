@@ -2967,6 +2967,18 @@ body.plano-fullscreen .cad-viewport{border-radius:0;height:calc(100vh - 6px);}
     </div>
   </div>
 
+  <div id="unificar-actividad-overlay" style="display:none;position:fixed;inset:0;background:rgba(6,10,13,.72);z-index:2200;align-items:center;justify-content:center;padding:16px;">
+    <div style="background:#11181d;border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:16px;max-width:340px;width:100%;max-height:74vh;overflow-y:auto;">
+      <h3 style="color:#fff;font-size:14.5px;margin:0 0 4px;">🔗 Unificar "<span id="unificar-origen-nombre"></span>" con...</h3>
+      <p style="font-size:11.5px;color:#9fb0b8;margin:0 0 12px;line-height:1.4;">
+        Todas las piezas y capas de esta actividad pasan a la actividad que elijas -- las dos quedan
+        como una sola, sumando su área total. No se puede deshacer con "Deshacer" del plano una vez guardado.
+      </p>
+      <div id="unificar-lista-opciones"></div>
+      <button type="button" onclick="cerrarUnificarActividad()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#e7eef1;font-weight:700;font-size:12.5px;">Cancelar</button>
+    </div>
+  </div>
+
   <div class="card" id="card-snapshots" style="display:none;">
     <h2>📅 Seguimiento semanal</h2>
     <p class="helper" style="margin-bottom:10px;">Guardá una "foto" del % de avance cuando quieras — vos decidís cuándo cerrar la semana, no es automático. Queda un historial por cada capa, para ver la curva de avance.</p>
@@ -13755,6 +13767,51 @@ const SNAP_PX_PANTALLA = 16; // distancia en píxeles DE PANTALLA (no del plano)
 function obtenerTotalDe(nombreBase){
   return poligonos.find(p=>p.nombreBase===nombreBase && !p.capa);
 }
+// Puede haber VARIAS piezas sueltas formando el área total (100%) de una actividad -- estas
+// funciones nuevas las tienen en cuenta a TODAS, no solo a la primera. Antes, cualquier chequeo
+// de "¿este punto está adentro del área total?" solo miraba la primera pieza dibujada, lo que
+// obligaba a empezar siempre por ahí para poder marcar una capa nueva.
+function obtenerTotalesDe(nombreBase){
+  return poligonos.filter(p=>p.nombreBase===nombreBase && !p.capa);
+}
+function areaTotalDe(nombreBase){
+  return obtenerTotalesDe(nombreBase).reduce((s,t)=>s+t.area,0);
+}
+// Restringe un punto para que quede adentro de CUALQUIERA de las piezas del área total -- si ya
+// está adentro de alguna, se deja tal cual; si no, se pega al borde de la pieza más cercana.
+function restringirDentroDeAlgunTotal(x, y, totales){
+  for(const t of totales){
+    if(t.puntos.length>=3 && puntoDentroDePoligono(x,y,t.puntos)) return {punto:[x,y], dentro:true};
+  }
+  let mejor=null, mejorDist=Infinity;
+  for(const t of totales){
+    if(t.puntos.length<3) continue;
+    const [cx,cy] = restringirDentroDePoligono(x,y,t.puntos);
+    const d = Math.hypot(cx-x, cy-y);
+    if(d<mejorDist){ mejorDist=d; mejor=[cx,cy]; }
+  }
+  return {punto: mejor||[x,y], dentro:false};
+}
+// Dada una capa ya dibujada, identifica a CUÁL pieza del área total pertenece (por si hay más de
+// una) -- se usa para saber contra qué borde anclar/recortar al arrastrar vértices o al ajustar
+// el % a mano, ya que una capa físicamente solo puede estar adentro de una pieza a la vez.
+function totalQueContieneCapa(p){
+  const totales = obtenerTotalesDe(p.nombreBase);
+  if(totales.length<=1) return totales[0] || null;
+  let sx=0, sy=0;
+  p.puntos.forEach(([x,y])=>{ sx+=x; sy+=y; });
+  const cx = sx/p.puntos.length, cy = sy/p.puntos.length;
+  const dentro = totales.find(t=>puntoDentroDePoligono(cx,cy,t.puntos));
+  if(dentro) return dentro;
+  let mejor=totales[0], mejorDist=Infinity;
+  totales.forEach(t=>{
+    let tsx=0, tsy=0;
+    t.puntos.forEach(([x,y])=>{ tsx+=x; tsy+=y; });
+    const d = Math.hypot(tsx/t.puntos.length-cx, tsy/t.puntos.length-cy);
+    if(d<mejorDist){ mejorDist=d; mejor=t; }
+  });
+  return mejor;
+}
 // Interpreta el valor único del selector de actividad (ver renderSelectorActividades): en vez de
 // combinar un desplegable + un checkbox aparte (confuso), cada actividad ya existente aparece
 // DOS veces en la MISMA lista -- una para sumar más área total, otra para agregar una capa -- y
@@ -13945,8 +14002,8 @@ function renderPanelCapasCad(){
     const oculto = capasOcultasCad.has(p.nombreCompleto);
     let pct = 100;
     if(p.capa){
-      const total = obtenerTotalDe(p.nombreBase);
-      pct = total && total.area ? Math.min(100, Math.round((p.area/total.area)*100)) : 0;
+      const areaTot = areaTotalDe(p.nombreBase);
+      pct = areaTot ? Math.min(100, Math.round((p.area/areaTot)*100)) : 0;
     }
     return `
     <div class="fila-capa-cad" onclick="seleccionarCapaDesdePanelCad(${idx})">
@@ -14641,11 +14698,11 @@ function actualizarPosicionPunto(e){
   // el objetivo es extender el área total hacia afuera.
   const seleccionActual = leerSelectorActividad();
   if(seleccionActual.tipo==="capa" && !cerrandoPorPrimerPunto){
-    const total = obtenerTotalDe(seleccionActual.base);
-    if(total && total.puntos.length>=3){
-      const dentroAntes = puntoDentroDePoligono(x,y,total.puntos);
-      [x,y] = restringirDentroDePoligono(x,y,total.puntos);
-      if(!dentroAntes) modo = "limite";
+    const totales = obtenerTotalesDe(seleccionActual.base);
+    if(totales.length){
+      const r = restringirDentroDeAlgunTotal(x,y,totales);
+      x = r.punto[0]; y = r.punto[1];
+      if(!r.dentro) modo = "limite";
     }
   }
 
@@ -15170,9 +15227,9 @@ function renderPorcentajesFlotantes(){
   poligonos.forEach((p, idx)=>{
     if(!p.capa) return;
     if(capasOcultasCad.has(p.nombreCompleto)) return;
-    const total = poligonos.find(q=>q.nombreBase===p.nombreBase && !q.capa);
-    if(!total || !total.area) return;
-    const pct = Math.min(100, Math.round((p.area/total.area)*100));
+    const areaTot = areaTotalDe(p.nombreBase);
+    if(!areaTot) return;
+    const pct = Math.min(100, Math.round((p.area/areaTot)*100));
     let sx=0, sy=0;
     p.puntos.forEach(([x,y])=>{ sx+=x; sy+=y; });
     const cx = sx/p.puntos.length, cy = sy/p.puntos.length;
@@ -15222,13 +15279,14 @@ async function confirmarPromptEditarPct(){
 // exacto al número pedido (no se puede tener más área de la que físicamente existe ahí).
 function ajustarPoligonoAPorcentaje(idx, nuevoPct){
   const p = poligonos[idx];
-  const total = poligonos.find(q=>q.nombreBase===p.nombreBase && !q.capa);
-  if(!total || !total.area) return Math.round((p.area/(total?total.area:1))*100);
-  const areaObjetivo = (nuevoPct/100) * total.area;
+  const areaTot = areaTotalDe(p.nombreBase); // suma TODAS las piezas del área total, no solo la primera
+  const totalAncla = totalQueContieneCapa(p) || {puntos:[]}; // la pieza puntual contra la que se ancla/recorta esta capa
+  if(!areaTot) return Math.round((p.area/(areaTot||1))*100);
+  const areaObjetivo = (nuevoPct/100) * areaTot;
   const TOL_ANCLA = 3; // px nativos -- si un punto está a menos de esto de un vértice del total, se considera "pegado"
   const anclados = [];
   p.puntos.forEach((pt,i)=>{
-    const pegado = total.puntos.some(tp => Math.hypot(tp[0]-pt[0], tp[1]-pt[1]) < TOL_ANCLA);
+    const pegado = totalAncla.puntos.some(tp => Math.hypot(tp[0]-pt[0], tp[1]-pt[1]) < TOL_ANCLA);
     if(pegado) anclados.push(i);
   });
   let refX, refY;
@@ -15254,11 +15312,11 @@ function ajustarPoligonoAPorcentaje(idx, nuevoPct){
   let nuevosPuntos = puntosConFactor(factorFinal);
   // No puede salirse del área total -- si el crecimiento se pasó del borde, se recorta ahí.
   nuevosPuntos = nuevosPuntos.map((pt,i)=>
-    anclados.includes(i) ? pt : restringirDentroDePoligono(pt[0], pt[1], total.puntos)
+    anclados.includes(i) ? pt : restringirDentroDePoligono(pt[0], pt[1], totalAncla.puntos)
   );
   p.puntos = nuevosPuntos;
   p.area = areaPoligono(p.puntos);
-  return Math.min(100, Math.round((p.area/total.area)*100));
+  return Math.min(100, Math.round((p.area/areaTot)*100));
 }
 // ---------------- Mini barra flotante al doble toque sobre un área ----------------
 // Fuera del modo dibujo, dos toques seguidos en el mismo lugar sobre un área ya marcada abren
@@ -15355,11 +15413,11 @@ function moverArrastreVertice(e){
   const poligonoEditado = poligonos[indiceEditando];
   // Si lo que se está editando es una CAPA, tampoco puede salirse del área total de su actividad.
   if(poligonoEditado.capa){
-    const total = obtenerTotalDe(poligonoEditado.nombreBase);
-    if(total && total.puntos.length>=3){
-      const dentroAntes = puntoDentroDePoligono(x,y,total.puntos);
-      [x,y] = restringirDentroDePoligono(x,y,total.puntos);
-      if(!dentroAntes) modo = "limite";
+    const totales = obtenerTotalesDe(poligonoEditado.nombreBase);
+    if(totales.length){
+      const r = restringirDentroDeAlgunTotal(x,y,totales);
+      x = r.punto[0]; y = r.punto[1];
+      if(!r.dentro) modo = "limite";
     }
   }
   poligonoEditado.puntos[arrastreInfo.indiceVertice] = [x,y];
@@ -15426,9 +15484,9 @@ function redibujar(){
   poligonos.forEach(p=>{
     if(!p.capa) return; // el área total (100%) no lleva etiqueta, solo las capas de avance
     if(capasOcultasCad.has(p.nombreCompleto)) return;
-    const total = poligonos.find(q=>q.nombreBase===p.nombreBase && !q.capa);
-    if(!total || !total.area) return;
-    const pct = Math.min(100, Math.round((p.area/total.area)*100));
+    const areaTot = areaTotalDe(p.nombreBase);
+    if(!areaTot) return;
+    const pct = Math.min(100, Math.round((p.area/areaTot)*100));
     let sx=0, sy=0;
     p.puntos.forEach(([x,y])=>{ sx+=x; sy+=y; });
     const cx = sx/p.puntos.length, cy = sy/p.puntos.length;
@@ -15526,6 +15584,48 @@ function toggleCardActividades(){
   cuerpo.style.display = abrir ? "block" : "none";
   chev.classList.toggle("cerrado", !abrir);
 }
+// ---------------- Unificar dos actividades en una sola ----------------
+// Para cuando una misma actividad terminó marcada dos veces con nombres distintos (por ejemplo
+// por error, en vez de usar "sumar más al 100%") -- en un toque, todas las piezas y capas de la
+// actividad de ORIGEN pasan a la actividad de DESTINO elegida, sumando sus áreas totales.
+let unificarOrigenActual = null;
+function abrirUnificarActividad(nombreBase){
+  unificarOrigenActual = nombreBase;
+  document.getElementById("unificar-origen-nombre").textContent = nombreBase;
+  const otras = [...new Set(poligonos.map(p=>p.nombreBase))].filter(n=>n!==nombreBase);
+  const cont = document.getElementById("unificar-lista-opciones");
+  if(otras.length===0){
+    cont.innerHTML = `<p style="font-size:12px;color:#9fb0b8;">Todavía no hay otra actividad marcada en este plano para unificar.</p>`;
+  }else{
+    cont.innerHTML = otras.map(n=>{
+      const nEsc = esc(n).replace(/'/g,"\\'");
+      return `<button type="button" onclick="confirmarUnificarActividad('${nEsc}')" style="width:100%;text-align:left;margin-bottom:6px;padding:10px 12px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#e7eef1;font-weight:700;font-size:12.5px;">${esc(n)}</button>`;
+    }).join("");
+  }
+  document.getElementById("unificar-actividad-overlay").style.display = "flex";
+}
+function cerrarUnificarActividad(){
+  document.getElementById("unificar-actividad-overlay").style.display = "none";
+  unificarOrigenActual = null;
+}
+async function confirmarUnificarActividad(nombreDestino){
+  if(!unificarOrigenActual) return;
+  const origen = unificarOrigenActual;
+  guardarEnHistorial(); // por si hace falta "Deshacer" después
+  poligonos.forEach(p=>{
+    if(p.nombreBase===origen){
+      p.nombreBase = nombreDestino;
+      p.nombreCompleto = p.capa ? `${nombreDestino} - ${p.capa}` : nombreDestino;
+    }
+  });
+  cerrarUnificarActividad();
+  renderSelectorActividades();
+  renderActividades();
+  renderPorcentajesFlotantes();
+  redibujar();
+  await guardarPlanoAvancePoligonos();
+  showToast(`✓ "${origen}" se unificó con "${nombreDestino}"`);
+}
 function renderActividades(){
   const cont = document.getElementById("lista-actividades");
   const bases = {};
@@ -15572,6 +15672,7 @@ function renderActividades(){
         <div class="pa-punto" style="background:${colorTotal}"></div>
         <div class="pa-nombre">${esc(nombreBase)}</div>
         <div class="pct-total">${b.totales.length ? (b.totales.length>1 ? `100% = área total (${b.totales.length} piezas)` : "100% = área total marcada") : "(sin área total marcada todavía)"}</div>
+        <button class="btn-mini-editar" onclick="abrirUnificarActividad('${esc(nombreBase).replace(/'/g,"\\'")}')" title="Unificar esta actividad con otra ya marcada en este plano">🔗</button>
         ${idxTotal>=0 ? `<button class="btn-mini-editar" onclick="editarPoligono(${idxTotal})" title="Editar el área total">✏️</button>` : ""}
         ${idxTotal>=0 ? `<button class="btn-mini-editar" onclick="duplicarComoNuevaCapa(${idxTotal})" title="Duplicar esta forma como capa nueva">📋</button>` : ""}
         ${idxTotal>=0 ? `<button class="btn-mini-eliminar" onclick="eliminarPoligonoDesdeLista(${idxTotal}, this)" title="Eliminar el área total">🗑</button>` : ""}
