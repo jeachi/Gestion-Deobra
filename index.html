@@ -1528,9 +1528,10 @@ body.plano-fullscreen .top-completo,
 body.plano-fullscreen #fab-asistente,
 body.plano-fullscreen #fab-burbuja{display:none !important;}
 body.plano-fullscreen .app{padding-top:0 !important;padding-bottom:0 !important;}
-body.plano-fullscreen #view-planoavance{padding-left:0 !important;padding-right:0 !important;}
-body.plano-fullscreen #card-canvas.card{padding:0 !important;}
+body.plano-fullscreen #view-planoavance{padding-left:0 !important;padding-right:0 !important;padding-top:0 !important;padding-bottom:0 !important;}
+body.plano-fullscreen #card-canvas.card{padding:0 !important;margin-bottom:0 !important;}
 body.plano-fullscreen .cad-viewport{border-radius:0;height:calc(100vh - 6px);}
+body.plano-fullscreen .cad-card-abajo{margin-top:0 !important;border-radius:0 !important;}
 /* ---- Cuadro "Actividades y % de avance", debajo del visor: mismo estilo oscuro tipo CAD que
    el resto del editor, y desplegable (acordeón) para no ocupar pantalla cuando no hace falta. ---- */
 #card-actividades.cad-card-abajo{
@@ -2824,7 +2825,8 @@ body.plano-fullscreen .cad-viewport{border-radius:0;height:calc(100vh - 6px);}
       <div class="card" style="margin:12px 0;background:var(--verde-claro);border-color:var(--verde);">
         <h2 style="margin-bottom:6px;">📐 Plano de avance (Obra)</h2>
         <p class="helper" style="margin-bottom:8px;">El % real calculado en 🏗 Obra → Plano de avance. Si un ítem de este certificado tiene el MISMO nombre que una capa del plano (ej: "Durlok - Estructura"), se completa solo. Para marcar avance nuevo, abrí el plano desde la pantalla del contratista (antes de entrar a este certificado).</p>
-        <select id="cf-select-plano" style="width:100%;margin-bottom:8px;padding:9px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;"></select>
+        <select id="cf-select-plano" onchange="renderVistaPreviaPlanoCertificado()" style="width:100%;margin-bottom:8px;padding:9px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;"></select>
+        <div id="vista-previa-plano-cert" style="margin-bottom:8px;"></div>
         <button type="button" class="btn btn-primary" style="width:100%;" onclick="traerAvanceDePlanoACertificado()">📊 Traer % y completar ítems que coincidan</button>
       </div>
       <div class="card" id="card-comparador-cert" style="margin:12px 0;background:#0f161b;border:1px solid rgba(255,255,255,.1);color:#e7eef1;display:none;">
@@ -9170,6 +9172,45 @@ async function renderSelectorPlanoCertificado(obra){
   const otros = planos.filter(p=>p.contratistaId!==contratistaParaCertificarId);
   const opcion = p => `<option value="${p.id}">${p.contratistaId===contratistaParaCertificarId?"⭐ ":""}${esc(p.nombre)}${p.contratistaNombre && p.contratistaId!==contratistaParaCertificarId ? " ("+esc(p.contratistaNombre)+")" : ""}</option>`;
   sel.innerHTML = propios.map(opcion).join("") + otros.map(opcion).join("");
+  renderVistaPreviaPlanoCertificado();
+}
+// Tarjeta de referencia con los datos QUE TIENE EL PLANO ahora mismo (actividades, capas, % de
+// cada una, y el promedio general) -- para poder comparar de un vistazo contra lo que se va a
+// certificar, ANTES de tocar "Traer %". Se actualiza sola cada vez que se cambia el plano elegido.
+async function renderVistaPreviaPlanoCertificado(){
+  const cont = document.getElementById("vista-previa-plano-cert");
+  if(!cont) return;
+  const obra = contratistasCache[contratistaParaCertificarId] ? contratistasCache[contratistaParaCertificarId].obra : null;
+  const planoId = document.getElementById("cf-select-plano").value;
+  if(!obra || !planoId){ cont.innerHTML = ""; return; }
+  cont.innerHTML = `<p class="tiny" style="color:var(--tinta-suave);">Cargando datos del plano…</p>`;
+  const poligonosDelPlano = await cargarPoligonosDePlano(obra, planoId);
+  const porcentajes = calcularPorcentajesDeLista(poligonosDelPlano);
+  if(porcentajes.length===0){
+    cont.innerHTML = `<p class="tiny" style="color:var(--tinta-suave);">Este plano todavía no tiene capas de avance marcadas.</p>`;
+    return;
+  }
+  const bases = {};
+  porcentajes.forEach(p=>{
+    if(!bases[p.nombreBase]) bases[p.nombreBase] = [];
+    bases[p.nombreBase].push(p);
+  });
+  const promedioGeneral = Math.round(porcentajes.reduce((s,p)=>s+p.pct,0)/porcentajes.length);
+  let html = `<div style="background:#0f161b;border:1px solid rgba(255,255,255,.1);color:#e7eef1;border-radius:12px;padding:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:12.5px;font-weight:800;color:#fff;">📋 Datos actuales del plano</div>
+      <div style="font-size:16px;font-weight:900;color:#5EEAD4;">${promedioGeneral}% <span style="font-size:9px;font-weight:700;color:#9fb0b8;">promedio</span></div>
+    </div>`;
+  Object.keys(bases).forEach(nombreBase=>{
+    html += `<div style="margin-bottom:6px;"><div style="font-size:11px;font-weight:800;color:#e7eef1;margin-bottom:2px;">${esc(nombreBase)}</div>`;
+    bases[nombreBase].forEach(c=>{
+      html += `<div style="display:flex;justify-content:space-between;font-size:10.5px;color:#c9d4d9;padding:2px 0 2px 10px;"><span>${esc(c.capa)}</span><b style="color:#5EEAD4;">${c.pct}%</b></div>`;
+    });
+    html += `</div>`;
+  });
+  html += `<p class="tiny" style="color:#9fb0b8;margin:2px 0 0;">Comparalo con lo que vas a certificar abajo, antes de tocar "Traer %".</p>
+  </div>`;
+  cont.innerHTML = html;
 }
 // Trae el % actual de cada capa del plano elegido y completa los ítems del certificado cuyo
 // nombre coincide EXACTO con "Actividad - Capa" -- y deja un snapshot en el plano marcado con
