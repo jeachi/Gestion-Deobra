@@ -1639,7 +1639,8 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 #nexo-chip-flotante.error .chip-punto{background:#DC5A5A;}
 #nexo-chip-flotante.info .chip-punto{background:#2FD5C8;}
 .badge-pct-tocable{position:absolute;width:56px;height:30px;margin-left:-28px;margin-top:-15px;border-radius:8px;pointer-events:auto;cursor:pointer;touch-action:manipulation;}
-.badge-anotacion-tocable{position:absolute;min-width:56px;height:30px;margin-top:-15px;border-radius:8px;pointer-events:auto;cursor:pointer;touch-action:manipulation;}
+.badge-anotacion-tocable{position:absolute;min-width:56px;height:30px;margin-top:-15px;border-radius:8px;pointer-events:auto;cursor:pointer;touch-action:none;}
+.ghost-anotacion-arrastre{position:fixed;transform:translate(-50%,-50%);background:rgba(255,255,255,.96);border:2px solid #8B5CF6;border-radius:8px;padding:6px 11px;font-size:13px;font-weight:800;color:#8B5CF6;z-index:5000;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.35);white-space:nowrap;}
 #mini-barra-area{position:fixed;display:flex;gap:2px;background:var(--verde-oscuro);border-radius:999px;padding:4px;box-shadow:0 4px 14px rgba(0,0,0,.35);z-index:600;transform:translate(-50%,-115%);}
 #mini-barra-area button{width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.12);color:#fff;font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
 #mini-barra-area button.mini-eliminar.confirmar-activo{background:#DC5A5A;font-size:9px;font-weight:800;width:auto;padding:0 10px;}
@@ -3153,12 +3154,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div style="display:flex;gap:6px;margin-bottom:4px;">
       <input type="text" id="prompt-texto-plano-input" placeholder="ej: 1.20 x 0.80" style="flex:1;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;font-weight:700;text-align:center;box-sizing:border-box;">
       <button type="button" id="btn-insertar-x-medida" onclick="insertarXEnMedida()" title="Insertar el signo x entre las dos medidas" style="width:44px;flex-shrink:0;border:1.5px solid var(--verde);border-radius:8px;background:var(--verde-claro);color:var(--verde-oscuro);font-size:17px;font-weight:900;">✕</button>
-      <button type="button" id="btn-medidor-laser" onclick="conectarMedidorLaser()" title="Conectar medidor láser Bluetooth" style="width:44px;flex-shrink:0;border:1.5px solid #3B82F6;border-radius:8px;background:#EFF6FF;display:flex;align-items:center;justify-content:center;">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="#3B82F6"><path d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/></svg>
-      </button>
-      <button type="button" id="btn-escritura-mano" onclick="abrirEscrituraAMano()" title="Escribir a mano con el lápiz" style="width:44px;flex-shrink:0;border:1.5px solid #8B5CF6;border-radius:8px;background:#F5F3FF;display:flex;align-items:center;justify-content:center;font-size:18px;">✍️</button>
     </div>
-    <p class="tiny" id="prompt-texto-plano-bt-estado" style="display:none;margin:-6px 0 8px;color:#3B82F6;font-weight:700;"></p>
     <p class="tiny" id="prompt-texto-plano-orientacion" style="margin:0 0 10px;color:var(--tinta-suave);">Orientación: Ancho x Alto</p>
     <div id="prompt-texto-plano-unidad-wrap">
       <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:6px;">Unidad (opcional)</div>
@@ -3176,6 +3172,18 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <input type="number" id="prompt-texto-plano-cantidad" value="1" min="1" style="width:56px;padding:7px;border:1.5px solid var(--borde);border-radius:8px;font-size:15px;font-weight:800;text-align:center;box-sizing:border-box;">
       <button type="button" onclick="cambiarCantidadTextoPlano(1)" style="width:32px;height:32px;border-radius:8px;border:1.5px solid var(--borde);background:#fff;font-size:16px;font-weight:800;">+</button>
     </div>
+    <div id="prompt-texto-plano-categoria-wrap">
+      <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:6px;">Categoría (opcional -- le da un código automático, ej: V1, P1)</div>
+      <div class="chip-row" id="prompt-texto-plano-categoria" style="margin-bottom:10px;">
+        <div class="chip-opt" data-val="">Ninguna</div>
+        <div class="chip-opt" data-val="Ventana">🪟 Ventana</div>
+        <div class="chip-opt" data-val="Puerta">🚪 Puerta</div>
+        <div class="chip-opt" data-val="Portón">🔲 Portón</div>
+        <div class="chip-opt" data-val="Reja">⛓️ Reja</div>
+        <div class="chip-opt" id="chip-categoria-otra" data-val="__otra__">+ Otra</div>
+      </div>
+      <input type="text" id="prompt-texto-plano-categoria-otra" placeholder="Escribí la categoría (ej: Desagüe)" style="display:none;width:100%;padding:9px 10px;border:1.5px solid var(--morado, #8B5CF6);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:10px;">
+    </div>
     <div id="prompt-texto-plano-ubicacion-wrap">
       <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:6px;">Ubicación (opcional)</div>
       <input type="text" id="prompt-texto-plano-ubicacion" placeholder="ej: Pasillo B — Piso 1" style="width:100%;padding:9px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;box-sizing:border-box;">
@@ -3186,21 +3194,6 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <button class="btn btn-primary" onclick="confirmarPromptTextoPlano()">✓ Colocar</button>
     </div>
     <button class="btn btn-outline" id="btn-copiar-texto-plano" style="display:none;width:100%;margin-top:8px;" onclick="copiarEtiquetaTextoPlano()">📋 Copiar esta etiqueta a otro lugar</button>
-  </div>
-</div>
-
-<!-- ---- Escritura a mano: lienzo para dibujar con el lápiz/dedo, que Gemini transcribe ---- -->
-<div id="escritura-mano-overlay" style="display:none;position:fixed;inset:0;background:rgba(6,10,13,.85);z-index:1500;align-items:center;justify-content:center;padding:16px;">
-  <div style="background:#fff;border-radius:14px;padding:14px;max-width:380px;width:100%;">
-    <div style="font-size:13px;font-weight:800;color:var(--verde-oscuro);margin-bottom:2px;">✍️ Escribí acá con el lápiz</div>
-    <p class="tiny" style="margin:0 0 8px;" id="escritura-mano-ayuda">Escribí la medida tal cual (ej: 1.20 x 0.80) y tocá "Reconocer".</p>
-    <canvas id="canvas-escritura-mano" style="width:100%;height:180px;border:2px dashed var(--borde);border-radius:10px;background:#fff;touch-action:none;display:block;"></canvas>
-    <div class="row-flex" style="margin-top:10px;">
-      <button class="btn btn-outline" onclick="cerrarEscrituraAMano()">Cancelar</button>
-      <button class="btn btn-outline" onclick="limpiarCanvasEscrituraMano()">🗑 Borrar</button>
-      <button class="btn btn-primary" onclick="reconocerEscrituraAMano()">✓ Reconocer</button>
-    </div>
-    <p class="tiny" id="escritura-mano-estado" style="display:none;margin:8px 0 0;color:#8B5CF6;font-weight:700;text-align:center;"></p>
   </div>
 </div>
 
@@ -14093,6 +14086,7 @@ function renderSelectorPlanos(){
       <div class="plano-card-acciones">
         <button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); abrirVincularPlano('${p.id}')" title="Vincular este plano a un contratista (o cambiarlo/quitarlo)">🔗 ${p.contratistaNombre ? "Vinculado" : "Vincular"}</button>
         <button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); alternarOrientacionPlano('${p.id}')" title="Orientación del reporte PDF de este plano: ${p.orientacionReporte==='landscape'?'Horizontal':'Vertical'} (tocá para cambiar)">${p.orientacionReporte==='landscape' ? '↔️' : '↕️'}</button>
+        <button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); duplicarPlano('${p.id}')" title="Duplicar este plano entero (imagen, capas y cuadro de medidas) como uno nuevo, independiente">📄 Duplicar</button>
       </div>
     </div>
   `).join("");
@@ -14193,6 +14187,10 @@ async function seleccionarPlano(id){
     const rTxt = await window.storage.get(`plano_avance_textos_${obra}_${id}`, true);
     anotacionesTexto = rTxt && rTxt.value ? JSON.parse(rTxt.value) : [];
   }catch(e){ anotacionesTexto = []; }
+  try{
+    const rProy = await window.storage.get(`plano_avance_proyecto_${obra}_${id}`, true);
+    proyectoMedidas = rProy && rProy.value ? JSON.parse(rProy.value) : [];
+  }catch(e){ proyectoMedidas = []; }
   if(imagenPlano){
     // Apenas se elige un plano válido, pasamos del "selector" al "editor": se oculta la tarjeta
     // de elegir plano (y el seguimiento semanal) y queda solo la herramienta de dibujo, con un
@@ -14322,6 +14320,15 @@ async function guardarAnotacionesTexto(){
     mostrarIndicadorGuardado("error");
   }
 }
+async function guardarProyectoMedidas(){
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return;
+  try{
+    await window.storage.set(`plano_avance_proyecto_${obra}_${planoActualId}`, JSON.stringify(proyectoMedidas), true);
+  }catch(e){
+    showToast("No se pudo guardar el proyecto (revisá conexión)");
+  }
+}
 async function guardarPlanoAvanceImagen(dataUrlComprimido){
   const obra = claveObraPlanoAvance();
   if(!obra || !planoActualId) return;
@@ -14436,6 +14443,40 @@ async function guardarPlanosIndex(){
 // Se elimina siempre desde la tarjeta en el selector (papelera, doble toque) -- ya no existe un
 // botón de eliminar dentro del editor, para no confundirlo con "cerrar" (la "✕" del encabezado
 // del editor ahora solo vuelve al selector, sin borrar nada).
+// Duplica un plano ENTERO (imagen, capas de avance y cuadro de medidas) como uno nuevo e
+// independiente -- útil cuando dos plantas son casi iguales (ej: mismo diseño de ventanas/rejas
+// en dos pisos) y solo hace falta retocar algún dato en vez de volver a dibujar todo de cero.
+// El nuevo plano NO queda vinculado a ningún contratista (se elige aparte, con "🔗 Vincular").
+async function duplicarPlano(idOriginal){
+  const original = planosIndex.find(p=>p.id===idOriginal);
+  if(!original) return;
+  const obra = claveObraPlanoAvance();
+  if(!obra) return;
+  showToast("Duplicando plano...");
+  try{
+    const [rImg, rPol, rTxt] = await Promise.all([
+      window.storage.get(`plano_avance_imagen_${obra}_${idOriginal}`, true).catch(()=>null),
+      window.storage.get(`plano_avance_poligonos_${obra}_${idOriginal}`, true).catch(()=>null),
+      window.storage.get(`plano_avance_textos_${obra}_${idOriginal}`, true).catch(()=>null)
+    ]);
+    const nuevoId = uid();
+    if(rImg && rImg.value) await window.storage.set(`plano_avance_imagen_${obra}_${nuevoId}`, rImg.value, true);
+    if(rPol && rPol.value) await window.storage.set(`plano_avance_poligonos_${obra}_${nuevoId}`, rPol.value, true);
+    if(rTxt && rTxt.value) await window.storage.set(`plano_avance_textos_${obra}_${nuevoId}`, rTxt.value, true);
+    planosIndex.push({
+      id: nuevoId, nombre: original.nombre+" (copia)", fecha: hoyISO(),
+      contratistaId: null, contratistaNombre: null,
+      miniatura: original.miniatura, orientacionReporte: original.orientacionReporte,
+      m2PorActividad: original.m2PorActividad ? {...original.m2PorActividad} : undefined
+    });
+    await guardarPlanosIndex();
+    renderSelectorPlanos();
+    showToast(`✓ "${original.nombre}" duplicado -- ya podés editarlo aparte`);
+  }catch(e){
+    console.error("Duplicar plano:", e);
+    showToast("No se pudo duplicar el plano (revisá conexión)");
+  }
+}
 function eliminarPlano(id, btn){
   confirmarDobleToque(btn, "¿Seguro?", async ()=>{
     const obra = claveObraPlanoAvance();
@@ -14817,6 +14858,8 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
   // "Ancho x Alto" no aporta nada y confundiría, así que directamente no se muestra.
   const hayMedidasEnPar = resumenMedidas.some(m=>m.esPar);
   const filasMedidasHtml = resumenMedidas.map(m=>`<tr>
+      <td align="center"><b style="color:#8B5CF6;">${m.codigo ? esc(m.codigo) : "—"}</b></td>
+      <td>${m.categoria ? esc(m.categoria) : "—"}</td>
       <td>${esc(m.valor)}${m.unidad?" "+esc(m.unidad):""}</td>
       <td>${m.ubicacion ? esc(m.ubicacion) : "—"}</td>
       <td align="center">${m.cantidad}</td>
@@ -14877,7 +14920,7 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
     </tr></table>
     ${hayMedidasEnPar ? `<p style="font-family:Arial;font-size:10.5px;color:#4B5563;margin:0 0 6px;">Medidas expresadas como Ancho x Alto</p>` : ""}
     <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
-      <thead><tr><th>Medida</th><th>Ubicación</th><th style="width:80px;">Cantidad</th><th style="width:100px;">Área c/u</th><th style="width:100px;">Área total</th></tr></thead>
+      <thead><tr><th style="width:50px;">Cod</th><th style="width:110px;">Categoría</th><th>Medida</th><th>Ubicación</th><th style="width:70px;">Cantidad</th><th style="width:90px;">Área c/u</th><th style="width:90px;">Área total</th></tr></thead>
       <tbody>${filasMedidasHtml}</tbody>
     </table>
   </div>`;
@@ -14907,6 +14950,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs
 let imagenPlano = null; // Image ya cargada
 let poligonos = []; // {nombreCompleto, nombreBase, capa, color, puntos:[[x,y],...], area}
 let anotacionesTexto = []; // {x, y, valor, tipo:"numero"|"texto", unidad} -- cuadros de texto libres (medidas de ventanas, notas, etc), independientes de las capas de avance
+let proyectoMedidas = []; // {categoria, valor, unidad, cantidad} -- lo que dice el contrato/proyecto, para comparar contra lo medido de verdad en el plano
 let dibujando = false;
 let puntosActuales = [];
 let indiceEditando = null; // índice en "poligonos" del área que se está editando, o null
@@ -16956,16 +17000,34 @@ async function confirmarAnclaTextoPlano(e){
 function abrirPromptTextoPlano(anclaONull, idxExistente){
   idxAnotacionEditando = (idxExistente!==undefined) ? idxExistente : null;
   const esEdicion = idxAnotacionEditando!==null;
-  const datos = esEdicion ? anotacionesTexto[idxAnotacionEditando] : {tipo:"numero", valor:"", unidad:"", cantidad:1, ubicacion:""};
+  const datos = esEdicion ? anotacionesTexto[idxAnotacionEditando] : {tipo:"numero", valor:"", unidad:"", cantidad:1, ubicacion:"", categoria:""};
   document.getElementById("prompt-texto-plano-titulo").textContent = esEdicion ? "Editar cuadro de texto" : "Cuadro de texto";
   document.getElementById("prompt-texto-plano-input").value = datos.valor || "";
   document.getElementById("prompt-texto-plano-cantidad").value = datos.cantidad || 1;
   document.getElementById("prompt-texto-plano-ubicacion").value = datos.ubicacion || "";
   cambiarTipoTextoPlano(datos.tipo || "numero");
   document.querySelectorAll("#prompt-texto-plano-unidad .chip-opt").forEach(c=>c.classList.toggle("sel", c.dataset.val===(datos.unidad||"")));
+  // Categoría: si el valor guardado coincide con uno de los chips fijos, se marca ese -- si no
+  // (una categoría "libre" escrita a mano), se marca "+ Otra" y se muestra el campo con ese texto.
+  const categoriaGuardada = datos.categoria || "";
+  const chipFijo = categoriaGuardada ? document.querySelector(`#prompt-texto-plano-categoria .chip-opt[data-val="${CSS.escape(categoriaGuardada)}"]`) : null;
+  document.querySelectorAll("#prompt-texto-plano-categoria .chip-opt").forEach(c=>c.classList.remove("sel"));
+  const inputOtraCategoria = document.getElementById("prompt-texto-plano-categoria-otra");
+  if(!categoriaGuardada){
+    document.querySelector('#prompt-texto-plano-categoria .chip-opt[data-val=""]').classList.add("sel");
+    inputOtraCategoria.style.display = "none";
+    inputOtraCategoria.value = "";
+  }else if(chipFijo){
+    chipFijo.classList.add("sel");
+    inputOtraCategoria.style.display = "none";
+    inputOtraCategoria.value = "";
+  }else{
+    document.getElementById("chip-categoria-otra").classList.add("sel");
+    inputOtraCategoria.style.display = "block";
+    inputOtraCategoria.value = categoriaGuardada;
+  }
   document.getElementById("btn-borrar-texto-plano").style.display = esEdicion ? "" : "none";
   document.getElementById("btn-copiar-texto-plano").style.display = esEdicion ? "" : "none";
-  document.getElementById("prompt-texto-plano-bt-estado").style.display = "none"; // no arrastra el mensaje de la vez anterior
   document.getElementById("prompt-texto-plano-overlay").style.display = "flex";
   document.getElementById("prompt-texto-plano-overlay").dataset.ancla = anclaONull ? JSON.stringify(anclaONull) : "";
   setTimeout(()=>document.getElementById("prompt-texto-plano-input").focus(), 100);
@@ -16981,7 +17043,6 @@ function cambiarTipoTextoPlano(tipo){
   input.inputMode = tipo==="numero" ? "decimal" : "text";
   input.placeholder = tipo==="numero" ? "ej: 1.20 x 0.80" : "ej: Ventana a reponer";
   document.getElementById("btn-insertar-x-medida").style.display = tipo==="numero" ? "" : "none";
-  document.getElementById("btn-medidor-laser").style.display = tipo==="numero" ? "" : "none";
   document.getElementById("prompt-texto-plano-orientacion").style.display = tipo==="numero" ? "" : "none";
   // La unidad solo tiene sentido para medidas (número) -- para una nota de texto libre, se
   // esconde en vez de dejarla ahí sin usarse.
@@ -16998,168 +17059,6 @@ function insertarXEnMedida(){
   input.focus();
   input.setSelectionRange(nuevaPos, nuevaPos);
 }
-// ---------------- Medidor láser Bluetooth (Bosch GLM100/120, protocolo "MT") ----------------
-// Service/Characteristic UUID y el comando de disparo salen de una captura real con sniffer
-// Bluetooth de un GLM120C (mismo modelo) -- esa parte tiene buena confianza. El offset EXACTO
-// del número de la medición adentro del paquete de respuesta NO está confirmado con el aparato
-// real todavía -- se prueba a "adivinar" dentro de un rango físico razonable (1cm a 120m, el
-// alcance del GLM120), y si no encuentra nada creíble, avisa con los datos crudos para poder
-// ajustar el offset con el aparato en mano.
-const GLM_LASER_SERVICE_UUID = "02a6c0d0-0451-4000-b000-fb3210111989";
-const GLM_LASER_CHAR_UUID = "02a6c0d1-0451-4000-b000-fb3210111989";
-let medidorLaserCaracteristica = null;
-async function conectarMedidorLaser(){
-  const estadoEl = document.getElementById("prompt-texto-plano-bt-estado");
-  if(!navigator.bluetooth){
-    estadoEl.style.display = "block";
-    estadoEl.style.color = "#DC5A5A";
-    estadoEl.textContent = "Este navegador no tiene Bluetooth para apps web -- probá con Chrome en Android.";
-    return;
-  }
-  estadoEl.style.display = "block";
-  estadoEl.style.color = "#3B82F6";
-  estadoEl.textContent = "🔵 Elegí tu GLM120 en la lista...";
-  try{
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [GLM_LASER_SERVICE_UUID] }]
-    });
-    estadoEl.textContent = "🔵 Conectando...";
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(GLM_LASER_SERVICE_UUID);
-    const characteristic = await service.getCharacteristic(GLM_LASER_CHAR_UUID);
-    medidorLaserCaracteristica = characteristic;
-    await characteristic.startNotifications();
-    characteristic.addEventListener("characteristicvaluechanged", onDatoMedidorLaser);
-    estadoEl.textContent = "🔵 Conectado — apuntá y disparé el láser del medidor";
-    // Mismo comando que dispara Y apaga el láser (es un interruptor) -- capturado de la app
-    // oficial de Bosch comunicándose con un GLM120C real.
-    await characteristic.writeValue(new Uint8Array([0xC0,0x56,0x01,0x00,0x1E]));
-  }catch(e){
-    console.error("Medidor láser:", e);
-    if(e.name==="NotFoundError"){
-      estadoEl.textContent = "No se eligió ningún medidor.";
-    }else{
-      estadoEl.style.color = "#DC5A5A";
-      estadoEl.textContent = "No se pudo conectar: "+e.message;
-    }
-  }
-}
-function onDatoMedidorLaser(event){
-  const bytes = new Uint8Array(event.target.value.buffer);
-  const hex = Array.from(bytes).map(b=>b.toString(16).padStart(2,"0")).join(" ");
-  console.log("Medidor láser -- paquete crudo:", hex);
-  if(bytes.length<8 || bytes[0]!==0xC0 || bytes[1]!==0x55) return; // no es un paquete de datos del medidor
-  if(bytes[3]!==0x06) return; // paquete de "encendido/apagado" del láser, todavía sin medición
-  let distanciaMetros = null;
-  for(let i=4; i<=bytes.length-4; i++){
-    const dv = new DataView(bytes.buffer, bytes.byteOffset+i, 4);
-    const val = dv.getFloat32(0, true);
-    if(val>0.01 && val<120 && isFinite(val)){ distanciaMetros = val; break; }
-  }
-  const estadoEl = document.getElementById("prompt-texto-plano-bt-estado");
-  if(distanciaMetros===null){
-    estadoEl.style.color = "#DC5A5A";
-    estadoEl.textContent = "Llegó una medición pero no la pude leer bien -- pasame este dato para ajustarlo: "+hex;
-    return;
-  }
-  aplicarMedidaDelLaser(distanciaMetros);
-}
-function aplicarMedidaDelLaser(distanciaMetros){
-  const input = document.getElementById("prompt-texto-plano-input");
-  const unidadChip = document.querySelector("#prompt-texto-plano-unidad .chip-opt.sel");
-  const unidad = unidadChip ? unidadChip.dataset.val : "";
-  let valorMostrado;
-  if(unidad==="cm") valorMostrado = Math.round(distanciaMetros*100*10)/10;
-  else if(unidad==="mm") valorMostrado = Math.round(distanciaMetros*1000);
-  else valorMostrado = Math.round(distanciaMetros*1000)/1000; // metros, con milímetro de precisión
-  // Si el campo ya tiene un primer número esperando el ancho (ej: escribiste "1.20 x" y todavía
-  // no mediste el alto), la nueva medida se agrega después de la x -- si no, reemplaza el campo.
-  const actual = input.value.trim();
-  if(/x\s*$/i.test(actual)){
-    input.value = actual + " " + valorMostrado;
-  }else{
-    input.value = String(valorMostrado);
-  }
-  const estadoEl = document.getElementById("prompt-texto-plano-bt-estado");
-  estadoEl.style.color = "#0E9488";
-  estadoEl.textContent = "✓ Medida recibida: "+valorMostrado+(unidad?" "+unidad:" m");
-  if(navigator.vibrate) navigator.vibrate(20);
-}
-// ---------------- Escritura a mano (lápiz/dedo) -- Gemini transcribe el trazo ----------------
-// Reusa exactamente la misma vía que ya usa la app para leer remitos y fotos del plano (Gemini
-// Vision) -- acá en vez de una foto real, la "imagen" es el propio lienzo donde se escribió.
-function posRelativaCanvas(e, canvas){
-  const rect = canvas.getBoundingClientRect();
-  return {x: e.clientX-rect.left, y: e.clientY-rect.top};
-}
-function abrirEscrituraAMano(){
-  document.getElementById("escritura-mano-overlay").style.display = "flex";
-  const canvas = document.getElementById("canvas-escritura-mano");
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = rect.width*dpr;
-  canvas.height = rect.height*dpr;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, rect.width, rect.height);
-  ctx.strokeStyle = "#0A2540";
-  ctx.lineWidth = 3.5;
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  const tipo = document.querySelector("#prompt-texto-plano-tipo .chip-opt.sel")?.dataset.val || "numero";
-  document.getElementById("escritura-mano-ayuda").textContent = tipo==="numero"
-    ? 'Escribí la medida tal cual (ej: "1.20 x 0.80") y tocá "Reconocer".'
-    : 'Escribí el texto y tocá "Reconocer".';
-  document.getElementById("escritura-mano-estado").style.display = "none";
-  let dibujando = false;
-  canvas.onpointerdown = (e)=>{ dibujando=true; const p=posRelativaCanvas(e,canvas); ctx.beginPath(); ctx.moveTo(p.x,p.y); };
-  canvas.onpointermove = (e)=>{ if(!dibujando) return; e.preventDefault(); const p=posRelativaCanvas(e,canvas); ctx.lineTo(p.x,p.y); ctx.stroke(); };
-  canvas.onpointerup = ()=>{ dibujando=false; };
-  canvas.onpointerleave = ()=>{ dibujando=false; };
-}
-function limpiarCanvasEscrituraMano(){
-  const canvas = document.getElementById("canvas-escritura-mano");
-  const rect = canvas.getBoundingClientRect();
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, rect.width, rect.height);
-  document.getElementById("escritura-mano-estado").style.display = "none";
-}
-function cerrarEscrituraAMano(){
-  document.getElementById("escritura-mano-overlay").style.display = "none";
-}
-async function reconocerEscrituraAMano(){
-  const canvas = document.getElementById("canvas-escritura-mano");
-  const estadoEl = document.getElementById("escritura-mano-estado");
-  estadoEl.style.display = "block";
-  estadoEl.style.color = "#8B5CF6";
-  estadoEl.textContent = "Leyendo lo que escribiste...";
-  const base64SinPrefijo = canvas.toDataURL("image/png").split(",")[1];
-  const tipo = document.querySelector("#prompt-texto-plano-tipo .chip-opt.sel")?.dataset.val || "numero";
-  const prompt = tipo==="numero"
-    ? `Esto es una imagen de algo escrito a mano con el dedo o un lápiz digital, en trazo oscuro sobre fondo blanco. Es una MEDIDA de construcción (por ejemplo "1.20 x 0.80", o un solo número con decimales). Transcribí EXACTAMENTE lo que dice, usando la letra "x" para el signo de multiplicar si aparece (una cruz o "por"). Respondé SOLO con el texto transcripto tal cual, sin explicar nada ni agregar unidades que no estén escritas.`
-    : `Esto es una imagen de un texto escrito a mano con el dedo o un lápiz digital, en trazo oscuro sobre fondo blanco. Transcribí EXACTAMENTE lo que dice. Respondé SOLO con el texto transcripto, sin explicar nada.`;
-  try{
-    const texto = await llamarInteractionsGemini({
-      model: GEMINI_MODELO,
-      input: [{type:"text", text:prompt}, {type:"image", data:base64SinPrefijo, mime_type:"image/png"}]
-    });
-    const limpio = (texto||"").trim().replace(/^["'“”]|["'“”]$/g,"").replace(/\n/g," ");
-    if(!limpio){
-      estadoEl.style.color = "#DC5A5A";
-      estadoEl.textContent = "No pude leer nada -- probá escribiendo más grande y claro.";
-      return;
-    }
-    document.getElementById("prompt-texto-plano-input").value = limpio;
-    cerrarEscrituraAMano();
-    showToast("✓ Se transcribió: \""+limpio+"\" -- revisalo antes de colocar");
-  }catch(e){
-    console.error("Escritura a mano:", e);
-    estadoEl.style.color = "#DC5A5A";
-    estadoEl.textContent = "No se pudo leer: "+e.message;
-  }
-}
 function cambiarCantidadTextoPlano(delta){
   const input = document.getElementById("prompt-texto-plano-cantidad");
   const actual = Math.max(1, parseInt(input.value)||1);
@@ -17170,6 +17069,18 @@ document.addEventListener("click", (e)=>{
   if(chip){
     document.querySelectorAll("#prompt-texto-plano-unidad .chip-opt").forEach(c=>c.classList.remove("sel"));
     chip.classList.add("sel");
+  }
+  const chipCat = e.target.closest("#prompt-texto-plano-categoria .chip-opt");
+  if(chipCat){
+    document.querySelectorAll("#prompt-texto-plano-categoria .chip-opt").forEach(c=>c.classList.remove("sel"));
+    chipCat.classList.add("sel");
+    const inputOtra = document.getElementById("prompt-texto-plano-categoria-otra");
+    if(chipCat.dataset.val==="__otra__"){
+      inputOtra.style.display = "block";
+      inputOtra.focus();
+    }else{
+      inputOtra.style.display = "none";
+    }
   }
 });
 function cerrarPromptTextoPlano(){
@@ -17184,12 +17095,24 @@ async function confirmarPromptTextoPlano(){
   const unidad = tipo==="numero" && unidadChip ? unidadChip.dataset.val : "";
   const cantidad = Math.max(1, parseInt(document.getElementById("prompt-texto-plano-cantidad").value)||1);
   const ubicacion = document.getElementById("prompt-texto-plano-ubicacion").value.trim();
+  const categoriaChip = document.querySelector("#prompt-texto-plano-categoria .chip-opt.sel");
+  const categoria = categoriaChip
+    ? (categoriaChip.dataset.val==="__otra__" ? document.getElementById("prompt-texto-plano-categoria-otra").value.trim() : categoriaChip.dataset.val)
+    : "";
+  // El código (V1, P1...) se genera solo a partir de la categoría -- si ya tenía uno y la
+  // categoría no cambió, se conserva (no le pisa el número a mitad de obra); si la categoría es
+  // nueva o cambió, se le asigna el siguiente número libre de ESA categoría.
+  let codigo = "";
+  if(categoria){
+    const previa = idxAnotacionEditando!==null ? anotacionesTexto[idxAnotacionEditando] : null;
+    codigo = (previa && previa.categoria===categoria && previa.codigo) ? previa.codigo : generarCodigoParaCategoria(categoria, idxAnotacionEditando);
+  }
   if(idxAnotacionEditando!==null){
-    anotacionesTexto[idxAnotacionEditando] = {...anotacionesTexto[idxAnotacionEditando], valor, tipo, unidad, cantidad, ubicacion};
+    anotacionesTexto[idxAnotacionEditando] = {...anotacionesTexto[idxAnotacionEditando], valor, tipo, unidad, cantidad, ubicacion, categoria, codigo};
   }else{
     const overlay = document.getElementById("prompt-texto-plano-overlay");
     const ancla = overlay.dataset.ancla ? JSON.parse(overlay.dataset.ancla) : {x:imagenPlano.width/2, y:imagenPlano.height/2};
-    anotacionesTexto.push({x:ancla.x, y:ancla.y, valor, tipo, unidad, cantidad, ubicacion});
+    anotacionesTexto.push({x:ancla.x, y:ancla.y, valor, tipo, unidad, cantidad, ubicacion, categoria, codigo});
   }
   cerrarPromptTextoPlano();
   redibujar();
@@ -17224,7 +17147,33 @@ function abrirEdicionAnotacionTexto(idx){
 // abre el mismo prompt para editar el valor o borrarlo.
 // Texto real que se dibuja en un cuadro de texto -- si la cantidad es más de 1, se le suma "×N"
 // al final (ej: "1.20 x 0.80 m ×3") para que se note de un vistazo sin tener que tocarlo.
+// Letra base por categoría -- para las 4 fijas usa siempre la misma letra (así "Puerta" nunca
+// choca con "Portón" aunque las dos empiecen con P); para categorías libres, las primeras letras
+// del texto que se haya escrito.
+const CODIGOS_CATEGORIA_PRESET = {"Ventana":"V", "Puerta":"P", "Portón":"PT", "Reja":"R"};
+function letraParaCategoria(categoria){
+  if(CODIGOS_CATEGORIA_PRESET[categoria]) return CODIGOS_CATEGORIA_PRESET[categoria];
+  const limpio = categoria.trim().toUpperCase().replace(/[^A-ZÑ]/g,"");
+  return limpio.slice(0,2) || "X";
+}
+function generarCodigoParaCategoria(categoria, idxExcluir){
+  if(!categoria) return "";
+  const letra = letraParaCategoria(categoria);
+  let maxNum = 0;
+  anotacionesTexto.forEach((a,i)=>{
+    if(i===idxExcluir) return;
+    if(a.categoria===categoria && a.codigo){
+      const m = a.codigo.match(/(\d+)$/);
+      if(m) maxNum = Math.max(maxNum, parseInt(m[1]));
+    }
+  });
+  return letra + (maxNum+1);
+}
+// El cartel en el plano queda CORTO a propósito (solo el código, ej "V1") si tiene categoría --
+// mucho más legible que repetir la medida completa encima del dibujo. Si no tiene categoría
+// asignada, muestra la medida/texto entero como antes.
 function textoDeAnotacion(a){
+  if(a.codigo) return a.codigo;
   let t = a.unidad ? `${a.valor} ${a.unidad}` : String(a.valor);
   if(a.cantidad && a.cantidad>1) t += ` ×${a.cantidad}`;
   return t;
@@ -17249,10 +17198,70 @@ function renderAnotacionesTocables(){
     btn.style.left = (a.x*zoomActual - anchoTotal/2)+"px";
     btn.style.top = (a.y*zoomActual)+"px";
     btn.style.width = anchoTotal+"px";
-    btn.title = "Tocá para editar o borrar";
-    btn.onclick = ()=> abrirEdicionAnotacionTexto(idx);
+    btn.title = "Tocá para editar -- mantené pulsado para mover";
+    activarArrastreAnotacion(btn, idx);
     cont.appendChild(btn);
   });
+}
+// Mantener pulsado sobre una etiqueta ya puesta la deja mover de lugar arrastrando -- un toque
+// rápido y normal (sin mantener) sigue abriendo la edición, como siempre. Mientras se arrastra,
+// se muestra un "fantasma" que sigue el dedo en vez de redibujar el canvas en cada movimiento
+// (evita romper el propio gesto de arrastre al reconstruir los botones táctiles a mitad de camino).
+let ghostArrastreAnotacion = null;
+function activarArrastreAnotacion(btn, idx){
+  let timer = null, moviendo = false, inicioX = 0, inicioY = 0;
+  const UMBRAL_MOV = 10;
+  btn.addEventListener("pointerdown", (e)=>{
+    inicioX = e.clientX; inicioY = e.clientY;
+    moviendo = false;
+    timer = setTimeout(()=>{
+      moviendo = true;
+      if(navigator.vibrate) navigator.vibrate(15);
+      crearGhostAnotacion(idx, e.clientX, e.clientY);
+    }, 420);
+  });
+  btn.addEventListener("pointermove", (e)=>{
+    if(!moviendo){
+      if(Math.hypot(e.clientX-inicioX, e.clientY-inicioY)>UMBRAL_MOV) clearTimeout(timer);
+      return;
+    }
+    e.preventDefault();
+    if(ghostArrastreAnotacion){
+      ghostArrastreAnotacion.style.left = e.clientX+"px";
+      ghostArrastreAnotacion.style.top = e.clientY+"px";
+    }
+  });
+  btn.addEventListener("pointerup", async (e)=>{
+    clearTimeout(timer);
+    if(moviendo){
+      moviendo = false;
+      const canvas = document.getElementById("canvas-plano");
+      const rect = canvas.getBoundingClientRect();
+      const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
+      anotacionesTexto[idx].x = (e.clientX-rect.left)*escalaX;
+      anotacionesTexto[idx].y = (e.clientY-rect.top)*escalaY;
+      quitarGhostAnotacion();
+      redibujar();
+      await guardarAnotacionesTexto();
+      showToast("✓ Etiqueta movida");
+      return;
+    }
+    abrirEdicionAnotacionTexto(idx);
+  });
+  btn.addEventListener("pointercancel", ()=>{ clearTimeout(timer); moviendo=false; quitarGhostAnotacion(); });
+}
+function crearGhostAnotacion(idx, clientX, clientY){
+  quitarGhostAnotacion();
+  const g = document.createElement("div");
+  g.className = "ghost-anotacion-arrastre";
+  g.textContent = textoDeAnotacion(anotacionesTexto[idx]);
+  g.style.left = clientX+"px";
+  g.style.top = clientY+"px";
+  document.body.appendChild(g);
+  ghostArrastreAnotacion = g;
+}
+function quitarGhostAnotacion(){
+  if(ghostArrastreAnotacion){ ghostArrastreAnotacion.remove(); ghostArrastreAnotacion = null; }
 }
 // Junta todos los cuadros de texto tipo "número" y los agrupa por medida exacta -- así "1.20 x
 // 0.80" que se repite 5 veces en el plano aparece como UNA fila con cantidad 5, en vez de 5
@@ -17263,12 +17272,13 @@ function calcularResumenMedidas(){
   const grupos = {};
   anotacionesTexto.forEach(a=>{
     if(a.tipo!=="numero" || !a.valor) return;
-    // La ubicación entra en la agrupación -- así la misma medida en 2 lugares distintos aparece
-    // como 2 filas separadas (cada una con su ubicación), en vez de mezclarse en una sola fila
-    // que no sabrías dónde está.
     const ubicacion = (a.ubicacion||"").trim();
-    const clave = a.valor.trim()+"||"+(a.unidad||"")+"||"+ubicacion;
-    if(!grupos[clave]) grupos[clave] = {valor:a.valor.trim(), unidad:a.unidad||"", ubicacion, cantidad:0};
+    // Si tiene categoría (código asignado), CADA etiqueta es su propia fila -- así el código que
+    // ves en la tabla es siempre el mismo que ves pegado en el plano, uno a uno. Sin categoría,
+    // se sigue agrupando por medida+unidad+ubicación como antes, para no separar en filas
+    // sueltas medidas sin clasificar que son exactamente iguales.
+    const clave = a.codigo ? "cod:"+a.codigo : "libre:"+a.valor.trim()+"||"+(a.unidad||"")+"||"+ubicacion;
+    if(!grupos[clave]) grupos[clave] = {codigo:a.codigo||"", categoria:a.categoria||"", valor:a.valor.trim(), unidad:a.unidad||"", ubicacion, cantidad:0};
     // Suma la cantidad que se haya puesto en cada etiqueta (por defecto 1) -- así una sola
     // etiqueta con "Cantidad: 5" cuenta como 5, sin tener que plantar 5 carteles idénticos.
     grupos[clave].cantidad += (a.cantidad || 1);
@@ -17286,8 +17296,87 @@ function calcularResumenMedidas(){
     }
     return {...g, area, areaTotal, esPar:!!m};
   });
-  filas.sort((a,b)=>b.cantidad-a.cantidad);
+  filas.sort((a,b)=>{
+    if(a.codigo && b.codigo) return a.codigo.localeCompare(b.codigo, undefined, {numeric:true});
+    if(a.codigo && !b.codigo) return -1;
+    if(!a.codigo && b.codigo) return 1;
+    return b.cantidad-a.cantidad;
+  });
   return filas;
+}
+// ---------------- Proyecto vs Real ----------------
+// Compara lo cargado como "proyecto" (lo que dice el contrato, cargado a mano una vez) contra lo
+// medido de verdad en el plano -- se empareja por categoría+medida+unidad (NO por código puntual),
+// así no importa el orden en que se fueron colocando ni qué código le tocó a cada una en el
+// plano -- alcanza con que sea "la misma ventana" para que sumen entre sí.
+function calcularComparacionProyecto(){
+  const real = calcularResumenMedidas();
+  const realPorTipo = {};
+  real.forEach(r=>{
+    const clave = (r.categoria||"")+"||"+r.valor+"||"+(r.unidad||"");
+    realPorTipo[clave] = (realPorTipo[clave]||0) + r.cantidad;
+  });
+  const filas = proyectoMedidas.map(p=>{
+    const clave = (p.categoria||"")+"||"+p.valor+"||"+(p.unidad||"");
+    const cantReal = realPorTipo[clave] || 0;
+    delete realPorTipo[clave]; // lo que quede en realPorTipo después son medidas reales SIN proyecto cargado -- se listan aparte
+    return {categoria:p.categoria, valor:p.valor, unidad:p.unidad, cantidadProyecto:p.cantidad, cantidadReal:cantReal, diferencia:cantReal-p.cantidad};
+  });
+  const sobrantes = Object.keys(realPorTipo).map(clave=>{
+    const [categoria, valor, unidad] = clave.split("||");
+    return {categoria, valor, unidad, cantidadProyecto:0, cantidadReal:realPorTipo[clave], diferencia:realPorTipo[clave]};
+  });
+  return [...filas, ...sobrantes];
+}
+function abrirComparacionProyecto(){
+  const cont = document.getElementById("foto-avance-cuerpo");
+  const textoActual = proyectoMedidas.map(p=>`${p.categoria||""} | ${p.valor} | ${p.unidad||""} | ${p.cantidad}`).join("\n");
+  cont.innerHTML = `
+    <h2 style="margin-top:0;color:#fff;">🎯 Proyecto vs Real</h2>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:8px;">Una línea por cada medida del contrato/proyecto: <code>Categoría | Medida | Unidad | Cantidad</code>. Se compara contra lo que ya mediste en este plano.</p>
+    <textarea id="texto-proyecto-medidas" rows="6" style="width:100%;font-family:monospace;font-size:11.5px;padding:8px;border:1.5px solid rgba(255,255,255,.15);border-radius:8px;background:rgba(255,255,255,.05);color:#e7eef1;box-sizing:border-box;" placeholder="Ventana | 1.20 x 0.80 | m | 6
+Puerta | 0.90 x 2.05 | m | 3">${esc(textoActual)}</textarea>
+    <button onclick="guardarYCompararProyecto()" style="width:100%;margin:8px 0 14px;padding:10px;border-radius:8px;border:none;background:var(--verde);color:#fff;font-weight:800;">✓ Guardar y comparar</button>
+    <div id="tabla-comparacion-proyecto"></div>
+    <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cerrar</button>`;
+  document.getElementById("foto-avance-overlay").style.display = "flex";
+  renderTablaComparacionEnPantalla();
+}
+async function guardarYCompararProyecto(){
+  const texto = document.getElementById("texto-proyecto-medidas").value;
+  const lineas = texto.split("\n").map(l=>l.trim()).filter(l=>l);
+  proyectoMedidas = lineas.map(l=>{
+    const partes = l.split("|").map(p=>p.trim());
+    return {categoria:partes[0]||"", valor:partes[1]||"", unidad:partes[2]||"", cantidad:Math.max(0, parseInt(partes[3])||0)};
+  }).filter(p=>p.valor);
+  await guardarProyectoMedidas();
+  renderTablaComparacionEnPantalla();
+  showToast("✓ Proyecto guardado");
+}
+function renderTablaComparacionEnPantalla(){
+  const comparacion = calcularComparacionProyecto();
+  const cont = document.getElementById("tabla-comparacion-proyecto");
+  if(!cont) return;
+  if(comparacion.length===0){
+    cont.innerHTML = `<p style="font-size:11px;color:#9fb0b8;">Cargá al menos una medida del proyecto arriba (o medí algo en el plano) para ver la comparación.</p>`;
+    return;
+  }
+  const hayDiferencias = comparacion.some(c=>c.diferencia!==0);
+  cont.innerHTML = `
+    <div style="font-size:10px;font-weight:800;color:#5EEAD4;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Comparación</div>
+    ${comparacion.map(c=>{
+      const colorDif = c.diferencia===0 ? "#5EEAD4" : (c.diferencia<0 ? "#DC5A5A" : "#F59E0B");
+      const txtDif = c.diferencia===0 ? "✓ Completo" : (c.diferencia<0 ? `Faltan ${Math.abs(c.diferencia)}` : `+${c.diferencia} de más`);
+      return `<div style="background:#111820;border-radius:9px;padding:9px 11px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div style="flex:1;"><div style="font-size:11.5px;font-weight:800;">${esc(c.categoria||"Sin categoría")} — ${esc(c.valor)}${c.unidad?" "+esc(c.unidad):""}</div>
+        <div style="font-size:9.5px;color:#9fb0b8;">Proyecto: ${c.cantidadProyecto} · Real: ${c.cantidadReal}</div></div>
+        <div style="font-size:11px;font-weight:900;color:${colorDif};white-space:nowrap;">${txtDif}</div>
+      </div>`;
+    }).join("")}
+    ${hayDiferencias
+      ? `<div style="margin-top:6px;padding:8px 10px;background:rgba(220,90,90,.15);border:1px solid rgba(220,90,90,.4);border-radius:8px;font-size:10.5px;color:#FCA5A5;font-weight:700;">⚠ Hay diferencias con el proyecto -- revisar antes de pedir materiales.</div>`
+      : `<div style="margin-top:6px;padding:8px 10px;background:rgba(14,148,136,.15);border:1px solid rgba(14,148,136,.4);border-radius:8px;font-size:10.5px;color:#5EEAD4;font-weight:700;">✓ Todo coincide con el proyecto.</div>`}
+  `;
 }
 function abrirTablaMedidas(){
   const resumen = calcularResumenMedidas();
@@ -17301,19 +17390,40 @@ function abrirTablaMedidas(){
     const totalUnidades = resumen.reduce((s,m)=>s+m.cantidad,0);
     cont.innerHTML = `
       <h2 style="margin-top:0;color:#fff;">📏 Cuadro de medidas</h2>
-      <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">${totalUnidades} unidad${totalUnidades===1?"":"es"} en total, agrupadas por medida. Este mismo cuadro se agrega solo al reporte PDF del plano.</p>
+      <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">${totalUnidades} unidad${totalUnidades===1?"":"es"} en total. Este mismo cuadro se agrega solo al reporte PDF del plano.</p>
       ${resumen.map(m=>`
         <div style="background:#111820;border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">
+          ${m.codigo ? `<div style="background:#8B5CF6;color:#fff;font-size:11px;font-weight:900;padding:4px 8px;border-radius:7px;flex-shrink:0;">${esc(m.codigo)}</div>` : ""}
           <div style="flex:1;">
-            <div style="font-size:13px;font-weight:800;">${esc(m.valor)}${m.unidad?" "+esc(m.unidad):""}</div>
+            <div style="font-size:13px;font-weight:800;">${esc(m.valor)}${m.unidad?" "+esc(m.unidad):""} ${m.categoria ? `<span style="font-size:9.5px;font-weight:700;color:#9fb0b8;">· ${esc(m.categoria)}</span>` : ""}</div>
             ${m.ubicacion ? `<div style="font-size:10px;color:#5EEAD4;margin-top:2px;">📍 ${esc(m.ubicacion)}</div>` : ""}
             ${m.areaTotal!==null ? `<div style="font-size:10px;color:#9fb0b8;margin-top:2px;">Área c/u: ${m.area}${m.unidad?" "+m.unidad+"²":""} · Total: ${m.areaTotal}${m.unidad?" "+m.unidad+"²":""}</div>` : ""}
           </div>
           <div style="font-size:17px;font-weight:900;color:#5EEAD4;">×${m.cantidad}</div>
         </div>`).join("")}
-      <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:6px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cerrar</button>`;
+      <button onclick="exportarMedidasExcel()" style="width:100%;margin-top:6px;padding:11px;border-radius:10px;border:none;background:var(--verde);color:#fff;font-weight:800;">📊 Exportar a Excel</button>
+      <button onclick="abrirComparacionProyecto()" style="width:100%;margin-top:8px;padding:11px;border-radius:10px;border:1.5px solid #8B5CF6;background:transparent;color:#8B5CF6;font-weight:800;">🎯 Comparar con proyecto</button>
+      <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:8px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cerrar</button>`;
   }
   document.getElementById("foto-avance-overlay").style.display = "flex";
+}
+// Mismo patrón que ya usa la app para exportar la Nómina a Excel (misma librería, ya cargada).
+// Queda listo para mandarlo directo a un proveedor por WhatsApp o mail, sin re-tipear nada.
+function exportarMedidasExcel(){
+  const resumen = calcularResumenMedidas();
+  if(resumen.length===0){ showToast("No hay medidas cargadas todavía."); return; }
+  const encabezado = ["Código","Categoría","Medida","Unidad","Ubicación","Cantidad","Área c/u","Área total"];
+  const filas = resumen.map(m=>[
+    m.codigo || "", m.categoria || "", m.valor, m.unidad || "", m.ubicacion || "",
+    m.cantidad, m.area!==null?m.area:"", m.areaTotal!==null?m.areaTotal:""
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([encabezado, ...filas]);
+  ws["!cols"] = [{wch:8},{wch:14},{wch:16},{wch:8},{wch:20},{wch:10},{wch:10},{wch:11}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Cuadro de medidas");
+  const nombrePlanoActual = (planosIndex.find(p=>p.id===planoActualId)||{}).nombre || "plano";
+  XLSX.writeFile(wb, `Cuadro_medidas_${nombreArchivoSeguro(nombrePlanoActual)}.xlsx`);
+  registrarActividad(`descargó el cuadro de medidas de "${nombrePlanoActual}" en Excel`);
 }
 // ---------------- Mini barra flotante al doble toque sobre un área ----------------
 // Fuera del modo dibujo, dos toques seguidos en el mismo lugar sobre un área ya marcada abren
