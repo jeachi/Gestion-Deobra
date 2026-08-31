@@ -3017,6 +3017,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <button class="cad-riel-btn" onclick="iniciarFotoAvance()" title="Sacar una foto y que la IA reconozca el avance de las actividades cerca de donde tocás"><span class="ico">📸</span><span class="lbl">FOTO</span></button>
         <div class="cad-riel-sep"></div>
         <button class="cad-riel-btn" onclick="iniciarColocarTextoPlano()" title="Colocar un cuadro de texto libre en el plano (medidas, notas, etc)"><span class="ico">🔤</span><span class="lbl">TEXTO</span></button>
+        <button class="cad-riel-btn" onclick="abrirTablaMedidas()" title="Ver el resumen de todas las medidas cargadas, agrupadas y totalizadas"><span class="ico">📏</span><span class="lbl">MEDIDAS</span></button>
       </div>
       <input type="file" id="input-foto-avance" accept="image/*" capture="environment" style="display:none;" onchange="onFotoAvanceSeleccionada(this)">
 
@@ -3149,7 +3150,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="chip-opt sel" data-val="numero" onclick="cambiarTipoTextoPlano('numero')">🔢 Número</div>
       <div class="chip-opt" data-val="texto" onclick="cambiarTipoTextoPlano('texto')">🔤 Texto</div>
     </div>
-    <input type="text" id="prompt-texto-plano-input" placeholder="ej: 1.20 x 0.80" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;font-weight:700;text-align:center;box-sizing:border-box;margin-bottom:10px;">
+    <div style="display:flex;gap:6px;margin-bottom:10px;">
+      <input type="text" id="prompt-texto-plano-input" placeholder="ej: 1.20 x 0.80" style="flex:1;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;font-weight:700;text-align:center;box-sizing:border-box;">
+      <button type="button" id="btn-insertar-x-medida" onclick="insertarXEnMedida()" title="Insertar el signo x entre las dos medidas" style="width:44px;flex-shrink:0;border:1.5px solid var(--verde);border-radius:8px;background:var(--verde-claro);color:var(--verde-oscuro);font-size:17px;font-weight:900;">✕</button>
+    </div>
     <div id="prompt-texto-plano-unidad-wrap">
       <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:6px;">Unidad (opcional)</div>
       <div class="chip-row" id="prompt-texto-plano-unidad">
@@ -14770,6 +14774,23 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
     return filaTotal + (filasCapa || `<tr><td></td><td colspan="2" style="color:#999;">Sin capas de avance todavía</td></tr>`);
   }).join("");
 
+  // Cuadro de medidas (ventanas, aberturas, etc) -- solo se agrega al reporte si hay al menos un
+  // cuadro de texto tipo "número" cargado en este plano; si no hay ninguno, esta sección entera
+  // no aparece (ni el título), para no dejar un cuadro vacío de adorno.
+  const resumenMedidas = calcularResumenMedidas();
+  const filasMedidasHtml = resumenMedidas.map(m=>`<tr>
+      <td>${esc(m.valor)}${m.unidad?" "+esc(m.unidad):""}</td>
+      <td align="center">${m.cantidad}</td>
+      <td align="center">${m.area!==null ? (m.area+(m.unidad?" "+m.unidad+"²":"")) : "—"}</td>
+      <td align="center">${m.areaTotal!==null ? (m.areaTotal+(m.unidad?" "+m.unidad+"²":"")) : "—"}</td>
+    </tr>`).join("");
+  const bloqueMedidas = resumenMedidas.length===0 ? "" : `
+    <div style="margin:10px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">📏 Cuadro de medidas</div>
+    <table class="trab" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:12px;">
+      <thead><tr><th>Medida</th><th style="width:70px;">Cantidad</th><th style="width:90px;">Área c/u</th><th style="width:90px;">Área total</th></tr></thead>
+      <tbody>${filasMedidasHtml}</tbody>
+    </table>`;
+
   // "Horizontal" ahora rota el plano de verdad -- un plano angosto y largo (como los de varios
   // pisos en columna) queda ancho y corto una vez rotado, así que conviene apilarlo arriba a todo
   // el ancho de la hoja apaisada (no en columna al lado de la tabla, que lo dejaría más chico).
@@ -14786,7 +14807,8 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
     <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
       <thead><tr><th style="width:180px;">Actividad</th><th style="width:260px;">Detalle</th><th>Avance</th></tr></thead>
       <tbody>${filas || `<tr><td colspan="3" style="color:#999;">Todavía no hay actividades marcadas en este plano.</td></tr>`}</tbody>
-    </table>`;
+    </table>
+    ${bloqueMedidas}`;
   }else{
     cuerpoHtml = `
     <div style="text-align:center;">
@@ -14797,7 +14819,8 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
     <table class="trab" width="676" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
       <thead><tr><th style="width:130px;">Actividad</th><th style="width:190px;">Detalle</th><th>Avance</th></tr></thead>
       <tbody>${filas || `<tr><td colspan="3" style="color:#999;">Todavía no hay actividades marcadas en este plano.</td></tr>`}</tbody>
-    </table>`;
+    </table>
+    ${bloqueMedidas}`;
   }
 
   const html = `<div class="print-page" style="width:${anchoHoja}px !important;min-width:${anchoHoja}px !important;max-width:${anchoHoja}px !important;padding:6px 12px !important;box-sizing:border-box;">
@@ -16886,11 +16909,28 @@ function abrirPromptTextoPlano(anclaONull, idxExistente){
 function cambiarTipoTextoPlano(tipo){
   document.querySelectorAll("#prompt-texto-plano-tipo .chip-opt").forEach(c=>c.classList.toggle("sel", c.dataset.val===tipo));
   const input = document.getElementById("prompt-texto-plano-input");
-  input.type = tipo==="numero" ? "number" : "text";
+  // "number" puro no dejaba escribir la "x" de las medidas (ej: "1.20 x 0.80") -- el navegador
+  // directamente bloquea esa letra en un input numérico. Con "text" + inputmode decimal se sigue
+  // viendo el teclado numérico en el celular, pero SÍ deja escribir la x (y el botón de al lado
+  // la inserta solo, para no tener que buscarla a mano).
+  input.type = "text";
+  input.inputMode = tipo==="numero" ? "decimal" : "text";
   input.placeholder = tipo==="numero" ? "ej: 1.20 x 0.80" : "ej: Ventana a reponer";
+  document.getElementById("btn-insertar-x-medida").style.display = tipo==="numero" ? "" : "none";
   // La unidad solo tiene sentido para medidas (número) -- para una nota de texto libre, se
   // esconde en vez de dejarla ahí sin usarse.
   document.getElementById("prompt-texto-plano-unidad-wrap").style.display = tipo==="numero" ? "" : "none";
+}
+function insertarXEnMedida(){
+  const input = document.getElementById("prompt-texto-plano-input");
+  const inicio = input.selectionStart ?? input.value.length;
+  const fin = input.selectionEnd ?? input.value.length;
+  const antes = input.value.slice(0, inicio), despues = input.value.slice(fin);
+  const separador = (antes && !antes.endsWith(" ")) ? " x " : "x ";
+  input.value = antes + separador + despues;
+  const nuevaPos = (antes+separador).length;
+  input.focus();
+  input.setSelectionRange(nuevaPos, nuevaPos);
 }
 document.addEventListener("click", (e)=>{
   const chip = e.target.closest("#prompt-texto-plano-unidad .chip-opt");
@@ -16958,6 +16998,60 @@ function renderAnotacionesTocables(){
     btn.onclick = ()=> abrirEdicionAnotacionTexto(idx);
     cont.appendChild(btn);
   });
+}
+// Junta todos los cuadros de texto tipo "número" y los agrupa por medida exacta -- así "1.20 x
+// 0.80" que se repite 5 veces en el plano aparece como UNA fila con cantidad 5, en vez de 5
+// carteles sueltos sin totalizar. Si la medida tiene forma "A x B" (aberturas, ventanas), también
+// calcula el área de cada una y el área total del grupo -- si no tiene esa forma (un solo
+// número, o texto libre), esas columnas quedan vacías.
+function calcularResumenMedidas(){
+  const grupos = {};
+  anotacionesTexto.forEach(a=>{
+    if(a.tipo!=="numero" || !a.valor) return;
+    const clave = a.valor.trim()+"||"+(a.unidad||"");
+    if(!grupos[clave]) grupos[clave] = {valor:a.valor.trim(), unidad:a.unidad||"", cantidad:0};
+    grupos[clave].cantidad++;
+  });
+  const filas = Object.values(grupos).map(g=>{
+    const m = g.valor.match(/^([\d.,]+)\s*[xX×]\s*([\d.,]+)$/);
+    let area = null, areaTotal = null;
+    if(m){
+      const n1 = parseFloat(m[1].replace(",","."));
+      const n2 = parseFloat(m[2].replace(",","."));
+      if(!isNaN(n1) && !isNaN(n2)){
+        area = Math.round(n1*n2*1000)/1000;
+        areaTotal = Math.round(area*g.cantidad*1000)/1000;
+      }
+    }
+    return {...g, area, areaTotal};
+  });
+  filas.sort((a,b)=>b.cantidad-a.cantidad);
+  return filas;
+}
+function abrirTablaMedidas(){
+  const resumen = calcularResumenMedidas();
+  const cont = document.getElementById("foto-avance-cuerpo"); // se reusa el mismo cajón de abajo
+  if(resumen.length===0){
+    cont.innerHTML = `
+      <h2 style="margin-top:0;color:#fff;">📏 Cuadro de medidas</h2>
+      <p style="font-size:12px;color:#9fb0b8;">Todavía no cargaste ningún cuadro de texto tipo "Número" en este plano.</p>
+      <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:none;background:var(--verde);color:#fff;font-weight:800;">Cerrar</button>`;
+  }else{
+    const totalUnidades = resumen.reduce((s,m)=>s+m.cantidad,0);
+    cont.innerHTML = `
+      <h2 style="margin-top:0;color:#fff;">📏 Cuadro de medidas</h2>
+      <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">${totalUnidades} unidad${totalUnidades===1?"":"es"} en total, agrupadas por medida. Este mismo cuadro se agrega solo al reporte PDF del plano.</p>
+      ${resumen.map(m=>`
+        <div style="background:#111820;border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">
+          <div style="flex:1;">
+            <div style="font-size:13px;font-weight:800;">${esc(m.valor)}${m.unidad?" "+esc(m.unidad):""}</div>
+            ${m.areaTotal!==null ? `<div style="font-size:10px;color:#9fb0b8;margin-top:2px;">Área c/u: ${m.area}${m.unidad?" "+m.unidad+"²":""} · Total: ${m.areaTotal}${m.unidad?" "+m.unidad+"²":""}</div>` : ""}
+          </div>
+          <div style="font-size:17px;font-weight:900;color:#5EEAD4;">×${m.cantidad}</div>
+        </div>`).join("")}
+      <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:6px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cerrar</button>`;
+  }
+  document.getElementById("foto-avance-overlay").style.display = "flex";
 }
 // ---------------- Mini barra flotante al doble toque sobre un área ----------------
 // Fuera del modo dibujo, dos toques seguidos en el mismo lugar sobre un área ya marcada abren
