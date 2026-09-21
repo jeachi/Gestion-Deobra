@@ -3412,6 +3412,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <div class="pg-acciones-tit">Uso diario</div>
         <div class="pg-acciones-grid">
           <button type="button" class="pg-accion-btn destacado" onclick="abrirSelectorMesesPresupuesto()"><span class="ico">📅</span><span class="lbl">Ver / editar por mes</span></button>
+          <button type="button" class="pg-accion-btn destacado" onclick="abrirCargaInspeccionPresupuesto()"><span class="ico">✅</span><span class="lbl">Cargar aprobación de Inspección</span></button>
           <button type="button" class="pg-accion-btn destacado" onclick="abrirCurvaPresupuesto()"><span class="ico">📈</span><span class="lbl">Curva de avance</span></button>
           <button type="button" class="pg-accion-btn destacado" onclick="revisarPorcentajesPresupuesto()"><span class="ico">🔍</span><span class="lbl">Buscar errores</span></button>
         </div>
@@ -13961,7 +13962,8 @@ const COLUMNAS_PRESUPUESTO_LISTA = [
   {id:"pct_anterior", lbl:"% Anterior", defecto:false},
   {id:"pct_mes", lbl:"% Este mes", defecto:false},
   {id:"monto_mes", lbl:"$ Certificado este mes", defecto:false},
-  {id:"monto_acum", lbl:"$ Certificado acumulado", defecto:false}
+  {id:"monto_acum", lbl:"$ Certificado acumulado", defecto:false},
+  {id:"origen", lbl:"Origen (declarado / Inspección)", defecto:true}
 ];
 function cargarColumnasPresupuestoElegidas(){
   try{
@@ -13986,7 +13988,8 @@ const COLUMNAS_REPORTE_PRESUPUESTO = [
   {id:"pct_mes", lbl:"% Este mes", defecto:true},
   {id:"pct_acumulado", lbl:"% Acumulado", defecto:true},
   {id:"monto_mes", lbl:"$ Este mes", defecto:true},
-  {id:"monto_acumulado", lbl:"$ Acumulado", defecto:false}
+  {id:"monto_acumulado", lbl:"$ Acumulado", defecto:false},
+  {id:"origen_insp", lbl:"Origen (Declarado/Inspección)", defecto:true}
 ];
 function cargarColumnasReportePresupuesto(){
   try{
@@ -14080,6 +14083,15 @@ function renderListaPresupuesto(){
         if(cols.includes("pct_mes")) meta.push(`Mes: ${(m.enElMes*100).toFixed(0)}%`);
         if(cols.includes("monto_mes")) meta.push(`Este mes: ${formatoMoneda(m.enElMes*it.precioConCoef)}`);
         if(cols.includes("monto_acum")) meta.push(`Acum: ${formatoMoneda(m.acumulado*it.precioConCoef)}`);
+        if(cols.includes("origen") && m.n>0){
+          if(m.origen==="inspeccion"){
+            let txt = "✅ Aprobado por Inspección";
+            if(m.declarado) txt += ` (vos: ${(m.declarado.acumulado*100).toFixed(0)}%)`;
+            meta.push(txt);
+          }else{
+            meta.push("✍ Auto-declarado");
+          }
+        }
         html += `<div class="pg-item-fila">
           <div style="flex:1;">
             <div class="nombre">${esc(it.nombre)}</div>
@@ -14391,6 +14403,355 @@ async function confirmarNuevoMesPresupuesto(mesN){
   actualizarResumenPresupuesto();
   renderListaPresupuesto();
   showToast(`✓ Mes ${mesN} guardado -- ${cambios} ítem${cambios===1?"":"s"} actualizado${cambios===1?"":"s"}`);
+}
+// ---------------- Cargar aprobación de Inspección (reemplaza el % certificado del mes) ----------------
+// La inspección (municipal/provincial, según la obra) manda su propia acta/foja de medición o
+// Excel con lo que ELLOS aprueban -- que no siempre coincide con lo que se cargó a mano en
+// "Agregar un mes nuevo". Esto lee ese archivo (PDF o Excel), intenta reconocer automáticamente
+// cada ítem y su % aprobado, y SIEMPRE lo muestra para revisar/corregir antes de aplicar nada (el
+// formato de cada inspección puede variar de obra en obra, así que nunca se confía a ciegas en lo
+// detectado). Al confirmar, el valor de Inspección pasa a ser el % "oficial" de ese mes -- el que
+// alimenta el resumen, la lista y los reportes -- y lo que se había declarado antes para ese mismo
+// mes queda guardado aparte (campo "declarado" de la entrada), para poder comparar, nunca se pierde.
+
+// Reconoce el formato de "FOJA DE MEDICIÓN" usado por Provincia de Buenos Aires / DGCYE (y otras
+// jurisdicciones con un formato muy similar): una fila de RUBRO ("Nº - Descripción ...
+// %Incidencia . . . %EjecMesRubro %FísicoAcumRubro") seguida de sus filas de ÍTEM ("Nº Código
+// Descripción %Incidencia %AcumAnterior %EjecEsteMes %FísicoAcumulado . ."). Se identifica por la
+// FORMA exacta de cada fila (cuántos números trae y en qué orden), no por nombre de hoja o
+// columna -- así que sigue funcionando aunque cambie el diseño del PDF, mientras mantenga esta
+// estructura de fila. Validado a mano contra un acta real antes de escribir esto.
+function parsearPctFoja(s){
+  const t = (s===null || s===undefined ? "" : String(s)).trim();
+  if(t==="" || t==="." || t==="-") return null;
+  const limpio = t.replace(/%/g,"").replace(/\./g,"").replace(",", ".").trim();
+  const n = parseFloat(limpio);
+  return isNaN(n) ? null : n/100;
+}
+function esPuntoORaya(s){ return s==="." || s==="-" || s===undefined || s===""; }
+// Agrupa palabras sueltas (con su posición X/Y dentro de la página) en filas -- junta las que
+// están a la misma altura (con una tolerancia chica, porque el PDF no da Y idénticos pixel a
+// pixel) y las ordena de izquierda a derecha, como se leería la fila en pantalla.
+function agruparPalabrasEnFilas(palabras, tolerancia){
+  tolerancia = tolerancia || 2.5;
+  const filas = [];
+  palabras.forEach(p=>{
+    let fila = filas.find(f=>Math.abs(f.y-p.y)<=tolerancia);
+    if(!fila){ fila = {y:p.y, palabras:[]}; filas.push(fila); }
+    fila.palabras.push(p);
+  });
+  // Orden de lectura: de arriba hacia abajo -- en el sistema de coordenadas de pdf.js (sin
+  // convertir a viewport) el Y crece hacia ARRIBA, así que "arriba de la página" es el Y más grande.
+  filas.sort((a,b)=>b.y-a.y);
+  filas.forEach(f=>f.palabras.sort((a,b)=>a.x-b.x));
+  return filas.map(f=>f.palabras.map(p=>p.texto));
+}
+// Interpreta una fila de tokens como fila de RUBRO o de ÍTEM de una Foja de Medición -- devuelve
+// null si esta fila puntual no tiene la forma esperada (la gran mayoría de las filas del PDF:
+// encabezados, pie de página, texto suelto, etc. -- se descartan solas, no hace falta reconocerlas
+// una por una a mano).
+function detectarFilaFojaMedicion(tokens){
+  if(tokens.length<8) return null;
+  if(!/^\d{1,3}$/.test(tokens[0])) return null;
+  const rubroNum = parseInt(tokens[0], 10);
+  const cola = tokens.slice(-6);
+  const esRubro = tokens[1]==="-";
+  if(esRubro){
+    // [incidencia, ., ., ., %EjecMesRubro, %FisicoAcumRubro]
+    if(!esPuntoORaya(cola[1]) || !esPuntoORaya(cola[2]) || !esPuntoORaya(cola[3])) return null;
+    const incidencia = parsearPctFoja(cola[0]);
+    const enElMes = parsearPctFoja(cola[4]);
+    const acumulado = parsearPctFoja(cola[5]);
+    if(incidencia===null && enElMes===null && acumulado===null) return null;
+    return {tipo:"rubro", rubroNum, descripcion: tokens.slice(2,-6).join(" ").trim(), incidencia, enElMes, acumulado};
+  }else{
+    // [incidencia (del ítem, no se usa), %AcumAnterior, %EjecEsteMes, %FisicoAcumulado, ., .]
+    if(!esPuntoORaya(cola[4]) || !esPuntoORaya(cola[5])) return null;
+    const anterior = parsearPctFoja(cola[1]);
+    const enElMes = parsearPctFoja(cola[2]);
+    const acumulado = parsearPctFoja(cola[3]);
+    if(anterior===null && enElMes===null && acumulado===null) return null;
+    const descripcion = tokens.slice(2,-6).join(" ").trim();
+    if(!descripcion) return null;
+    return {tipo:"item", rubroNum, codigo: tokens[1], descripcion, anterior: anterior||0, enElMes: enElMes||0, acumulado: acumulado!==null ? acumulado : ((anterior||0)+(enElMes||0))};
+  }
+}
+// Busca en el texto completo un número de Período/Certificado de Obra para SUGERIR en qué mes de
+// la app corresponde cargar esto -- el selector de mes de la pantalla siguiente queda editable de
+// todas formas, esto es solo para no tener que buscarlo a mano en el PDF.
+function sugerirMesDesdeTextoInspeccion(filasTexto){
+  for(const fila of filasTexto){
+    const texto = fila.join(" ");
+    const m = /(?:PER[IÍ]ODO|CERTIFICADO\s+DE\s+OBRA\s*N[ºo°]?)\s*:?\s*(\d{1,3})\b/i.exec(texto);
+    if(m){ const n = parseInt(m[1],10); if(n>0 && n<999) return n; }
+  }
+  return null;
+}
+async function extraerFojaMedicionDePdf(file){
+  if(!asegurarWorkerPdfjs()) throw new Error("pdf.js no disponible (sin señal o CDN bloqueado)");
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+  const filasTexto = [];
+  const filasDetectadas = [];
+  for(let p=1; p<=pdf.numPages; p++){
+    const page = await pdf.getPage(p);
+    const contenido = await page.getTextContent();
+    const palabras = contenido.items.map(it=>({texto:(it.str||"").trim(), x:it.transform[4], y:it.transform[5]})).filter(w=>w.texto!=="");
+    const filas = agruparPalabrasEnFilas(palabras);
+    filas.forEach(tokens=>{
+      filasTexto.push(tokens);
+      const det = detectarFilaFojaMedicion(tokens);
+      if(det) filasDetectadas.push(det);
+    });
+  }
+  return {filas: filasDetectadas, mesSugerido: sugerirMesDesdeTextoInspeccion(filasTexto)};
+}
+// Igual que arriba, pero por si la inspección manda el Excel crudo de la Foja de Medición en vez
+// del PDF -- se busca la fila de encabezado ("Acum.Ant" + "Ejec"/"Físico") en cualquier hoja, y a
+// partir de ahí se leen las mismas 3 columnas de % por ítem.
+function extraerFojaMedicionDeExcel(wb){
+  for(const nombreHoja of wb.SheetNames){
+    const filas = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], {header:1, defval:null});
+    let filaHeader = -1;
+    for(let r=0; r<Math.min(filas.length,30); r++){
+      const textoFila = (filas[r]||[]).map(c=>String(c||"")).join(" ").toUpperCase();
+      if(textoFila.includes("ACUM") && textoFila.includes("ANT") && (textoFila.includes("FISICO") || textoFila.includes("FÍSICO") || textoFila.includes("EJEC"))){ filaHeader = r; break; }
+    }
+    if(filaHeader<0) continue;
+    const headerRow = (filas[filaHeader]||[]).map(c=>String(c||"").toUpperCase());
+    const colAnterior = headerRow.findIndex(c=>c.includes("ACUM") && c.includes("ANT"));
+    const colFisicoAcum = headerRow.findIndex(c=>c.includes("FISICO") || c.includes("FÍSICO"));
+    const colEjecMes = headerRow.findIndex((c,i)=>c.includes("EJEC") && i!==colAnterior);
+    if(colAnterior<0 || colFisicoAcum<0) continue;
+    const items = [];
+    for(let r=filaHeader+1; r<filas.length; r++){
+      const f = filas[r]||[];
+      const rubroNum = parseInt(f[0],10);
+      if(isNaN(rubroNum)) continue;
+      if(String(f[1]||"").trim()==="-") continue; // fila de rubro, no de ítem -- se ignora acá
+      const descripcion = String(f[2]||"").trim();
+      if(!descripcion) continue;
+      const anterior = parsearPctFoja(f[colAnterior]);
+      const enElMes = colEjecMes>=0 ? parsearPctFoja(f[colEjecMes]) : null;
+      const acumulado = parsearPctFoja(f[colFisicoAcum]);
+      if(anterior===null && enElMes===null && acumulado===null) continue;
+      items.push({tipo:"item", rubroNum, codigo:String(f[1]||"").trim(), descripcion, anterior:anterior||0, enElMes:enElMes||0, acumulado: acumulado!==null ? acumulado : ((anterior||0)+(enElMes||0))});
+    }
+    if(items.length>0) return {filas: items, mesSugerido: null};
+  }
+  return {filas: [], mesSugerido: null};
+}
+// Si no se reconoció el formato específico de Foja de Medición (la inspección de esta obra usa
+// otra planilla propia -- varía bastante de una a otra), se ofrece cada fila del Excel tal cual
+// (su texto + el último número/porcentaje que tenga) para que el emparejamiento la intente igual,
+// siempre bajo revisión manual en la pantalla siguiente.
+function extraerFilasGenericoExcel(wb){
+  const filas = [];
+  wb.SheetNames.forEach(nombreHoja=>{
+    const datos = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], {header:1, defval:null});
+    datos.forEach(f=>{
+      if(!f || f.length===0) return;
+      const textos = f.filter(c=>c!==null && c!==undefined && isNaN(parseFloat(String(c).replace(",",".")))).map(c=>String(c).trim()).filter(Boolean);
+      const descripcion = textos.join(" ").trim();
+      if(!descripcion) return;
+      const numeros = f.map(c=>parsearPctFoja(c)).filter(n=>n!==null);
+      if(numeros.length===0) return;
+      filas.push({tipo:"item", rubroNum:null, codigo:"", descripcion, anterior:0, enElMes:0, acumulado: numeros[numeros.length-1]});
+    });
+  });
+  return filas;
+}
+// Compara dos nombres de ítem ya normalizados y da un puntaje de 0 a 1 según cuántas palabras
+// "importantes" (3 letras o más) comparten -- así una descripción truncada por el ancho del PDF
+// ("Cerco de obra - Panel fenólico de 15 mm y estructura...") igual matchea bien contra el nombre
+// completo del ítem en la app, aunque no sean idénticos carácter a carácter.
+function puntajeCoincidenciaNombres(a, b){
+  const palabrasA = new Set(normalizarBusqueda(a).split(/[^a-z0-9]+/).filter(w=>w.length>=3));
+  const palabrasB = new Set(normalizarBusqueda(b).split(/[^a-z0-9]+/).filter(w=>w.length>=3));
+  if(palabrasA.size===0 || palabrasB.size===0) return 0;
+  let comunes = 0;
+  palabrasA.forEach(w=>{ if(palabrasB.has(w)) comunes++; });
+  return comunes / Math.max(palabrasA.size, palabrasB.size);
+}
+// Empareja cada fila detectada en el archivo de Inspección contra el ítem del presupuesto que más
+// se le parece -- primero probando SOLO contra los ítems del mismo número de rubro (si el archivo
+// lo trae y coincide con la numeración de la app), y si ahí no hay nada bueno, contra todos. Un
+// mismo ítem nunca se usa dos veces (asignación golosa por mejor puntaje primero). Esto es de
+// todas formas solo un PUNTO DE PARTIDA -- la pantalla de revisión siempre deja corregir a mano.
+function emparejarInspeccionConPresupuesto(filasDetectadas){
+  const itemsPorRubro = {};
+  presupuestoItems.forEach((it,idx)=>{
+    const k = String(it.rubro);
+    (itemsPorRubro[k] = itemsPorRubro[k]||[]).push(idx);
+  });
+  const candidatos = [];
+  filasDetectadas.forEach((fila, filaIdx)=>{
+    const scope = (fila.rubroNum!==null && itemsPorRubro[String(fila.rubroNum)]) ? itemsPorRubro[String(fila.rubroNum)] : presupuestoItems.map((_,i)=>i);
+    let mejorIdx = -1, mejorPuntaje = 0;
+    scope.forEach(idx=>{
+      const p = puntajeCoincidenciaNombres(fila.descripcion, presupuestoItems[idx].nombre);
+      if(p>mejorPuntaje){ mejorPuntaje = p; mejorIdx = idx; }
+    });
+    if(mejorPuntaje<0.5 && fila.rubroNum!==null){
+      presupuestoItems.forEach((it,idx)=>{
+        const p = puntajeCoincidenciaNombres(fila.descripcion, it.nombre);
+        if(p>mejorPuntaje){ mejorPuntaje = p; mejorIdx = idx; }
+      });
+    }
+    if(mejorPuntaje>=0.5) candidatos.push({filaIdx, itemIdx: mejorIdx, puntaje: mejorPuntaje});
+  });
+  candidatos.sort((a,b)=>b.puntaje-a.puntaje);
+  const filaUsada = new Set(), itemUsado = new Set();
+  const emparejados = [];
+  candidatos.forEach(c=>{
+    if(filaUsada.has(c.filaIdx) || itemUsado.has(c.itemIdx)) return;
+    filaUsada.add(c.filaIdx); itemUsado.add(c.itemIdx);
+    emparejados.push({...filasDetectadas[c.filaIdx], itemIdx: c.itemIdx, puntaje: c.puntaje});
+  });
+  const sinEmparejar = filasDetectadas.filter((_,i)=>!filaUsada.has(i));
+  return {emparejados, sinEmparejar};
+}
+// ---------------- Pantalla: elegir mes + archivo ----------------
+let inspeccionArchivoNombre = "";
+function abrirCargaInspeccionPresupuesto(){
+  if(presupuestoItems.length===0){ showToast("Cargá primero el presupuesto de esta obra."); return; }
+  const sugerido = mesActualPresupuesto() || (maxMesCargado()+1) || 1;
+  const html = `
+    <h2 style="margin-top:0;">🔍 Cargar aprobación de Inspección</h2>
+    <p class="helper">Subí el acta/foja de medición o Excel que te mandó la inspección -- se intenta leer el % aprobado por ítem automáticamente. SIEMPRE se muestra para revisar antes de aplicar nada; lo que hayas declarado vos para ese mes queda guardado aparte, para comparar.</p>
+    <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">¿Para qué mes es esta aprobación?</label>
+    <input type="number" id="insp-mes-input" min="1" value="${sugerido}" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;font-weight:800;text-align:center;box-sizing:border-box;margin-bottom:12px;">
+    <input type="file" id="insp-input-archivo" accept=".pdf,.xlsx,.xls,.csv" style="display:none;" onchange="onArchivoInspeccionSeleccionado(this)">
+    <button class="btn btn-primary" style="width:100%;" onclick="document.getElementById('insp-input-archivo').click()">📎 Elegir archivo (PDF o Excel)</button>
+    <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cancelar</button>
+    <div id="insp-estado" style="margin-top:10px;font-size:11.5px;color:var(--tinta-suave);"></div>`;
+  abrirPromptGenerico(html);
+}
+async function onArchivoInspeccionSeleccionado(input){
+  const file = input.files[0];
+  input.value = "";
+  if(!file) return;
+  const estado = document.getElementById("insp-estado");
+  if(estado) estado.textContent = "Leyendo el archivo...";
+  try{
+    let resultado;
+    const esPdf = /\.pdf$/i.test(file.name) || file.type==="application/pdf";
+    if(esPdf){
+      resultado = await extraerFojaMedicionDePdf(file);
+    }else{
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, {type:"array", cellDates:true});
+      resultado = extraerFojaMedicionDeExcel(wb);
+      if(!resultado.filas || resultado.filas.length===0){
+        resultado = {filas: extraerFilasGenericoExcel(wb), mesSugerido:null};
+      }
+    }
+    if(!resultado.filas || resultado.filas.length===0){
+      showToast("No pude reconocer ninguna fila con datos en ese archivo -- revisá que sea el acta/foja de medición o el Excel de la inspección.");
+      if(estado) estado.textContent = "";
+      return;
+    }
+    const mesInput = document.getElementById("insp-mes-input");
+    if(resultado.mesSugerido && mesInput) mesInput.value = resultado.mesSugerido;
+    const mesN = parseInt((mesInput && mesInput.value) || "1", 10) || 1;
+    const {emparejados, sinEmparejar} = emparejarInspeccionConPresupuesto(resultado.filas.filter(f=>f.tipo==="item"));
+    inspeccionArchivoNombre = file.name;
+    renderRevisionInspeccion(emparejados, sinEmparejar, mesN);
+  }catch(e){
+    console.error("Cargar aprobación de Inspección:", e);
+    showToast("No se pudo leer el archivo: "+e.message);
+    if(estado) estado.textContent = "";
+  }
+}
+// ---------------- Pantalla: revisar/corregir antes de aplicar ----------------
+let inspeccionEmparejadosActuales = [];
+function renderRevisionInspeccion(emparejados, sinEmparejar, mesN){
+  inspeccionEmparejadosActuales = emparejados;
+  const filasHtml = emparejados.map((f,i)=>{
+    const it = presupuestoItems[f.itemIdx];
+    const entradaActual = obtenerEntradaMes(it, mesN);
+    const inconsistente = Math.abs(f.anterior + f.enElMes - f.acumulado) > 0.015;
+    return `<div class="insp-fila" data-idx="${i}" style="padding:9px 4px;border-bottom:1px solid var(--borde);">
+      <div style="display:flex;align-items:flex-start;gap:8px;">
+        <input type="checkbox" class="insp-incluir" checked style="margin-top:3px;">
+        <div style="flex:1;">
+          <div style="font-size:11.5px;font-weight:700;">${esc(it.nombre)}</div>
+          <div style="font-size:9.5px;color:var(--tinta-suave);">Detectado: "${esc(f.descripcion)}" · coincidencia ${(f.puntaje*100).toFixed(0)}%${entradaActual.origen==="inspeccion"?" · ya tenía una aprobación de Inspección cargada para este mes":""}</div>
+          ${inconsistente?`<div style="font-size:9.5px;color:#B45309;font-weight:700;">⚠ Anterior + Este mes no da el Acumulado -- revisá los valores</div>`:""}
+          <div style="display:flex;gap:6px;margin-top:5px;">
+            <label style="font-size:9.5px;">Ant.<input type="number" class="insp-anterior" min="0" max="100" step="0.1" value="${(f.anterior*100).toFixed(1)}" style="width:52px;padding:5px;border:1.5px solid var(--borde);border-radius:6px;font-size:11px;text-align:center;">%</label>
+            <label style="font-size:9.5px;">Mes<input type="number" class="insp-mes" min="-100" max="100" step="0.1" value="${(f.enElMes*100).toFixed(1)}" style="width:52px;padding:5px;border:1.5px solid var(--borde);border-radius:6px;font-size:11px;text-align:center;">%</label>
+            <label style="font-size:9.5px;">Acum.<input type="number" class="insp-acumulado" min="0" max="100" step="0.1" value="${(f.acumulado*100).toFixed(1)}" style="width:52px;padding:5px;border:1.5px solid var(--borde);border-radius:6px;font-size:11px;text-align:center;">%</label>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+  const sinEmparejarHtml = sinEmparejar.length>0 ? `
+    <div style="margin-top:14px;padding:10px;background:var(--fondo);border-radius:9px;">
+      <div style="font-weight:700;font-size:11.5px;margin-bottom:6px;">${sinEmparejar.length} fila${sinEmparejar.length===1?"":"s"} del archivo sin ítem coincidente en el presupuesto:</div>
+      ${sinEmparejar.slice(0,20).map(f=>`<div style="font-size:10px;color:var(--tinta-suave);padding:2px 0;">• "${esc(f.descripcion)}" (${(f.acumulado*100).toFixed(1)}%)</div>`).join("")}
+      ${sinEmparejar.length>20?`<div style="font-size:10px;color:var(--tinta-suave);">... y ${sinEmparejar.length-20} más</div>`:""}
+    </div>` : "";
+  const html = `
+    <h2 style="margin-top:0;">🔍 Revisar antes de aplicar — Mes ${mesN}</h2>
+    <p class="helper">Se encontraron ${emparejados.length} ítem${emparejados.length===1?"":"s"} coincidentes en el archivo. Revisá los valores (se pueden corregir a mano) y destildá los que no quieras aplicar.</p>
+    <div id="insp-lista-revision">${filasHtml || '<p class="helper">No se detectó ningún ítem coincidente.</p>'}</div>
+    ${sinEmparejarHtml}
+    <button class="btn btn-primary" style="width:100%;margin-top:14px;" onclick="confirmarInspeccionPresupuesto(${mesN})">✓ Aplicar aprobación de Inspección — Mes ${mesN}</button>
+    <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cancelar</button>`;
+  abrirPromptGenerico(html);
+}
+// ---------------- Confirmar: la aprobación de Inspección pasa a ser el % oficial del mes ----------------
+// Lo que ya estaba declarado para ese mismo mes (si no venía ya de otra carga de Inspección) se
+// guarda en "declarado" de la propia entrada, sin perderse -- ver renderListaPresupuesto (columna
+// "Origen") para dónde se muestra esa comparación. Si el ítem ya tenía meses POSTERIORES cargados,
+// se reencadena su "Anterior"/"Acumulado" a partir de este valor corregido, para que no queden
+// arrastrando el acumulado viejo como si esta corrección no hubiera pasado.
+async function confirmarInspeccionPresupuesto(mesN){
+  const filas = document.querySelectorAll("#insp-lista-revision .insp-fila");
+  let cambios = 0;
+  filas.forEach(filaEl=>{
+    const idx = parseInt(filaEl.dataset.idx, 10);
+    const incluir = filaEl.querySelector(".insp-incluir").checked;
+    if(!incluir) return;
+    const f = inspeccionEmparejadosActuales[idx];
+    if(!f) return;
+    const it = presupuestoItems[f.itemIdx];
+    if(!it) return;
+    const anterior = Math.max(0, Math.min(1, (parseFloat(filaEl.querySelector(".insp-anterior").value)||0)/100));
+    const enElMes = (parseFloat(filaEl.querySelector(".insp-mes").value)||0)/100;
+    const acumulado = Math.max(0, Math.min(1, (parseFloat(filaEl.querySelector(".insp-acumulado").value)||0)/100));
+    it.historialMeses = it.historialMeses || [];
+    let entrada = it.historialMeses.find(m=>m.n===mesN);
+    if(entrada){
+      if(entrada.origen!=="inspeccion"){
+        entrada.declarado = {anterior:entrada.anterior, enElMes:entrada.enElMes, acumulado:entrada.acumulado, monto:entrada.monto};
+      }
+      entrada.anterior = anterior; entrada.enElMes = enElMes; entrada.acumulado = acumulado;
+      entrada.monto = enElMes*it.precioConCoef;
+      entrada.origen = "inspeccion";
+      entrada.fuenteInsp = {archivo: inspeccionArchivoNombre, fecha: hoyISO()};
+    }else{
+      entrada = {n:mesN, anterior, enElMes, acumulado, monto: enElMes*it.precioConCoef, origen:"inspeccion", fuenteInsp:{archivo: inspeccionArchivoNombre, fecha: hoyISO()}};
+      it.historialMeses.push(entrada);
+      it.historialMeses.sort((a,b)=>a.n-b.n);
+    }
+    let encadenado = acumulado;
+    it.historialMeses.filter(m=>m.n>mesN).sort((a,b)=>a.n-b.n).forEach(m=>{
+      m.anterior = encadenado;
+      m.acumulado = Math.min(1, m.anterior + m.enElMes);
+      m.monto = m.enElMes * it.precioConCoef;
+      encadenado = m.acumulado;
+    });
+    cambios++;
+  });
+  if(cambios===0){ showToast("No quedó ningún ítem tildado para aplicar."); return; }
+  await guardarPresupuestoObra();
+  cerrarPromptGenerico();
+  actualizarResumenPresupuesto();
+  renderListaPresupuesto();
+  showToast(`✓ Aprobación de Inspección aplicada -- Mes ${mesN}, ${cambios} ítem${cambios===1?"":"s"}`);
 }
 // ---------------- Revisar porcentajes -- encuentra ítems con más de 100% o que bajaron entre meses ----------------
 // ---------------- Ajustar ítems para que cierren exacto con el contrato ----------------
@@ -14974,7 +15335,8 @@ function generarPdfMesActualPresupuesto(){
     {id:"pct_mes", th:"% Este mes", val:it=>(obtenerEntradaMes(it,n).enElMes*100).toFixed(2)+"%", align:"center"},
     {id:"pct_acumulado", th:"% Acumulado", val:it=>(obtenerEntradaMes(it,n).acumulado*100).toFixed(2)+"%", align:"center"},
     {id:"monto_mes", th:"$ Este mes", val:it=>formatoMoneda(obtenerEntradaMes(it,n).enElMes*it.precioConCoef), align:"right"},
-    {id:"monto_acumulado", th:"$ Acumulado", val:it=>formatoMoneda(obtenerEntradaMes(it,n).acumulado*it.precioConCoef), align:"right"}
+    {id:"monto_acumulado", th:"$ Acumulado", val:it=>formatoMoneda(obtenerEntradaMes(it,n).acumulado*it.precioConCoef), align:"right"},
+    {id:"origen_insp", th:"Origen", val:it=>obtenerEntradaMes(it,n).origen==="inspeccion" ? "✅ Insp." : "Declarado", align:"center"}
   ].filter(c=>cols.includes(c.id));
   const rubros = {};
   presupuestoItems.forEach(it=>{
