@@ -994,7 +994,11 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
 .bg-item:hover{background:var(--fondo);}
 .bg-item .t{font-size:13.5px;font-weight:700;color:var(--tinta);}
 .bg-item .s{font-size:11.5px;color:var(--tinta-suave);margin-top:2px;}
-.bg-vacio{padding:26px 16px;text-align:center;color:var(--tinta-suave);font-size:13px;}
+.bg-vacio{padding:34px 20px 30px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.bg-vacio-ico{width:46px;height:46px;border-radius:50%;background:var(--verde-claro);color:var(--verde);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.bg-vacio-ico svg{width:22px;height:22px;}
+.bg-vacio-tit{font-size:14px;font-weight:700;color:var(--tinta);}
+.bg-vacio-sub{font-size:12px;color:var(--tinta-suave);line-height:1.45;max-width:320px;}
 
 .menu-grupo-tit{font-size:10.5px;font-weight:800;color:var(--nav-acento, var(--verde));text-transform:uppercase;letter-spacing:.5px;padding:14px 10px 6px;display:flex;align-items:center;gap:7px;}
 .menu-grupo-ico{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;font-size:13px;flex-shrink:0;}
@@ -11171,12 +11175,23 @@ function iconoGrupoHtml(grupoId, emoji){
 // ---------------- Buscador global ----------------
 // Busca de una sola vez en todos los módulos que ya están cargados en memoria. No consulta
 // Firestore: usa lo que la app ya trajo, así funciona al instante y también sin señal.
+// Iconos decorativos (aria-hidden): el texto de al lado ya dice todo, así que un lector de
+// pantalla no necesita anunciarlos aparte.
+const ICO_BG_BUSCAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="20" y1="20" x2="15.3" y2="15.3"></line></svg>`;
+const ICO_BG_SIN_RESULTADOS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="20" y1="20" x2="15.3" y2="15.3"></line><line x1="8" y1="8" x2="13" y2="13"></line><line x1="13" y1="8" x2="8" y2="13"></line></svg>`;
+function bgVacioHtml(icoSvg, titulo, sub){
+  return `<div class="bg-vacio"><div class="bg-vacio-ico">${icoSvg}</div>` +
+    `<div class="bg-vacio-tit">${titulo}</div>` +
+    (sub ? `<div class="bg-vacio-sub">${sub}</div>` : "") +
+    `</div>`;
+}
 function abrirBuscadorGlobal(){
   document.getElementById("buscador-global-overlay").style.display = "flex";
   const input = document.getElementById("buscador-global-input");
   input.value = "";
-  document.getElementById("buscador-global-resultados").innerHTML =
-    `<div class="bg-vacio">Escribí para buscar en trabajadores, pedidos, remitos, herramientas, observaciones, minutas y el presupuesto.</div>`;
+  document.getElementById("buscador-global-resultados").innerHTML = bgVacioHtml(ICO_BG_BUSCAR,
+    "Buscá en toda la obra",
+    "Trabajadores, pedidos, remitos, herramientas, observaciones, minutas y presupuesto.");
   setTimeout(()=>input.focus(), 120);
 }
 function cerrarBuscadorGlobal(){
@@ -11191,7 +11206,7 @@ function ejecutarBusquedaGlobal(){
   const crudo = document.getElementById("buscador-global-input").value.trim();
   const cont = document.getElementById("buscador-global-resultados");
   if(crudo.length < 2){
-    cont.innerHTML = `<div class="bg-vacio">Escribí al menos 2 letras.</div>`;
+    cont.innerHTML = bgVacioHtml(ICO_BG_BUSCAR, "Escribí al menos 2 letras");
     return;
   }
   const q = normalizarBusqueda(crudo);
@@ -11235,7 +11250,9 @@ function ejecutarBusquedaGlobal(){
   }))});
 
   if(grupos.length===0){
-    cont.innerHTML = `<div class="bg-vacio">Sin resultados para "${esc(crudo)}".<br><span style="font-size:11.5px;">Ojo: solo busca en lo que ya se cargó en este dispositivo.</span></div>`;
+    cont.innerHTML = bgVacioHtml(ICO_BG_SIN_RESULTADOS,
+      `Sin resultados para "${esc(crudo)}"`,
+      "Probá con otro término o revisá cómo lo escribiste. Ojo: solo busca en lo que ya se cargó en este dispositivo.");
     return;
   }
   cont.innerHTML = grupos.map(g=>{
