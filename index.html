@@ -17357,16 +17357,31 @@ let planosIndex = []; // [{id, nombre, fecha}] del plano de la obra actual
 let historialPoligonos = [];
 let historialFuturo = []; // pila de "rehacer" -- se vacía cada vez que se hace una acción nueva
 const MAX_HISTORIAL_DESHACER = 15;
+// El historial vivía solo en memoria: navegar a otra pestaña por error (o que el celular mate la
+// pestaña en segundo plano) lo borraba de un momento a otro, con piezas ya modificadas y sin forma
+// de volver atrás. Se guarda además en sessionStorage por ID de plano (no en localStorage: es
+// intencional que no sobreviva a cerrar la pestaña del todo, ni que un plano viejo abierto en otra
+// pestaña se pise con este) -- así, volver al MISMO plano en la misma sesión del navegador
+// recupera el historial tal como estaba. Nunca se restaura el historial de OTRO plano (mismo
+// resguardo que ya tenía esto antes).
+function persistirHistorialPlano(){
+  if(!planoActualId) return;
+  try{
+    sessionStorage.setItem("undo_historial_plano_"+planoActualId, JSON.stringify({historialPoligonos, historialFuturo}));
+  }catch(e){} // storage lleno o bloqueado (modo privado) -- el historial en memoria sigue funcionando igual
+}
 function guardarEnHistorial(){
   historialPoligonos.push(JSON.stringify({poligonos, anotacionesTexto}));
   if(historialPoligonos.length > MAX_HISTORIAL_DESHACER) historialPoligonos.shift();
   historialFuturo = []; // toda acción nueva invalida lo que se podía "rehacer" (igual que en Word/Excel)
+  persistirHistorialPlano();
 }
 async function deshacerGeneral(){
   if(historialPoligonos.length===0){ showToast("No hay nada para deshacer todavía."); return; }
   historialFuturo.push(JSON.stringify({poligonos, anotacionesTexto}));
   if(historialFuturo.length > MAX_HISTORIAL_DESHACER) historialFuturo.shift();
   const snapshot = JSON.parse(historialPoligonos.pop());
+  persistirHistorialPlano();
   poligonos = snapshot.poligonos;
   anotacionesTexto = snapshot.anotacionesTexto || [];
   if(indiceEditando!==null){
@@ -17387,6 +17402,7 @@ async function rehacerGeneral(){
   if(historialFuturo.length===0){ showToast("No hay nada para rehacer."); return; }
   historialPoligonos.push(JSON.stringify({poligonos, anotacionesTexto}));
   const snapshot = JSON.parse(historialFuturo.pop());
+  persistirHistorialPlano();
   poligonos = snapshot.poligonos;
   anotacionesTexto = snapshot.anotacionesTexto || [];
   if(indiceEditando!==null){
@@ -17654,9 +17670,20 @@ async function seleccionarPlano(id){
   gruposExpandidosActividad = new Set();
   // Esto es más serio: el historial de "Deshacer" también tiene que arrancar de cero -- si no,
   // tocar "↩️ Deshacer" en ESTE plano podía traer de vuelta datos viejos de OTRO plano que se
-  // había editado antes en la misma sesión, y peor: guardarlos encima de este.
+  // había editado antes en la misma sesión, y peor: guardarlos encima de este. Antes de resetear
+  // a vacío, probamos si HAY un historial guardado para este mismo ID de plano (por ejemplo,
+  // porque el usuario se fue a otra pestaña por error y volvió) -- si lo hay, se recupera en vez
+  // de perderse; si no, arranca vacío igual que siempre.
   historialPoligonos = [];
   historialFuturo = []; // mismo motivo que arriba -- no puede traer de vuelta datos de OTRO plano
+  try{
+    const guardado = sessionStorage.getItem("undo_historial_plano_"+id);
+    if(guardado){
+      const datos = JSON.parse(guardado);
+      historialPoligonos = datos.historialPoligonos || [];
+      historialFuturo = datos.historialFuturo || [];
+    }
+  }catch(e){}
   metrosPorPixelPlano = null;
   document.getElementById("card-canvas").style.display = "none";
   document.getElementById("card-actividades").style.display = "none";
