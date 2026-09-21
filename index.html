@@ -11003,13 +11003,26 @@ function actualizarTotalesCertForm(){
   document.getElementById("cf-saldo-pendiente").textContent = formatoMoneda(saldoPendiente);
 }
 function guardarCertificado(btn){
-  // Si algún ítem quedó con % por debajo del certificado anterior, no guardamos directo: pedimos
-  // un segundo toque en el mismo botón (mismo mecanismo que ya usás para eliminar), porque en el
-  // 99% de los casos eso es un error de tipeo y no un retroceso real de obra.
+  // Dos motivos posibles para pedir un segundo toque de confirmación antes de guardar (mismo
+  // mecanismo que ya usás para eliminar): que algún ítem quedó con % por debajo del certificado
+  // anterior, o que la fecha de este certificado queda antes que la del certificado que lo
+  // precede en la secuencia. El % de cada ítem se acumula recorriendo c.certificados EN ORDEN DE
+  // ARREGLO (no por fecha) -- si la fecha nueva queda antes que la del certificado anterior en
+  // ESE orden, el "% anterior" que se le calculó no tiene sentido real (estaría acumulando sobre
+  // algo que en el calendario pasó DESPUÉS). En el 99% de los casos, cualquiera de las dos cosas
+  // es un error de tipeo, no algo real -- por eso se avisa y se pide confirmar, no se bloquea.
   const retrocesos = certFormItems.filter(f=>f.pctAcumulado < f.pctAnterior - 0.0001);
-  if(retrocesos.length>0 && btn && btn.dataset.confirmando!=="1"){
-    const nombres = retrocesos.map(f=>f.nombre).join(", ");
-    showToast(`El % de "${nombres}" quedó por debajo del certificado anterior. Tocá "Guardar" de nuevo si es correcto.`);
+  const c = contratistasCache[contratistaParaCertificarId];
+  const fechaNueva = document.getElementById("cf-fecha").value;
+  const certAnteriorEnOrden = certificadoEditandoIndex!==null
+    ? (c.certificados||[])[certificadoEditandoIndex-1]
+    : (c.certificados||[])[(c.certificados||[]).length-1];
+  const fechaFueraDeOrden = !!(fechaNueva && certAnteriorEnOrden && certAnteriorEnOrden.fecha && fechaNueva < certAnteriorEnOrden.fecha);
+  if((retrocesos.length>0 || fechaFueraDeOrden) && btn && btn.dataset.confirmando!=="1"){
+    const avisos = [];
+    if(retrocesos.length>0) avisos.push(`El % de "${retrocesos.map(f=>f.nombre).join(", ")}" quedó por debajo del certificado anterior.`);
+    if(fechaFueraDeOrden) avisos.push(`Este certificado queda fechado antes que el N° ${certAnteriorEnOrden.numero} (${certAnteriorEnOrden.fecha}), del que toma el "% anterior".`);
+    showToast(avisos.join(" ")+' Tocá "Guardar" de nuevo si es correcto.');
     confirmarDoble(btn, "⚠ Tocá de nuevo para confirmar", ()=>guardarCertificadoConfirmado());
     return;
   }
