@@ -15028,7 +15028,7 @@ function abrirCronogramaPresupuesto(){
         <button class="btn btn-outline" style="flex:1;" onclick="cerrarPromptGenerico()">Cerrar</button>
       </div>
     </div>
-    <p class="helper" style="margin-bottom:8px;">% Acumulado de cada ítem en los meses elegidos -- verde = 100%, celeste = en progreso.</p>
+    <p class="helper" style="margin-bottom:8px;">% Acumulado de cada ítem en los meses elegidos -- verde = 100%, celeste = en progreso. 🔍 = ese mes lo ajustó la Inspección; abajo, en gris, lo que habías propuesto vos -- comparalos mes a mes para calibrar la propuesta de los meses siguientes.</p>
     <div id="cronograma-tabla-wrap" style="overflow-x:auto;"></div>`;
   abrirPromptGenerico(html);
   renderTablaCronograma();
@@ -15051,7 +15051,14 @@ function renderTablaCronograma(){
       meses.forEach(n=>{
         const m = obtenerEntradaMes(it, n);
         const bg = m.acumulado>=1 ? "background:rgba(14,148,136,.18);" : m.acumulado>0 ? "background:rgba(59,130,246,.12);" : "";
-        filas += `<td style="text-align:center;padding:6px 4px;font-size:10.5px;font-weight:700;white-space:nowrap;${bg}">${(m.acumulado*100).toFixed(0)}%</td>`;
+        // Si ese mes vino de una carga de Inspección, se muestra el % aprobado (el oficial) arriba
+        // y lo que se había propuesto/declarado antes, más chico y gris, debajo -- así, mes a mes,
+        // se ve de un vistazo cuánto suele ajustar el inspector para poder calibrar la propuesta de
+        // los meses siguientes en base a ese patrón.
+        const celda = (m.origen==="inspeccion" && m.declarado)
+          ? `${(m.acumulado*100).toFixed(0)}%🔍<div style="font-size:8.5px;font-weight:600;color:var(--tinta-suave);">prop: ${(m.declarado.acumulado*100).toFixed(0)}%</div>`
+          : `${(m.acumulado*100).toFixed(0)}%`;
+        filas += `<td style="text-align:center;padding:6px 4px;font-size:10.5px;font-weight:700;white-space:nowrap;${bg}">${celda}</td>`;
       });
       filas += `</tr>`;
     });
