@@ -3805,6 +3805,17 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   </div>
 </div>
 
+<div id="prompt-pagina-pdf-overlay" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,.55);z-index:1001;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:12px;padding:16px;max-width:340px;width:100%;">
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--verde-oscuro);">Este PDF tiene varias hojas — ¿cuál es el plano que querés cargar?</div>
+    <select id="prompt-pagina-pdf-select" style="width:100%;padding:9px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;margin-bottom:10px;box-sizing:border-box;"></select>
+    <div class="row-flex">
+      <button class="btn btn-outline" onclick="cerrarPromptPaginaPdf()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarPromptPaginaPdf()">📐 Usar esta página</button>
+    </div>
+  </div>
+</div>
+
 <div id="prompt-renombrar-plano-overlay" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,.55);z-index:1001;align-items:center;justify-content:center;padding:16px;">
   <div style="background:#fff;border-radius:12px;padding:16px;max-width:340px;width:100%;">
     <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--verde-oscuro);">✏️ Cambiar el nombre de este plano</div>
@@ -18145,9 +18156,17 @@ async function confirmarPromptNombrePlano(){
   await procesarNuevoPlano(file, nombre);
 }
 async function procesarNuevoPlano(file, nombre){
+  let pagina = 1;
+  if(file.type === "application/pdf"){
+    const totalPaginas = await contarPaginasPdf(file);
+    if(totalPaginas > 1){
+      pagina = await elegirPaginaPdf(totalPaginas);
+      if(pagina===null) return; // canceló el selector de página
+    }
+  }
   showToast("Cargando plano...");
   let dataUrlCrudo;
-  try{ dataUrlCrudo = await cargarImagenDesdeArchivo(file); }
+  try{ dataUrlCrudo = await cargarImagenDesdeArchivo(file, pagina); }
   catch(e){ showToast("No se pudo leer ese archivo. Probá con otro PDF o imagen."); return; }
   // Antes de guardar, pasa por el mismo editor de recortar/girar que ya usás en Herramientas y
   // Observaciones -- pero en modo "solo recorte" (sin lápiz/círculo/flecha), para que no queden
@@ -20401,15 +20420,49 @@ function buscarPuntoCercano(x, y, excluirIndice){
   return mejor;
 }
 
-// Convierte el archivo elegido (PDF o imagen) en un dataURL -- directo, sin pasos de más.
-function cargarImagenDesdeArchivo(file){
+// Cuenta las páginas de un PDF sin convertir nada todavía -- para decidir si hace falta
+// preguntar cuál usar (un PDF de una sola hoja no necesita preguntar nada). Antes esto ni se
+// miraba: un set de planos con varias hojas en un mismo PDF (algo común) perdía en silencio todo
+// lo que no fuera la primera hoja.
+async function contarPaginasPdf(file){
+  if(!asegurarWorkerPdfjs()) return 1;
+  try{
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    return pdf.numPages;
+  }catch(e){ return 1; }
+}
+let resolverPaginaPdfElegida = null;
+function elegirPaginaPdf(totalPaginas){
+  return new Promise(resolve=>{
+    resolverPaginaPdfElegida = resolve;
+    const sel = document.getElementById("prompt-pagina-pdf-select");
+    sel.innerHTML = Array.from({length: totalPaginas}, (_,i)=>`<option value="${i+1}">Página ${i+1} de ${totalPaginas}</option>`).join("");
+    document.getElementById("prompt-pagina-pdf-overlay").style.display = "flex";
+  });
+}
+function cerrarPromptPaginaPdf(){
+  document.getElementById("prompt-pagina-pdf-overlay").style.display = "none";
+  if(resolverPaginaPdfElegida) resolverPaginaPdfElegida(null);
+  resolverPaginaPdfElegida = null;
+}
+function confirmarPromptPaginaPdf(){
+  const pagina = parseInt(document.getElementById("prompt-pagina-pdf-select").value, 10);
+  document.getElementById("prompt-pagina-pdf-overlay").style.display = "none";
+  if(resolverPaginaPdfElegida) resolverPaginaPdfElegida(pagina);
+  resolverPaginaPdfElegida = null;
+}
+// Convierte el archivo elegido (PDF o imagen) en un dataURL -- directo, sin pasos de más. Para un
+// PDF de varias hojas, "pagina" (1 en base) elige cuál -- sin ese parámetro usa la primera,
+// mismo comportamiento de siempre para quien llama sin pasarlo.
+function cargarImagenDesdeArchivo(file, pagina){
   return new Promise(async (resolve, reject)=>{
     if(file.type === "application/pdf"){
       try{
         if(!asegurarWorkerPdfjs()) throw new Error("pdf.js no disponible (sin señal o CDN bloqueado)");
         const buf = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({data: buf}).promise;
-        const page = await pdf.getPage(1);
+        const page = await pdf.getPage(pagina || 1);
         const viewport = page.getViewport({scale: 2});
         const canvasTemp = document.createElement("canvas");
         canvasTemp.width = viewport.width; canvasTemp.height = viewport.height;
