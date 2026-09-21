@@ -20,6 +20,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<!-- Storage (opcional, defer): sube los planos de avance a Firebase Storage en vez de guardarlos
+     como base64 adentro de un documento de Firestore -- así no hace falta comprimirlos tanto para
+     entrar en el límite de ~1MB por documento. Si el proyecto de Firebase todavía no tiene Storage
+     habilitado, guardarPlanoAvanceImagen() sigue funcionando exactamente como antes (cae sola al
+     modo anterior) -- no hace falta esto para que la app funcione. -->
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <!-- defer: ya no configura nada de una al cargar (ver asegurarWorkerPdfjs en el script principal,
      que lo hace recién cuando hace falta) -- así esta librería pesada no bloquea el primer
      renderizado de la app mientras se descarga. -->
@@ -17760,11 +17766,30 @@ async function seleccionarPlano(id){
   const obra = claveObraPlanoAvance();
   if(!obra) return;
   try{
-    const rImg = await window.storage.get(`plano_avance_imagen_${obra}_${id}`, true);
-    if(rImg && rImg.value){
-      const img = new Image();
-      await new Promise((resolve,reject)=>{ img.onload=resolve; img.onerror=reject; img.src = rImg.value; });
-      imagenPlano = img;
+    // Si en algún momento se subió una versión de alta resolución a Firebase Storage (ver
+    // guardarPlanoAvanceImagen/subirImagenPlanoAStorage), se intenta usar esa primero -- pero es
+    // 100% opcional: si Storage no está habilitado en la consola, si el CORS del bucket no está
+    // configurado, si la URL venció o si hay cualquier otro problema de red, simplemente se sigue
+    // de largo y se carga la copia base64 de siempre, que es la que SIEMPRE existe (se guarda en
+    // Firestore junto con el resto del plano) y nunca depende de configuración externa.
+    let cargadaDesdeAltaRes = false;
+    try{
+      const rAlta = await window.storage.get(`plano_avance_imagen_alta_url_${obra}_${id}`, true);
+      if(rAlta && rAlta.value){
+        const imgAlta = new Image();
+        imgAlta.crossOrigin = "anonymous";
+        await new Promise((resolve,reject)=>{ imgAlta.onload=resolve; imgAlta.onerror=reject; imgAlta.src = rAlta.value; });
+        imagenPlano = imgAlta;
+        cargadaDesdeAltaRes = true;
+      }
+    }catch(e){ /* sin CORS/Storage configurado esto va a fallar siempre -- por diseño, no rompe nada */ }
+    if(!cargadaDesdeAltaRes){
+      const rImg = await window.storage.get(`plano_avance_imagen_${obra}_${id}`, true);
+      if(rImg && rImg.value){
+        const img = new Image();
+        await new Promise((resolve,reject)=>{ img.onload=resolve; img.onerror=reject; img.src = rImg.value; });
+        imagenPlano = img;
+      }
     }
   }catch(e){ /* no debería pasar si el índice está bien, pero por las dudas no rompemos nada */ }
   if(modoPlanoMaestro){
@@ -18193,7 +18218,31 @@ async function guardarEstadosPersonalizados(){
     showToast("No se pudo guardar los estados (revisá conexión)");
   }
 }
-async function guardarPlanoAvanceImagen(dataUrlComprimido){
+// ---------------- Copia en alta resolución (Firebase Storage, opcional) ----------------
+// La imagen de cada plano se guarda SIEMPRE comprimida (1600px, calidad .78) adentro de un
+// documento de Firestore -- eso es lo que entra sin problema en el límite de ~1MB por documento,
+// y sigue siendo el camino garantizado, sin cambios. Si el proyecto tiene Firebase Storage
+// habilitado (y su CORS configurado para que un <canvas> pueda leer la imagen sin "mancharse" --
+// necesario para la miniatura, el imán a bordes y el reporte en PDF), ADEMÁS se sube una copia en
+// mucha más resolución a Storage, en una clave APARTE -- nunca reemplazando la comprimida. Si
+// Storage no está disponible o falla por cualquier motivo (no habilitado, CORS sin configurar,
+// sin señal), esto queda en silencio y el plano sigue funcionando exactamente igual que siempre
+// con la copia comprimida -- no hay ningún camino en el que esto pueda romper algo.
+function storageDeArchivosDisponible(){
+  return typeof firebase!=="undefined" && typeof firebase.storage==="function";
+}
+async function subirImagenPlanoAStorage(obra, planoId, dataUrlAlta){
+  if(!storageDeArchivosDisponible()) return null;
+  try{
+    const ref = firebase.storage().ref().child(`planos_avance/${obra}/${planoId}.jpg`);
+    await ref.putString(dataUrlAlta, "data_url");
+    return await ref.getDownloadURL();
+  }catch(e){
+    console.warn("No se pudo subir la copia en alta resolución del plano a Firebase Storage (¿está habilitado y con CORS configurado en el proyecto?) -- el plano sigue guardado igual, comprimido en Firestore.", e);
+    return null;
+  }
+}
+async function guardarPlanoAvanceImagen(dataUrlComprimido, imgOriginalParaAltaRes){
   const obra = claveObraPlanoAvance();
   if(!obra || !planoActualId) return;
   mostrarIndicadorGuardado("guardando");
@@ -18203,6 +18252,14 @@ async function guardarPlanoAvanceImagen(dataUrlComprimido){
   }catch(e){
     showToast("No se pudo guardar el plano (revisá conexión)");
     mostrarIndicadorGuardado("error");
+    return;
+  }
+  if(imgOriginalParaAltaRes && storageDeArchivosDisponible()){
+    try{
+      const {dataUrl: dataUrlAlta} = await comprimirImagenPlano(imgOriginalParaAltaRes, 3000, 0.88);
+      const url = await subirImagenPlanoAStorage(obra, planoActualId, dataUrlAlta);
+      if(url) await window.storage.set(`plano_avance_imagen_alta_url_${obra}_${planoActualId}`, url, true);
+    }catch(e){ console.warn("No se pudo completar la copia en alta resolución del plano:", e); }
   }
 }
 // Antes de procesar el archivo, pedimos el nombre del plano (así podés tener varios sin
@@ -18352,7 +18409,7 @@ async function finalizarCargaPlano(dataUrlEditado, nombre){
     snapshotsPlanoActual = [];
     renderListaSnapshots();
   }
-  await guardarPlanoAvanceImagen(dataUrl);
+  await guardarPlanoAvanceImagen(dataUrl, imgEditada);
   if(!esMaestro) await guardarPlanoAvancePoligonos();
   showToast(`✓ Plano "${nombre}" cargado y guardado`);
   archivoPlanoseleccionado = null;
@@ -20601,16 +20658,17 @@ function cargarImagenDesdeArchivo(file, pagina){
 // PDF renderizado a escala 2) puede pesar varios MB en base64, muy por encima del límite de 1MB
 // por documento de Firestore (el mismo problema que tuvimos con las fotos de Herramientas). 1600px
 // de lado más largo sigue siendo de sobra para marcar con precisión, y pesa una fracción de eso.
-function comprimirImagenPlano(imgOriginal){
+function comprimirImagenPlano(imgOriginal, maxDim, calidad){
+  maxDim = maxDim || 1600;
+  calidad = calidad || 0.78;
   return new Promise((resolve)=>{
-    const maxDim = 1600;
     let w = imgOriginal.width, h = imgOriginal.height;
     if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
     else if(h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
     const canvas = document.createElement("canvas");
     canvas.width = w; canvas.height = h;
     canvas.getContext("2d").drawImage(imgOriginal, 0, 0, w, h);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+    const dataUrl = canvas.toDataURL("image/jpeg", calidad);
     const imgComprimida = new Image();
     imgComprimida.onload = ()=>resolve({img: imgComprimida, dataUrl});
     imgComprimida.src = dataUrl;
