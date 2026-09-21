@@ -3316,6 +3316,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#0E9488;display:inline-block;"></span>Este certificado</span>
         </div>
       </div>
+      <div class="franja-vencidos" id="cf-alerta-resumen" style="display:none;cursor:default;">
+        <span class="fv-txt">⚠ Uno o más ítems quedaron con % por debajo del certificado anterior — revisalos antes de guardar.</span>
+      </div>
       <div class="table-wrap" style="margin-top:12px;">
         <table class="trab cert-form-tabla" id="tabla-cf-items">
           <thead><tr>
@@ -10277,6 +10280,14 @@ async function guardarContratista(){
   if(!nombre || !obra || montoContrato<=0){ showToast("Completá nombre, obra y monto del contrato"); return; }
   const items = ccItems.filter(it=>it.nombre.trim()).map(it=>({id:it.id, nombre:it.nombre.trim(), pctIncidencia: parseFloat(it.pctIncidencia)||0, m2: (it.m2!==undefined && it.m2!==null && it.m2!=="") ? parseFloat(it.m2)||0 : null, planoId: it.planoId||null}));
   if(items.length===0){ showToast("Cargá al menos un ítem"); return; }
+  // Antes esto era solo un aviso visual que se podía ignorar -- pero el "avance general" ponderado
+  // (acá y en el reporte del Plano de avance) se calcula directo de estos %, así que un contrato
+  // que no suma 100 desvirtúa esos cálculos sin que nadie se entere hasta mucho después.
+  const sumaPct = items.reduce((s,it)=>s+it.pctIncidencia,0);
+  if(Math.abs(sumaPct-100)>=0.05){
+    showToast(`Los % de incidencia suman ${sumaPct.toFixed(1)}%, deberían sumar 100%. Corregilo antes de guardar.`, 5000);
+    return;
+  }
   const esEdicion = !!contratistaEditandoId;
   const base = esEdicion ? contratistasCache[contratistaEditandoId] : null;
   const c = {
@@ -10926,6 +10937,11 @@ function actualizarValoresFilaCertForm(i){
       if(input) input.classList.toggle("input-difiere-plano", !coincide);
     }
   }
+  // Resumen persistente arriba de la tabla -- con varios ítems, el aviso de un solo campo puede
+  // quedar fuera de la vista al hacer scroll. Esto se ve mientras el problema exista, no como un
+  // toast que aparece y se pierde.
+  const resumen = document.getElementById("cf-alerta-resumen");
+  if(resumen) resumen.style.display = certFormItems.some(x=>x.pctAcumulado < x.pctAnterior - 0.0001) ? "flex" : "none";
 }
 function actualizarTotalesCertForm(){
   const totalPeriodo = certFormItems.reduce((s,f)=>s+f.montoItem*(f.pctAcumulado-f.pctAnterior),0);
