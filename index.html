@@ -10300,7 +10300,7 @@ async function guardarContratista(){
   const m2TotalInput = document.getElementById("cc-m2total").value;
   const m2Total = (m2TotalInput!==undefined && m2TotalInput!==null && m2TotalInput!=="") ? parseFloat(m2TotalInput)||0 : null;
   if(!nombre || !obra || montoContrato<=0){ showToast("Completá nombre, obra y monto del contrato"); return; }
-  const items = ccItems.filter(it=>it.nombre.trim()).map(it=>({id:it.id, nombre:it.nombre.trim(), pctIncidencia: parseFloat(it.pctIncidencia)||0, m2: (it.m2!==undefined && it.m2!==null && it.m2!=="") ? parseFloat(it.m2)||0 : null, planoId: it.planoId||null}));
+  const items = ccItems.filter(it=>it.nombre.trim()).map(it=>({id:it.id, nombre:it.nombre.trim(), pctIncidencia: parseFloat(it.pctIncidencia)||0, m2: (it.m2!==undefined && it.m2!==null && it.m2!=="") ? parseFloat(it.m2)||0 : null, planoId: it.planoId||null, capaId: it.capaId||null}));
   if(items.length===0){ showToast("Cargá al menos un ítem"); return; }
   // Antes esto era solo un aviso visual que se podía ignorar -- pero el "avance general" ponderado
   // (acá y en el reporte del Plano de avance) se calcula directo de estos %, así que un contrato
@@ -10712,19 +10712,41 @@ async function traerAvanceDePlanoACertificado(){
   // es contra el nombre de la CAPA sola (p.capa), no contra el nombre completo -- que solo se
   // prueba como respaldo, por si alguien sí nombró el ítem con el prefijo a propósito.
   const normalizar = s => (s||"").trim().toLowerCase().replace(/\s*-\s*/g,' - ').replace(/\s+/g,' ');
+  // Antes esto comparaba SOLO por nombre -- renombrar la capa del plano (o el ítem del contrato)
+  // rompía el vínculo en silencio, sin avisar hasta que "0 ítems coincidieron". Ahora, si el ítem
+  // ya tiene un capaId guardado de una vez anterior, se usa ESE primero (sobrevive a un renombre).
+  // La primera vez que un ítem coincide por nombre, se le graba el capaId de la capa encontrada --
+  // así el vínculo se "auto-mejora" solo, sin pedirle nada nuevo al usuario.
+  let huboCapaIdNuevo = false;
   certFormItems.forEach(it=>{
     // Si el ítem está asociado a OTRO plano puntual (contratista con varios planos, ítems
     // repartidos entre ellos), no se completa desde acá -- solo aplica cuando no tiene plano
     // asociado ("Todos") o coincide justo con el que se eligió arriba.
     if(it.planoId && it.planoId!==planoId) return;
-    const nombreItemNorm = normalizar(it.nombre);
-    const match = porcentajes.find(p=>normalizar(p.capa)===nombreItemNorm)
-               || porcentajes.find(p=>normalizar(p.nombreCompleto)===nombreItemNorm);
+    let match = it.capaId ? porcentajes.find(p=>p.capaId && p.capaId===it.capaId) : null;
+    if(!match){
+      const nombreItemNorm = normalizar(it.nombre);
+      match = porcentajes.find(p=>normalizar(p.capa)===nombreItemNorm)
+           || porcentajes.find(p=>normalizar(p.nombreCompleto)===nombreItemNorm);
+      if(match && match.capaId && match.capaId!==it.capaId){ it.capaId = match.capaId; huboCapaIdNuevo = true; }
+    }
     // OJO: "match.pct" viene como número entero (ej: 20 = 20%), pero pctAcumulado se maneja en
     // toda esta pantalla como fracción (0.20) -- sin dividir por 100 acá, este campo terminaba
     // mostrando "2000%" en vez de "20%".
     if(match){ it.pctAcumulado = match.pct/100; it.pctDesdePlano = match.pct/100; coincidencias++; }
   });
+  // El capaId recién vinculado vive en certFormItems (efímero, se arma de nuevo cada vez que se
+  // abre el formulario) -- para que sobreviva hay que copiarlo al contrato real y guardarlo.
+  if(huboCapaIdNuevo){
+    const c = contratistasCache[contratistaParaCertificarId];
+    if(c){
+      certFormItems.forEach(fi=>{
+        const real = (c.items||[]).find(x=>x.id===fi.itemId);
+        if(real && fi.capaId) real.capaId = fi.capaId;
+      });
+      await guardarContratistaDetalle(c);
+    }
+  }
   renderTablaFormCertificado();
   const c = contratistasCache[contratistaParaCertificarId];
   const nombrePlano = (await cargarPlanosDisponiblesParaCertificado(obra)).find(p=>p.id===planoId)?.nombre || "Plano";
@@ -10778,11 +10800,17 @@ async function avisarItemsSinMarcarEnPlano(c){
   // actividad -- por eso se compara contra el nombre de la CAPA sola, no el nombre completo
   // ("Cielorraso - Estructura"), que nunca iba a coincidir.
   const capasYaMarcadas = new Set();
+  const capaIdsYaMarcados = new Set();
   for(const p of misPlanos){
     const poligonosDelPlan = p.id===planoActualId ? poligonos : await cargarPoligonosDePlano(c.obra, p.id);
-    poligonosDelPlan.filter(pol=>pol.capa).forEach(pol=>capasYaMarcadas.add(pol.capa.trim().toLowerCase()));
+    poligonosDelPlan.filter(pol=>pol.capa).forEach(pol=>{
+      capasYaMarcadas.add(pol.capa.trim().toLowerCase());
+      if(pol.capaId) capaIdsYaMarcados.add(pol.capaId);
+    });
   }
-  const faltantes = c.items.filter(it=>!capasYaMarcadas.has(it.nombre.trim().toLowerCase()));
+  const faltantes = c.items.filter(it=>
+    !(it.capaId && capaIdsYaMarcados.has(it.capaId)) && !capasYaMarcadas.has(it.nombre.trim().toLowerCase())
+  );
   if(faltantes.length>0){
     showToast(`⚠ Todavía no marcaste en el plano: ${faltantes.map(f=>f.nombre).join(", ")}`, 6000);
   }
@@ -10836,7 +10864,7 @@ function abrirFormCertificado(contratistaId, certIndexEditar){
     const pctAnterior = pctAnteriorPorItem[it.id]||0;
     const valorInicial = certificadoEditandoIndex!==null && c.certificados[certificadoEditandoIndex].avances[it.id]!==undefined
       ? c.certificados[certificadoEditandoIndex].avances[it.id] : pctAnterior;
-    return {itemId:it.id, nombre:it.nombre, pctIncidencia:it.pctIncidencia, montoItem, pctAnterior, pctAcumulado:valorInicial, planoId: it.planoId||null};
+    return {itemId:it.id, nombre:it.nombre, pctIncidencia:it.pctIncidencia, montoItem, pctAnterior, pctAcumulado:valorInicial, planoId: it.planoId||null, capaId: it.capaId||null};
   });
   document.getElementById("cf-titulo").textContent = (certificadoEditandoIndex!==null ? "Editar certificado" : "Nuevo certificado") + ` — ${c.nombre} (N° ${numeroMostrado})`;
   document.getElementById("cf-fecha").value = fechaInicial;
@@ -17887,7 +17915,25 @@ function nexoAvisoFlotante(estado, textoPersonalizado){
 // Nombre anterior, se deja como alias por compatibilidad con las llamadas ya existentes del
 // Plano de avance -- misma función, ahora con nombre genérico para el resto de la app.
 function mostrarIndicadorGuardado(estado){ nexoAvisoFlotante(estado); }
+// Asigna un capaId estable a cualquier polígono que todavía no lo tenga -- se reutiliza el mismo
+// id entre todas las piezas que comparten nombreCompleto (son la misma "capa" -- distintas piezas
+// sueltas de una misma actividad/capa), y una vez asignado queda guardado en el dato para siempre.
+// Esto es lo que permite vincular un ítem de contrato a una capa por ID (traerAvanceDePlanoACertificado)
+// en vez de por nombre: renombrar la capa después ya no rompe el vínculo. Piezas viejas (de antes
+// de este cambio) lo reciben acá, la próxima vez que se guarde algo en este plano -- no hace falta
+// ninguna migración aparte.
+function asegurarCapaIds(){
+  const idsPorNombre = {};
+  poligonos.forEach(p=>{ if(p.capaId && !idsPorNombre[p.nombreCompleto]) idsPorNombre[p.nombreCompleto] = p.capaId; });
+  poligonos.forEach(p=>{
+    if(!p.capaId){
+      if(!idsPorNombre[p.nombreCompleto]) idsPorNombre[p.nombreCompleto] = uid();
+      p.capaId = idsPorNombre[p.nombreCompleto];
+    }
+  });
+}
 async function guardarPlanoAvancePoligonos(){
+  asegurarCapaIds();
   const obra = claveObraPlanoAvance();
   if(!obra || !planoActualId) return;
   mostrarIndicadorGuardado("guardando");
@@ -18355,7 +18401,10 @@ function calcularPorcentajesDeLista(listaPoligonos){
       // y en la lista de Actividades) en vez de redondear la suma exacta de área -- para que el
       // reporte siempre coincida con lo que el usuario ve en pantalla.
       const pct = areaTotal>0 ? Math.min(100, piezas.reduce((s,c)=>s+Math.round((c.area/areaTotal)*100),0)) : 0;
-      resultado.push({nombreCompleto: `${nombreBase} - ${nombreCapa}`, nombreBase, capa: nombreCapa, pct});
+      // capaId: todas las piezas de una misma capa comparten el mismo id (asegurarCapaIds), así
+      // que alcanza con el de la primera -- se usa para vincular un ítem de contrato a esta capa
+      // de forma estable, sin depender de que el nombre siga siendo exactamente igual después.
+      resultado.push({nombreCompleto: `${nombreBase} - ${nombreCapa}`, nombreBase, capa: nombreCapa, pct, capaId: piezas[0].capaId||null});
     });
   });
   return resultado;
