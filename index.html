@@ -18903,7 +18903,20 @@ async function prepararVistaPlanoAvance(){
 }
 
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+// pdf.js se trae de un CDN (línea de arriba del todo del archivo) -- si no hay señal, el CDN está
+// caído, o algo lo bloquea, "pdfjsLib" nunca llega a existir. Sin este chequeo, la línea de abajo
+// tiraba una excepción sin atajar en la carga inicial del script que CORTABA ahí mismo toda la
+// inicialización que viene después (imagenPlano, poligonos, anotacionesTexto, proyectoMedidas y
+// lo que sea que se declare más abajo en el archivo quedaban sin inicializar) -- eso es lo que
+// causaba el "Cannot access 'imagenPlano' before initialization" al entrar a Plano de avance, y
+// probablemente rompía en silencio otras pantallas también. La función que sí usa pdfjsLib
+// (cargarImagenDesdeArchivo, para convertir un PDF a imagen) ya tiene su propio try/catch, así
+// que alcanza con evitar que ESTA línea explote para que el resto de la app arranque bien.
+if(typeof pdfjsLib !== "undefined"){
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}else{
+  console.warn("pdf.js no se pudo cargar (sin señal o CDN bloqueado) -- subir un PDF como plano no va a funcionar, pero el resto de la app sigue.");
+}
 
 let imagenPlano = null; // Image ya cargada
 let poligonos = []; // {nombreCompleto, nombreBase, capa, color, puntos:[[x,y],...], area}
