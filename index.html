@@ -20,6 +20,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<!-- Storage (opcional, defer): sube los planos de avance a Firebase Storage en vez de guardarlos
+     como base64 adentro de un documento de Firestore -- así no hace falta comprimirlos tanto para
+     entrar en el límite de ~1MB por documento. Si el proyecto de Firebase todavía no tiene Storage
+     habilitado, guardarPlanoAvanceImagen() sigue funcionando exactamente como antes (cae sola al
+     modo anterior) -- no hace falta esto para que la app funcione. -->
+<script defer src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <!-- defer: ya no configura nada de una al cargar (ver asegurarWorkerPdfjs en el script principal,
      que lo hace recién cuando hace falta) -- así esta librería pesada no bloquea el primer
      renderizado de la app mientras se descarga. -->
@@ -2047,6 +2053,18 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .cad-status-bar.abierta{transform:translateY(0);}
 .cad-status-handle{width:100%;height:28px;border:none;background:rgba(15,22,27,.9);color:#9fb0b8;font-size:13px;letter-spacing:3px;cursor:pointer;flex-shrink:0;}
 .cad-status-botones{display:flex;align-items:center;gap:7px;padding:9px 12px;flex-wrap:wrap;background:rgba(15,22,27,.9);backdrop-filter:blur(6px);border-top:1px solid rgba(255,255,255,.08);}
+/* Aviso de que alguien más guardó cambios en este mismo plano mientras lo tenías abierto --
+   franja fija arriba de todo el editor, no se puede pasar por alto sin querer como un toast. */
+.aviso-edicion-concurrente{position:absolute;left:8px;right:8px;top:64px;z-index:40;display:flex;align-items:center;gap:8px;
+  background:#7A2E0E;border:1px solid #C2410C;border-radius:10px;padding:9px 12px;box-shadow:0 4px 14px rgba(0,0,0,.35);}
+.aviso-edicion-concurrente .ico{font-size:16px;flex-shrink:0;}
+.aviso-edicion-concurrente .txt{flex:1;font-size:11.5px;font-weight:600;color:#FFE8DA;line-height:1.35;}
+.aviso-edicion-concurrente .x{background:rgba(255,255,255,.15);border:none;color:#fff;width:22px;height:22px;border-radius:50%;font-size:12px;cursor:pointer;flex-shrink:0;}
+/* Barra de escala tipo mapa/CAD: una línea con dos "patitas" y el largo real al lado -- el ancho
+   en px lo calcula JS (actualizarBarraEscala) según el zoom actual, acá solo el estilo visual. */
+.barra-escala-plano{position:absolute;left:14px;bottom:34px;z-index:20;display:flex;align-items:center;gap:6px;pointer-events:none;}
+.barra-escala-plano .linea{display:block;height:6px;border-left:2px solid #fff;border-right:2px solid #fff;border-bottom:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.6);}
+.barra-escala-plano .txt{font-size:11px;font-weight:800;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8);white-space:nowrap;}
 .cad-status-btn{display:flex;align-items:center;gap:5px;padding:8px 12px;border-radius:9px;border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:#e7eef1;font-size:11px;font-weight:800;cursor:pointer;letter-spacing:.3px;}
 .cad-status-btn.btn-primary{background:var(--verde);border-color:var(--verde);color:#0A2540;}
 .mancha-semaforo{position:absolute;border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);}
@@ -3316,6 +3334,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:3px;background:#0E9488;display:inline-block;"></span>Este certificado</span>
         </div>
       </div>
+      <div class="franja-vencidos" id="cf-alerta-resumen" style="display:none;cursor:default;">
+        <span class="fv-txt">⚠ Uno o más ítems quedaron con % por debajo del certificado anterior — revisalos antes de guardar.</span>
+      </div>
       <div class="table-wrap" style="margin-top:12px;">
         <table class="trab cert-form-tabla" id="tabla-cf-items">
           <thead><tr>
@@ -3477,6 +3498,12 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <div id="guia-pin-x" style="display:none;position:absolute;top:0;bottom:0;width:0;border-left:2px dashed #C9A227;pointer-events:none;z-index:6;"></div>
         <div id="guia-pin-y" style="display:none;position:absolute;left:0;right:0;height:0;border-top:2px dashed #C9A227;pointer-events:none;z-index:6;"></div>
       </div>
+      <!-- Barra de escala -- referencia visual fija en pantalla (no se mueve al hacer scroll del
+           plano, a propósito: va fuera de #canvas-wrap). Solo aparece si el plano está calibrado. -->
+      <div class="barra-escala-plano" id="barra-escala-plano" style="display:none;">
+        <span class="linea"></span>
+        <span class="txt"></span>
+      </div>
 
       <div class="pa-editor-header" id="pa-editor-header" style="display:none;">
         <button type="button" class="pa-editor-icon" onclick="cerrarEditorPlanoConAviso()" title="Cerrar y volver a la lista de planos">✕</button>
@@ -3493,6 +3520,15 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
       <div class="cad-riel" id="cad-riel"></div>
       <input type="file" id="input-foto-avance" accept="image/*" capture="environment" style="display:none;" onchange="onFotoAvanceSeleccionada(this)">
+
+      <!-- Aviso de edición concurrente: no hay bloqueo real, solo un heads-up -- alguien más
+           guardó cambios en ESTE plano mientras lo tenías abierto acá. -->
+      <div class="aviso-edicion-concurrente" id="aviso-edicion-concurrente-plano" style="display:none;">
+        <span class="ico">⚠</span>
+        <span class="txt">Alguien más guardó cambios en este plano recién. Recargá para verlos antes de seguir — si seguís dibujando sin recargar, tu próximo guardado puede pisarlos.</span>
+        <button type="button" class="btn btn-primary btn-sm" onclick="recargarPlanoPorEdicionConcurrente()">Recargar</button>
+        <button type="button" class="x" onclick="document.getElementById('aviso-edicion-concurrente-plano').style.display='none';" title="Cerrar este aviso (no recarga)">✕</button>
+      </div>
 
       <!-- ---- Barra inferior de referencias (estilo CAD/Revit) ---- -->
       <div class="cad-status-bar" id="cad-status-bar">
@@ -3787,6 +3823,17 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="row-flex">
       <button class="btn btn-outline" onclick="cerrarPromptNombrePlano()">Cancelar</button>
       <button class="btn btn-primary" onclick="confirmarPromptNombrePlano()">📐 Cargar plano</button>
+    </div>
+  </div>
+</div>
+
+<div id="prompt-pagina-pdf-overlay" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,.55);z-index:1001;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:12px;padding:16px;max-width:340px;width:100%;">
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--verde-oscuro);">Este PDF tiene varias hojas — ¿cuál es el plano que querés cargar?</div>
+    <select id="prompt-pagina-pdf-select" style="width:100%;padding:9px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;margin-bottom:10px;box-sizing:border-box;"></select>
+    <div class="row-flex">
+      <button class="btn btn-outline" onclick="cerrarPromptPaginaPdf()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarPromptPaginaPdf()">📐 Usar esta página</button>
     </div>
   </div>
 </div>
@@ -10275,8 +10322,16 @@ async function guardarContratista(){
   const m2TotalInput = document.getElementById("cc-m2total").value;
   const m2Total = (m2TotalInput!==undefined && m2TotalInput!==null && m2TotalInput!=="") ? parseFloat(m2TotalInput)||0 : null;
   if(!nombre || !obra || montoContrato<=0){ showToast("Completá nombre, obra y monto del contrato"); return; }
-  const items = ccItems.filter(it=>it.nombre.trim()).map(it=>({id:it.id, nombre:it.nombre.trim(), pctIncidencia: parseFloat(it.pctIncidencia)||0, m2: (it.m2!==undefined && it.m2!==null && it.m2!=="") ? parseFloat(it.m2)||0 : null, planoId: it.planoId||null}));
+  const items = ccItems.filter(it=>it.nombre.trim()).map(it=>({id:it.id, nombre:it.nombre.trim(), pctIncidencia: parseFloat(it.pctIncidencia)||0, m2: (it.m2!==undefined && it.m2!==null && it.m2!=="") ? parseFloat(it.m2)||0 : null, planoId: it.planoId||null, capaId: it.capaId||null}));
   if(items.length===0){ showToast("Cargá al menos un ítem"); return; }
+  // Antes esto era solo un aviso visual que se podía ignorar -- pero el "avance general" ponderado
+  // (acá y en el reporte del Plano de avance) se calcula directo de estos %, así que un contrato
+  // que no suma 100 desvirtúa esos cálculos sin que nadie se entere hasta mucho después.
+  const sumaPct = items.reduce((s,it)=>s+it.pctIncidencia,0);
+  if(Math.abs(sumaPct-100)>=0.05){
+    showToast(`Los % de incidencia suman ${sumaPct.toFixed(1)}%, deberían sumar 100%. Corregilo antes de guardar.`, 5000);
+    return;
+  }
   const esEdicion = !!contratistaEditandoId;
   const base = esEdicion ? contratistasCache[contratistaEditandoId] : null;
   const c = {
@@ -10679,19 +10734,41 @@ async function traerAvanceDePlanoACertificado(){
   // es contra el nombre de la CAPA sola (p.capa), no contra el nombre completo -- que solo se
   // prueba como respaldo, por si alguien sí nombró el ítem con el prefijo a propósito.
   const normalizar = s => (s||"").trim().toLowerCase().replace(/\s*-\s*/g,' - ').replace(/\s+/g,' ');
+  // Antes esto comparaba SOLO por nombre -- renombrar la capa del plano (o el ítem del contrato)
+  // rompía el vínculo en silencio, sin avisar hasta que "0 ítems coincidieron". Ahora, si el ítem
+  // ya tiene un capaId guardado de una vez anterior, se usa ESE primero (sobrevive a un renombre).
+  // La primera vez que un ítem coincide por nombre, se le graba el capaId de la capa encontrada --
+  // así el vínculo se "auto-mejora" solo, sin pedirle nada nuevo al usuario.
+  let huboCapaIdNuevo = false;
   certFormItems.forEach(it=>{
     // Si el ítem está asociado a OTRO plano puntual (contratista con varios planos, ítems
     // repartidos entre ellos), no se completa desde acá -- solo aplica cuando no tiene plano
     // asociado ("Todos") o coincide justo con el que se eligió arriba.
     if(it.planoId && it.planoId!==planoId) return;
-    const nombreItemNorm = normalizar(it.nombre);
-    const match = porcentajes.find(p=>normalizar(p.capa)===nombreItemNorm)
-               || porcentajes.find(p=>normalizar(p.nombreCompleto)===nombreItemNorm);
+    let match = it.capaId ? porcentajes.find(p=>p.capaId && p.capaId===it.capaId) : null;
+    if(!match){
+      const nombreItemNorm = normalizar(it.nombre);
+      match = porcentajes.find(p=>normalizar(p.capa)===nombreItemNorm)
+           || porcentajes.find(p=>normalizar(p.nombreCompleto)===nombreItemNorm);
+      if(match && match.capaId && match.capaId!==it.capaId){ it.capaId = match.capaId; huboCapaIdNuevo = true; }
+    }
     // OJO: "match.pct" viene como número entero (ej: 20 = 20%), pero pctAcumulado se maneja en
     // toda esta pantalla como fracción (0.20) -- sin dividir por 100 acá, este campo terminaba
     // mostrando "2000%" en vez de "20%".
     if(match){ it.pctAcumulado = match.pct/100; it.pctDesdePlano = match.pct/100; coincidencias++; }
   });
+  // El capaId recién vinculado vive en certFormItems (efímero, se arma de nuevo cada vez que se
+  // abre el formulario) -- para que sobreviva hay que copiarlo al contrato real y guardarlo.
+  if(huboCapaIdNuevo){
+    const c = contratistasCache[contratistaParaCertificarId];
+    if(c){
+      certFormItems.forEach(fi=>{
+        const real = (c.items||[]).find(x=>x.id===fi.itemId);
+        if(real && fi.capaId) real.capaId = fi.capaId;
+      });
+      await guardarContratistaDetalle(c);
+    }
+  }
   renderTablaFormCertificado();
   const c = contratistasCache[contratistaParaCertificarId];
   const nombrePlano = (await cargarPlanosDisponiblesParaCertificado(obra)).find(p=>p.id===planoId)?.nombre || "Plano";
@@ -10745,11 +10822,17 @@ async function avisarItemsSinMarcarEnPlano(c){
   // actividad -- por eso se compara contra el nombre de la CAPA sola, no el nombre completo
   // ("Cielorraso - Estructura"), que nunca iba a coincidir.
   const capasYaMarcadas = new Set();
+  const capaIdsYaMarcados = new Set();
   for(const p of misPlanos){
     const poligonosDelPlan = p.id===planoActualId ? poligonos : await cargarPoligonosDePlano(c.obra, p.id);
-    poligonosDelPlan.filter(pol=>pol.capa).forEach(pol=>capasYaMarcadas.add(pol.capa.trim().toLowerCase()));
+    poligonosDelPlan.filter(pol=>pol.capa).forEach(pol=>{
+      capasYaMarcadas.add(pol.capa.trim().toLowerCase());
+      if(pol.capaId) capaIdsYaMarcados.add(pol.capaId);
+    });
   }
-  const faltantes = c.items.filter(it=>!capasYaMarcadas.has(it.nombre.trim().toLowerCase()));
+  const faltantes = c.items.filter(it=>
+    !(it.capaId && capaIdsYaMarcados.has(it.capaId)) && !capasYaMarcadas.has(it.nombre.trim().toLowerCase())
+  );
   if(faltantes.length>0){
     showToast(`⚠ Todavía no marcaste en el plano: ${faltantes.map(f=>f.nombre).join(", ")}`, 6000);
   }
@@ -10803,7 +10886,7 @@ function abrirFormCertificado(contratistaId, certIndexEditar){
     const pctAnterior = pctAnteriorPorItem[it.id]||0;
     const valorInicial = certificadoEditandoIndex!==null && c.certificados[certificadoEditandoIndex].avances[it.id]!==undefined
       ? c.certificados[certificadoEditandoIndex].avances[it.id] : pctAnterior;
-    return {itemId:it.id, nombre:it.nombre, pctIncidencia:it.pctIncidencia, montoItem, pctAnterior, pctAcumulado:valorInicial, planoId: it.planoId||null};
+    return {itemId:it.id, nombre:it.nombre, pctIncidencia:it.pctIncidencia, montoItem, pctAnterior, pctAcumulado:valorInicial, planoId: it.planoId||null, capaId: it.capaId||null};
   });
   document.getElementById("cf-titulo").textContent = (certificadoEditandoIndex!==null ? "Editar certificado" : "Nuevo certificado") + ` — ${c.nombre} (N° ${numeroMostrado})`;
   document.getElementById("cf-fecha").value = fechaInicial;
@@ -10926,6 +11009,11 @@ function actualizarValoresFilaCertForm(i){
       if(input) input.classList.toggle("input-difiere-plano", !coincide);
     }
   }
+  // Resumen persistente arriba de la tabla -- con varios ítems, el aviso de un solo campo puede
+  // quedar fuera de la vista al hacer scroll. Esto se ve mientras el problema exista, no como un
+  // toast que aparece y se pierde.
+  const resumen = document.getElementById("cf-alerta-resumen");
+  if(resumen) resumen.style.display = certFormItems.some(x=>x.pctAcumulado < x.pctAnterior - 0.0001) ? "flex" : "none";
 }
 function actualizarTotalesCertForm(){
   const totalPeriodo = certFormItems.reduce((s,f)=>s+f.montoItem*(f.pctAcumulado-f.pctAnterior),0);
@@ -10937,13 +11025,26 @@ function actualizarTotalesCertForm(){
   document.getElementById("cf-saldo-pendiente").textContent = formatoMoneda(saldoPendiente);
 }
 function guardarCertificado(btn){
-  // Si algún ítem quedó con % por debajo del certificado anterior, no guardamos directo: pedimos
-  // un segundo toque en el mismo botón (mismo mecanismo que ya usás para eliminar), porque en el
-  // 99% de los casos eso es un error de tipeo y no un retroceso real de obra.
+  // Dos motivos posibles para pedir un segundo toque de confirmación antes de guardar (mismo
+  // mecanismo que ya usás para eliminar): que algún ítem quedó con % por debajo del certificado
+  // anterior, o que la fecha de este certificado queda antes que la del certificado que lo
+  // precede en la secuencia. El % de cada ítem se acumula recorriendo c.certificados EN ORDEN DE
+  // ARREGLO (no por fecha) -- si la fecha nueva queda antes que la del certificado anterior en
+  // ESE orden, el "% anterior" que se le calculó no tiene sentido real (estaría acumulando sobre
+  // algo que en el calendario pasó DESPUÉS). En el 99% de los casos, cualquiera de las dos cosas
+  // es un error de tipeo, no algo real -- por eso se avisa y se pide confirmar, no se bloquea.
   const retrocesos = certFormItems.filter(f=>f.pctAcumulado < f.pctAnterior - 0.0001);
-  if(retrocesos.length>0 && btn && btn.dataset.confirmando!=="1"){
-    const nombres = retrocesos.map(f=>f.nombre).join(", ");
-    showToast(`El % de "${nombres}" quedó por debajo del certificado anterior. Tocá "Guardar" de nuevo si es correcto.`);
+  const c = contratistasCache[contratistaParaCertificarId];
+  const fechaNueva = document.getElementById("cf-fecha").value;
+  const certAnteriorEnOrden = certificadoEditandoIndex!==null
+    ? (c.certificados||[])[certificadoEditandoIndex-1]
+    : (c.certificados||[])[(c.certificados||[]).length-1];
+  const fechaFueraDeOrden = !!(fechaNueva && certAnteriorEnOrden && certAnteriorEnOrden.fecha && fechaNueva < certAnteriorEnOrden.fecha);
+  if((retrocesos.length>0 || fechaFueraDeOrden) && btn && btn.dataset.confirmando!=="1"){
+    const avisos = [];
+    if(retrocesos.length>0) avisos.push(`El % de "${retrocesos.map(f=>f.nombre).join(", ")}" quedó por debajo del certificado anterior.`);
+    if(fechaFueraDeOrden) avisos.push(`Este certificado queda fechado antes que el N° ${certAnteriorEnOrden.numero} (${certAnteriorEnOrden.fecha}), del que toma el "% anterior".`);
+    showToast(avisos.join(" ")+' Tocá "Guardar" de nuevo si es correcto.');
     confirmarDoble(btn, "⚠ Tocá de nuevo para confirmar", ()=>guardarCertificadoConfirmado());
     return;
   }
@@ -11772,8 +11873,10 @@ function irA(view){
   }
   // Blindaje: si el editor del plano había activado "pantalla completa" (oculta header/nav) y
   // el usuario se va a otro módulo sin pasar por "✕ cerrar", esto lo restaura -- si no, el resto
-  // de la app quedaría sin encabezado ni barra inferior.
-  if(view!=="planoavance") desactivarPantallaCompletaPlano();
+  // de la app quedaría sin encabezado ni barra inferior. Mismo motivo para dejar de escuchar
+  // cambios remotos del plano: si no, el listener sigue corriendo en segundo plano indefinidamente
+  // aunque ya no se esté mirando ese plano.
+  if(view!=="planoavance"){ desactivarPantallaCompletaPlano(); detenerEscuchaCambiosRemotosPlano(); }
   vistaActualNexo = view; // FASE 4 -- Context Engine: NEXO sabe en qué pantalla estás
   ocultarBotonFlotanteGuardar(); // cada módulo decide si lo vuelve a mostrar según la sub-vista
   if(sesionActual && sesionActual.role!=="admin"){
@@ -17330,16 +17433,31 @@ let planosIndex = []; // [{id, nombre, fecha}] del plano de la obra actual
 let historialPoligonos = [];
 let historialFuturo = []; // pila de "rehacer" -- se vacía cada vez que se hace una acción nueva
 const MAX_HISTORIAL_DESHACER = 15;
+// El historial vivía solo en memoria: navegar a otra pestaña por error (o que el celular mate la
+// pestaña en segundo plano) lo borraba de un momento a otro, con piezas ya modificadas y sin forma
+// de volver atrás. Se guarda además en sessionStorage por ID de plano (no en localStorage: es
+// intencional que no sobreviva a cerrar la pestaña del todo, ni que un plano viejo abierto en otra
+// pestaña se pise con este) -- así, volver al MISMO plano en la misma sesión del navegador
+// recupera el historial tal como estaba. Nunca se restaura el historial de OTRO plano (mismo
+// resguardo que ya tenía esto antes).
+function persistirHistorialPlano(){
+  if(!planoActualId) return;
+  try{
+    sessionStorage.setItem("undo_historial_plano_"+planoActualId, JSON.stringify({historialPoligonos, historialFuturo}));
+  }catch(e){} // storage lleno o bloqueado (modo privado) -- el historial en memoria sigue funcionando igual
+}
 function guardarEnHistorial(){
   historialPoligonos.push(JSON.stringify({poligonos, anotacionesTexto}));
   if(historialPoligonos.length > MAX_HISTORIAL_DESHACER) historialPoligonos.shift();
   historialFuturo = []; // toda acción nueva invalida lo que se podía "rehacer" (igual que en Word/Excel)
+  persistirHistorialPlano();
 }
 async function deshacerGeneral(){
   if(historialPoligonos.length===0){ showToast("No hay nada para deshacer todavía."); return; }
   historialFuturo.push(JSON.stringify({poligonos, anotacionesTexto}));
   if(historialFuturo.length > MAX_HISTORIAL_DESHACER) historialFuturo.shift();
   const snapshot = JSON.parse(historialPoligonos.pop());
+  persistirHistorialPlano();
   poligonos = snapshot.poligonos;
   anotacionesTexto = snapshot.anotacionesTexto || [];
   if(indiceEditando!==null){
@@ -17360,6 +17478,7 @@ async function rehacerGeneral(){
   if(historialFuturo.length===0){ showToast("No hay nada para rehacer."); return; }
   historialPoligonos.push(JSON.stringify({poligonos, anotacionesTexto}));
   const snapshot = JSON.parse(historialFuturo.pop());
+  persistirHistorialPlano();
   poligonos = snapshot.poligonos;
   anotacionesTexto = snapshot.anotacionesTexto || [];
   if(indiceEditando!==null){
@@ -17627,20 +17746,50 @@ async function seleccionarPlano(id){
   gruposExpandidosActividad = new Set();
   // Esto es más serio: el historial de "Deshacer" también tiene que arrancar de cero -- si no,
   // tocar "↩️ Deshacer" en ESTE plano podía traer de vuelta datos viejos de OTRO plano que se
-  // había editado antes en la misma sesión, y peor: guardarlos encima de este.
+  // había editado antes en la misma sesión, y peor: guardarlos encima de este. Antes de resetear
+  // a vacío, probamos si HAY un historial guardado para este mismo ID de plano (por ejemplo,
+  // porque el usuario se fue a otra pestaña por error y volvió) -- si lo hay, se recupera en vez
+  // de perderse; si no, arranca vacío igual que siempre.
   historialPoligonos = [];
   historialFuturo = []; // mismo motivo que arriba -- no puede traer de vuelta datos de OTRO plano
+  try{
+    const guardado = sessionStorage.getItem("undo_historial_plano_"+id);
+    if(guardado){
+      const datos = JSON.parse(guardado);
+      historialPoligonos = datos.historialPoligonos || [];
+      historialFuturo = datos.historialFuturo || [];
+    }
+  }catch(e){}
   metrosPorPixelPlano = null;
   document.getElementById("card-canvas").style.display = "none";
   document.getElementById("card-actividades").style.display = "none";
   const obra = claveObraPlanoAvance();
   if(!obra) return;
   try{
-    const rImg = await window.storage.get(`plano_avance_imagen_${obra}_${id}`, true);
-    if(rImg && rImg.value){
-      const img = new Image();
-      await new Promise((resolve,reject)=>{ img.onload=resolve; img.onerror=reject; img.src = rImg.value; });
-      imagenPlano = img;
+    // Si en algún momento se subió una versión de alta resolución a Firebase Storage (ver
+    // guardarPlanoAvanceImagen/subirImagenPlanoAStorage), se intenta usar esa primero -- pero es
+    // 100% opcional: si Storage no está habilitado en la consola, si el CORS del bucket no está
+    // configurado, si la URL venció o si hay cualquier otro problema de red, simplemente se sigue
+    // de largo y se carga la copia base64 de siempre, que es la que SIEMPRE existe (se guarda en
+    // Firestore junto con el resto del plano) y nunca depende de configuración externa.
+    let cargadaDesdeAltaRes = false;
+    try{
+      const rAlta = await window.storage.get(`plano_avance_imagen_alta_url_${obra}_${id}`, true);
+      if(rAlta && rAlta.value){
+        const imgAlta = new Image();
+        imgAlta.crossOrigin = "anonymous";
+        await new Promise((resolve,reject)=>{ imgAlta.onload=resolve; imgAlta.onerror=reject; imgAlta.src = rAlta.value; });
+        imagenPlano = imgAlta;
+        cargadaDesdeAltaRes = true;
+      }
+    }catch(e){ /* sin CORS/Storage configurado esto va a fallar siempre -- por diseño, no rompe nada */ }
+    if(!cargadaDesdeAltaRes){
+      const rImg = await window.storage.get(`plano_avance_imagen_${obra}_${id}`, true);
+      if(rImg && rImg.value){
+        const img = new Image();
+        await new Promise((resolve,reject)=>{ img.onload=resolve; img.onerror=reject; img.src = rImg.value; });
+        imagenPlano = img;
+      }
     }
   }catch(e){ /* no debería pasar si el índice está bien, pero por las dudas no rompemos nada */ }
   if(modoPlanoMaestro){
@@ -17717,6 +17866,7 @@ async function seleccionarPlano(id){
   document.getElementById("card-snapshots").style.display = "none"; // arranca oculto -- se abre con el botón 📅 del encabezado
   await cargarSnapshotsPlanoActual();
   renderListaSnapshots();
+  escucharCambiosRemotosPlano(obra, id);
 }
 // Vuelve de la pantalla de edición a la de elegir plano, sin borrar nada -- el plano queda
 // guardado tal cual estaba.
@@ -17747,6 +17897,7 @@ function cerrarEditorPlanoConAviso(){
   volverASelectorPlanos();
 }
 function volverASelectorPlanos(){
+  detenerEscuchaCambiosRemotosPlano();
   planoActualId = null;
   imagenPlano = null;
   poligonos = [];
@@ -17822,11 +17973,67 @@ function nexoAvisoFlotante(estado, textoPersonalizado){
 // Nombre anterior, se deja como alias por compatibilidad con las llamadas ya existentes del
 // Plano de avance -- misma función, ahora con nombre genérico para el resto de la app.
 function mostrarIndicadorGuardado(estado){ nexoAvisoFlotante(estado); }
+// Asigna un capaId estable a cualquier polígono que todavía no lo tenga -- se reutiliza el mismo
+// id entre todas las piezas que comparten nombreCompleto (son la misma "capa" -- distintas piezas
+// sueltas de una misma actividad/capa), y una vez asignado queda guardado en el dato para siempre.
+// Esto es lo que permite vincular un ítem de contrato a una capa por ID (traerAvanceDePlanoACertificado)
+// en vez de por nombre: renombrar la capa después ya no rompe el vínculo. Piezas viejas (de antes
+// de este cambio) lo reciben acá, la próxima vez que se guarde algo en este plano -- no hace falta
+// ninguna migración aparte.
+function asegurarCapaIds(){
+  const idsPorNombre = {};
+  poligonos.forEach(p=>{ if(p.capaId && !idsPorNombre[p.nombreCompleto]) idsPorNombre[p.nombreCompleto] = p.capaId; });
+  poligonos.forEach(p=>{
+    if(!p.capaId){
+      if(!idsPorNombre[p.nombreCompleto]) idsPorNombre[p.nombreCompleto] = uid();
+      p.capaId = idsPorNombre[p.nombreCompleto];
+    }
+  });
+}
+// ---------------- Aviso de edición concurrente ----------------
+// No hay ningún bloqueo real (eso exigiría transacciones/reglas más grandes en toda la app) --
+// esto es solo un heads-up: si mientras tenés el plano abierto ACÁ, alguien más lo guarda desde
+// otro celular/pestaña, un banner fijo avisa para que no sigas dibujando encima a ciegas y termines
+// pisando ese cambio sin querer al guardar el tuyo. Se apoya en el timestamp "actualizado" que
+// window.storage ya guarda en cada set() -- comparando lo último que VIMOS contra lo que llega por
+// el listener en tiempo real de Firestore.
+let listenerPlanoRemoto = null;
+let ultimoTimestampVistoPlano = null;
+let ignorarProximoSnapshotPropio = false;
+function escucharCambiosRemotosPlano(obra, id){
+  detenerEscuchaCambiosRemotosPlano();
+  ultimoTimestampVistoPlano = null;
+  if(typeof firebase==="undefined" || !firebase.firestore) return; // sin Firebase (sin señal/CDN bloqueado), no hay nada que escuchar
+  try{
+    const ref = firebase.firestore().collection("storage").doc(`plano_avance_poligonos_${obra}_${id}`);
+    listenerPlanoRemoto = ref.onSnapshot(snap=>{
+      if(!snap.exists) return;
+      const actualizado = snap.data().actualizado;
+      if(ultimoTimestampVistoPlano===null){ ultimoTimestampVistoPlano = actualizado; return; } // primera lectura al abrir, no es un cambio de nadie
+      if(actualizado===ultimoTimestampVistoPlano) return;
+      ultimoTimestampVistoPlano = actualizado;
+      if(ignorarProximoSnapshotPropio){ ignorarProximoSnapshotPropio = false; return; } // fue nuestro propio guardado
+      const el = document.getElementById("aviso-edicion-concurrente-plano");
+      if(el) el.style.display = "flex";
+    }, err=>{ console.error("No se pudo escuchar cambios remotos del plano:", err); });
+  }catch(e){ console.error("No se pudo activar el aviso de edición concurrente:", e); }
+}
+function detenerEscuchaCambiosRemotosPlano(){
+  if(listenerPlanoRemoto){ listenerPlanoRemoto(); listenerPlanoRemoto = null; }
+  const el = document.getElementById("aviso-edicion-concurrente-plano");
+  if(el) el.style.display = "none";
+}
+function recargarPlanoPorEdicionConcurrente(){
+  document.getElementById("aviso-edicion-concurrente-plano").style.display = "none";
+  if(planoActualId) seleccionarPlano(planoActualId);
+}
 async function guardarPlanoAvancePoligonos(){
+  asegurarCapaIds();
   const obra = claveObraPlanoAvance();
   if(!obra || !planoActualId) return;
   mostrarIndicadorGuardado("guardando");
   try{
+    ignorarProximoSnapshotPropio = true;
     await window.storage.set(`plano_avance_poligonos_${obra}_${planoActualId}`, JSON.stringify(poligonos), true);
     mostrarIndicadorGuardado("guardado");
   }catch(e){
@@ -18011,7 +18218,31 @@ async function guardarEstadosPersonalizados(){
     showToast("No se pudo guardar los estados (revisá conexión)");
   }
 }
-async function guardarPlanoAvanceImagen(dataUrlComprimido){
+// ---------------- Copia en alta resolución (Firebase Storage, opcional) ----------------
+// La imagen de cada plano se guarda SIEMPRE comprimida (1600px, calidad .78) adentro de un
+// documento de Firestore -- eso es lo que entra sin problema en el límite de ~1MB por documento,
+// y sigue siendo el camino garantizado, sin cambios. Si el proyecto tiene Firebase Storage
+// habilitado (y su CORS configurado para que un <canvas> pueda leer la imagen sin "mancharse" --
+// necesario para la miniatura, el imán a bordes y el reporte en PDF), ADEMÁS se sube una copia en
+// mucha más resolución a Storage, en una clave APARTE -- nunca reemplazando la comprimida. Si
+// Storage no está disponible o falla por cualquier motivo (no habilitado, CORS sin configurar,
+// sin señal), esto queda en silencio y el plano sigue funcionando exactamente igual que siempre
+// con la copia comprimida -- no hay ningún camino en el que esto pueda romper algo.
+function storageDeArchivosDisponible(){
+  return typeof firebase!=="undefined" && typeof firebase.storage==="function";
+}
+async function subirImagenPlanoAStorage(obra, planoId, dataUrlAlta){
+  if(!storageDeArchivosDisponible()) return null;
+  try{
+    const ref = firebase.storage().ref().child(`planos_avance/${obra}/${planoId}.jpg`);
+    await ref.putString(dataUrlAlta, "data_url");
+    return await ref.getDownloadURL();
+  }catch(e){
+    console.warn("No se pudo subir la copia en alta resolución del plano a Firebase Storage (¿está habilitado y con CORS configurado en el proyecto?) -- el plano sigue guardado igual, comprimido en Firestore.", e);
+    return null;
+  }
+}
+async function guardarPlanoAvanceImagen(dataUrlComprimido, imgOriginalParaAltaRes){
   const obra = claveObraPlanoAvance();
   if(!obra || !planoActualId) return;
   mostrarIndicadorGuardado("guardando");
@@ -18021,6 +18252,14 @@ async function guardarPlanoAvanceImagen(dataUrlComprimido){
   }catch(e){
     showToast("No se pudo guardar el plano (revisá conexión)");
     mostrarIndicadorGuardado("error");
+    return;
+  }
+  if(imgOriginalParaAltaRes && storageDeArchivosDisponible()){
+    try{
+      const {dataUrl: dataUrlAlta} = await comprimirImagenPlano(imgOriginalParaAltaRes, 3000, 0.88);
+      const url = await subirImagenPlanoAStorage(obra, planoActualId, dataUrlAlta);
+      if(url) await window.storage.set(`plano_avance_imagen_alta_url_${obra}_${planoActualId}`, url, true);
+    }catch(e){ console.warn("No se pudo completar la copia en alta resolución del plano:", e); }
   }
 }
 // Antes de procesar el archivo, pedimos el nombre del plano (así podés tener varios sin
@@ -18091,9 +18330,17 @@ async function confirmarPromptNombrePlano(){
   await procesarNuevoPlano(file, nombre);
 }
 async function procesarNuevoPlano(file, nombre){
+  let pagina = 1;
+  if(file.type === "application/pdf"){
+    const totalPaginas = await contarPaginasPdf(file);
+    if(totalPaginas > 1){
+      pagina = await elegirPaginaPdf(totalPaginas);
+      if(pagina===null) return; // canceló el selector de página
+    }
+  }
   showToast("Cargando plano...");
   let dataUrlCrudo;
-  try{ dataUrlCrudo = await cargarImagenDesdeArchivo(file); }
+  try{ dataUrlCrudo = await cargarImagenDesdeArchivo(file, pagina); }
   catch(e){ showToast("No se pudo leer ese archivo. Probá con otro PDF o imagen."); return; }
   // Antes de guardar, pasa por el mismo editor de recortar/girar que ya usás en Herramientas y
   // Observaciones -- pero en modo "solo recorte" (sin lápiz/círculo/flecha), para que no queden
@@ -18162,7 +18409,7 @@ async function finalizarCargaPlano(dataUrlEditado, nombre){
     snapshotsPlanoActual = [];
     renderListaSnapshots();
   }
-  await guardarPlanoAvanceImagen(dataUrl);
+  await guardarPlanoAvanceImagen(dataUrl, imgEditada);
   if(!esMaestro) await guardarPlanoAvancePoligonos();
   showToast(`✓ Plano "${nombre}" cargado y guardado`);
   archivoPlanoseleccionado = null;
@@ -18282,7 +18529,10 @@ function calcularPorcentajesDeLista(listaPoligonos){
       // y en la lista de Actividades) en vez de redondear la suma exacta de área -- para que el
       // reporte siempre coincida con lo que el usuario ve en pantalla.
       const pct = areaTotal>0 ? Math.min(100, piezas.reduce((s,c)=>s+Math.round((c.area/areaTotal)*100),0)) : 0;
-      resultado.push({nombreCompleto: `${nombreBase} - ${nombreCapa}`, nombreBase, capa: nombreCapa, pct});
+      // capaId: todas las piezas de una misma capa comparten el mismo id (asegurarCapaIds), así
+      // que alcanza con el de la primera -- se usa para vincular un ítem de contrato a esta capa
+      // de forma estable, sin depender de que el nombre siga siendo exactamente igual después.
+      resultado.push({nombreCompleto: `${nombreBase} - ${nombreCapa}`, nombreBase, capa: nombreCapa, pct, capaId: piezas[0].capaId||null});
     });
   });
   return resultado;
@@ -20347,15 +20597,49 @@ function buscarPuntoCercano(x, y, excluirIndice){
   return mejor;
 }
 
-// Convierte el archivo elegido (PDF o imagen) en un dataURL -- directo, sin pasos de más.
-function cargarImagenDesdeArchivo(file){
+// Cuenta las páginas de un PDF sin convertir nada todavía -- para decidir si hace falta
+// preguntar cuál usar (un PDF de una sola hoja no necesita preguntar nada). Antes esto ni se
+// miraba: un set de planos con varias hojas en un mismo PDF (algo común) perdía en silencio todo
+// lo que no fuera la primera hoja.
+async function contarPaginasPdf(file){
+  if(!asegurarWorkerPdfjs()) return 1;
+  try{
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data: buf}).promise;
+    return pdf.numPages;
+  }catch(e){ return 1; }
+}
+let resolverPaginaPdfElegida = null;
+function elegirPaginaPdf(totalPaginas){
+  return new Promise(resolve=>{
+    resolverPaginaPdfElegida = resolve;
+    const sel = document.getElementById("prompt-pagina-pdf-select");
+    sel.innerHTML = Array.from({length: totalPaginas}, (_,i)=>`<option value="${i+1}">Página ${i+1} de ${totalPaginas}</option>`).join("");
+    document.getElementById("prompt-pagina-pdf-overlay").style.display = "flex";
+  });
+}
+function cerrarPromptPaginaPdf(){
+  document.getElementById("prompt-pagina-pdf-overlay").style.display = "none";
+  if(resolverPaginaPdfElegida) resolverPaginaPdfElegida(null);
+  resolverPaginaPdfElegida = null;
+}
+function confirmarPromptPaginaPdf(){
+  const pagina = parseInt(document.getElementById("prompt-pagina-pdf-select").value, 10);
+  document.getElementById("prompt-pagina-pdf-overlay").style.display = "none";
+  if(resolverPaginaPdfElegida) resolverPaginaPdfElegida(pagina);
+  resolverPaginaPdfElegida = null;
+}
+// Convierte el archivo elegido (PDF o imagen) en un dataURL -- directo, sin pasos de más. Para un
+// PDF de varias hojas, "pagina" (1 en base) elige cuál -- sin ese parámetro usa la primera,
+// mismo comportamiento de siempre para quien llama sin pasarlo.
+function cargarImagenDesdeArchivo(file, pagina){
   return new Promise(async (resolve, reject)=>{
     if(file.type === "application/pdf"){
       try{
         if(!asegurarWorkerPdfjs()) throw new Error("pdf.js no disponible (sin señal o CDN bloqueado)");
         const buf = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({data: buf}).promise;
-        const page = await pdf.getPage(1);
+        const page = await pdf.getPage(pagina || 1);
         const viewport = page.getViewport({scale: 2});
         const canvasTemp = document.createElement("canvas");
         canvasTemp.width = viewport.width; canvasTemp.height = viewport.height;
@@ -20374,16 +20658,17 @@ function cargarImagenDesdeArchivo(file){
 // PDF renderizado a escala 2) puede pesar varios MB en base64, muy por encima del límite de 1MB
 // por documento de Firestore (el mismo problema que tuvimos con las fotos de Herramientas). 1600px
 // de lado más largo sigue siendo de sobra para marcar con precisión, y pesa una fracción de eso.
-function comprimirImagenPlano(imgOriginal){
+function comprimirImagenPlano(imgOriginal, maxDim, calidad){
+  maxDim = maxDim || 1600;
+  calidad = calidad || 0.78;
   return new Promise((resolve)=>{
-    const maxDim = 1600;
     let w = imgOriginal.width, h = imgOriginal.height;
     if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
     else if(h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
     const canvas = document.createElement("canvas");
     canvas.width = w; canvas.height = h;
     canvas.getContext("2d").drawImage(imgOriginal, 0, 0, w, h);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+    const dataUrl = canvas.toDataURL("image/jpeg", calidad);
     const imgComprimida = new Image();
     imgComprimida.onload = ()=>resolve({img: imgComprimida, dataUrl});
     imgComprimida.src = dataUrl;
@@ -20408,6 +20693,7 @@ function aplicarZoom(factor){
   renderPorcentajesFlotantes();
   renderAnotacionesTocables();
   if(modoPlanoMaestro) renderPinesMaestro();
+  actualizarBarraEscala();
 }
 function zoomIn(){ aplicarZoom(zoomActual*1.25); }
 function zoomOut(){ aplicarZoom(zoomActual/1.25); }
@@ -20424,6 +20710,62 @@ function zoomAjustar(){
   const factorAlto = (wrap.clientHeight-4)/canvas.height;
   aplicarZoom(Math.min(factorAncho, factorAlto));
 }
+// ---------------- Zoom con rueda del mouse (paridad con escritorio) ----------------
+// El visor ya tenía pellizco de 2 dedos en celular/tablet, pero nada para mouse -- alguien
+// revisando el plano desde una compu quedaba limitado a los botones +/-. La rueda sola hace zoom
+// (no hace falta Ctrl), igual que en cualquier visor CAD/mapa; ancla el punto bajo el cursor con
+// la misma matemática que ya usa el pellizco, para que lo que estás mirando no "salte".
+function manejarRuedaZoomPlano(e){
+  if(!imagenPlano) return;
+  e.preventDefault();
+  const wrap = document.getElementById("canvas-wrap");
+  const rect = wrap.getBoundingClientRect();
+  const cursorX = e.clientX - rect.left, cursorY = e.clientY - rect.top;
+  const contenidoX = wrap.scrollLeft + cursorX, contenidoY = wrap.scrollTop + cursorY;
+  const zoomAnterior = zoomActual;
+  aplicarZoom(zoomActual * (e.deltaY < 0 ? 1.12 : 1/1.12));
+  const f = zoomActual / zoomAnterior;
+  wrap.scrollLeft = contenidoX*f - cursorX;
+  wrap.scrollTop = contenidoY*f - cursorY;
+}
+document.getElementById("canvas-wrap").addEventListener("wheel", manejarRuedaZoomPlano, {passive:false});
+// ---------------- Barra de escala ----------------
+// Antes la calibración (ESCALA) solo alimentaba un m² aproximado en el reporte -- no había ninguna
+// referencia visual de escala en el propio lienzo, algo estándar en cualquier visor CAD/mapa. Se
+// recalcula con cada cambio de zoom para que el largo en pantalla siga siendo el correcto.
+function actualizarBarraEscala(){
+  const el = document.getElementById("barra-escala-plano");
+  if(!el) return;
+  if(!metrosPorPixelPlano || !zoomActual){ el.style.display = "none"; return; }
+  const metrosPorPixelPantalla = metrosPorPixelPlano / zoomActual;
+  // Longitud "linda" (1, 2, 5, 10, 20... m) cuyo ancho en pantalla no baje de ~50px, para que se
+  // pueda leer -- mismo criterio que usa cualquier mapa.
+  const pasos = [0.5,1,2,5,10,20,50,100,200,500,1000,2000,5000];
+  let metros = pasos[pasos.length-1];
+  for(const p of pasos){
+    if(p / metrosPorPixelPantalla >= 50){ metros = p; break; }
+  }
+  const anchoPx = Math.round(metros / metrosPorPixelPantalla);
+  el.style.display = "flex";
+  el.querySelector(".linea").style.width = anchoPx+"px";
+  el.querySelector(".txt").textContent = metros>=1000 ? (metros/1000)+" km" : metros+" m";
+}
+// ---------------- Atajos de teclado (paridad con escritorio) ----------------
+// Solo activos con el Plano de avance abierto y sin el foco en un campo de texto (para no pisar
+// Ctrl+Z de un navegador escribiendo una observación, por ejemplo). Los mismos comandos que ya
+// existen como botones -- esto no agrega funciones nuevas, solo una forma más rápida de llegar
+// a ellas para quien usa teclado.
+document.addEventListener("keydown", function(e){
+  const vista = document.getElementById("view-planoavance");
+  if(!vista || !vista.classList.contains("active")) return;
+  const tag = (e.target && e.target.tagName) || "";
+  if(tag==="INPUT" || tag==="TEXTAREA" || tag==="SELECT" || (e.target && e.target.isContentEditable)) return;
+  if((e.ctrlKey||e.metaKey) && !e.shiftKey && e.key.toLowerCase()==="z"){ e.preventDefault(); deshacerGeneral(); return; }
+  if((e.ctrlKey||e.metaKey) && (e.key.toLowerCase()==="y" || (e.shiftKey && e.key.toLowerCase()==="z"))){ e.preventDefault(); rehacerGeneral(); return; }
+  if(e.key==="Escape"){ salirDeModosDibujoActivos(); return; }
+  if(e.key==="+" || e.key==="="){ zoomIn(); return; }
+  if(e.key==="-" || e.key==="_"){ zoomOut(); return; }
+});
 // Abre/cierra los cajones flotantes del riel ("Vista", "Capas", "Dibujar") -- cerrados por
 // defecto para dejarle el máximo de pantalla al plano; solo uno abierto a la vez.
 // ---------------- Riel de herramientas adaptativo: los 3 lugares libres muestran las últimas
@@ -21316,6 +21658,7 @@ async function confirmarCalibracionEscala(distPx){
   await guardarCalibracionPlano();
   cerrarPromptGenerico();
   renderActividades();
+  actualizarBarraEscala();
   showToast(`✓ Escala guardada — cada 100px del plano son ${(metrosPorPixelPlano*100).toFixed(2)}m reales`);
 }
 async function guardarCalibracionPlano(){
