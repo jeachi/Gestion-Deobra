@@ -1468,6 +1468,7 @@ table.rc-firmas-tabla td:last-child{border-right:none;}
   font-weight:700;font-size:13px;cursor:pointer;flex:0 0 auto;white-space:nowrap;
 }
 .quincena-toggle button.active{background:var(--verde);color:#fff;}
+.ico-subtab{display:inline-flex;vertical-align:-2px;}
 .subtabs-scroll{display:flex;gap:7px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:2px 2px 8px;margin-bottom:4px;scrollbar-width:none;}
 .subtabs-scroll::-webkit-scrollbar{display:none;}
 .subtabs-scroll button{flex:0 0 auto;border:1.5px solid var(--borde);border-radius:999px;padding:8px 14px;background:#fff;color:var(--verde-oscuro);font-weight:700;font-size:12.5px;white-space:nowrap;cursor:pointer;}
@@ -2508,11 +2509,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   <section class="view" id="view-trabajadores">
     <div class="row-flex" style="margin-bottom:2px;">
       <div class="quincena-toggle" id="subtabs-config">
-        <button id="btn-cfg-personal" class="active" onclick="cambiarVistaConfig('personal')">👷 Personal</button>
-        <button id="btn-cfg-obras" onclick="cambiarVistaConfig('obras')">🏗 Obras</button>
-        <button id="btn-cfg-usuarios" onclick="cambiarVistaConfig('usuarios')">🔑 Usuarios</button>
-        <button id="btn-cfg-personalizacion" onclick="cambiarVistaConfig('personalizacion')">🎨 Personalización</button>
-        <button id="btn-cfg-actividad" onclick="cambiarVistaConfig('actividad')">🗄 Actividad y respaldo</button>
+        <button id="btn-cfg-personal" class="active" onclick="cambiarVistaConfig('personal')"><span class="ico-subtab" data-subtab="cfg-personal" data-emoji="👷">👷</span> Personal</button>
+        <button id="btn-cfg-obras" onclick="cambiarVistaConfig('obras')"><span class="ico-subtab" data-subtab="cfg-obras" data-emoji="🏗">🏗</span> Obras</button>
+        <button id="btn-cfg-usuarios" onclick="cambiarVistaConfig('usuarios')"><span class="ico-subtab" data-subtab="cfg-usuarios" data-emoji="🔑">🔑</span> Usuarios</button>
+        <button id="btn-cfg-personalizacion" onclick="cambiarVistaConfig('personalizacion')"><span class="ico-subtab" data-subtab="cfg-personalizacion" data-emoji="🎨">🎨</span> Personalización</button>
+        <button id="btn-cfg-actividad" onclick="cambiarVistaConfig('actividad')"><span class="ico-subtab" data-subtab="cfg-actividad" data-emoji="🗄">🗄</span> Actividad y respaldo</button>
       </div>
     </div>
 
@@ -2780,9 +2781,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
       </div>
       <div class="quincena-toggle" id="subtabs-asistencia">
-        <button id="btn-vista-dia" class="active" onclick="cambiarVista('dia')">📅 Por día (fácil)</button>
-        <button id="btn-vista-grilla" onclick="cambiarVista('grilla')">🗂 Grilla completa</button>
-        <button id="btn-vista-informes" onclick="cambiarVista('informes')">📊 Informes</button>
+        <button id="btn-vista-dia" class="active" onclick="cambiarVista('dia')"><span class="ico-subtab" data-subtab="asis-dia" data-emoji="📅">📅</span> Por día (fácil)</button>
+        <button id="btn-vista-grilla" onclick="cambiarVista('grilla')"><span class="ico-subtab" data-subtab="asis-grilla" data-emoji="🗂">🗂</span> Grilla completa</button>
+        <button id="btn-vista-informes" onclick="cambiarVista('informes')"><span class="ico-subtab" data-subtab="asis-informes" data-emoji="📊">📊</span> Informes</button>
       </div>
     </div>
 
@@ -3076,9 +3077,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   <section class="view" id="view-caja">
     <div class="row-flex" style="margin-bottom:2px;">
       <div class="quincena-toggle" id="subtabs-caja">
-        <button id="btn-caja-lista" class="active" onclick="cambiarVistaCaja('lista')">📋 Mis rendiciones</button>
+        <button id="btn-caja-lista" class="active" onclick="cambiarVistaCaja('lista')"><span class="ico-subtab" data-subtab="caja-lista" data-emoji="📋">📋</span> Mis rendiciones</button>
         <button id="btn-caja-nueva" onclick="cambiarVistaCaja('nueva')">+ Nueva rendición</button>
-        <button id="btn-caja-catalogos" onclick="cambiarVistaCaja('catalogos')">⚙ Tipos de costo</button>
+        <button id="btn-caja-catalogos" onclick="cambiarVistaCaja('catalogos')"><span class="ico-subtab" data-subtab="caja-catalogos" data-emoji="⚙">⚙</span> Tipos de costo</button>
       </div>
     </div>
 
@@ -3211,7 +3212,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   <section class="view" id="view-certificados">
     <div class="row-flex" style="margin-bottom:2px;">
       <div class="quincena-toggle" id="subtabs-cert">
-        <button id="btn-cert-lista" class="active" onclick="cambiarVistaCert('lista')">📋 Contratistas</button>
+        <button id="btn-cert-lista" class="active" onclick="cambiarVistaCert('lista')"><span class="ico-subtab" data-subtab="cert-lista" data-emoji="📋">📋</span> Contratistas</button>
         <button id="btn-cert-nuevo" onclick="cambiarVistaCert('nuevo')">+ Nuevo contratista</button>
       </div>
     </div>
@@ -11537,6 +11538,22 @@ const ICONOS_PHOSPHOR_MODULO = {
   pedidos:"package", planoavance:"ruler", presupuesto:"chart-bar", remitos:"truck",
   trabajadores:"users", mas:"dots-three-outline"
 };
+// Mismo sistema, para las subpestañas de Configuración/Asistencia/Caja Chica/Certificados --
+// antes quedaban en emoji fijo aunque el resto de la navegación ya respetara el tema elegido.
+const ICONOS_PHOSPHOR_SUBTAB = {
+  "cfg-personal":"users", "cfg-obras":"hammer", "cfg-usuarios":"key", "cfg-personalizacion":"palette",
+  "cfg-actividad":"archive", "asis-dia":"calendar-check", "asis-grilla":"grid-nine",
+  "asis-informes":"chart-bar", "caja-lista":"list-checks", "caja-catalogos":"gear-six",
+  "cert-lista":"list-checks"
+};
+function actualizarIconosSubtabs(){
+  document.querySelectorAll(".ico-subtab[data-subtab]").forEach(el=>{
+    if(temaIconoApp==="emoji"){ el.textContent = el.dataset.emoji; return; }
+    const nombreIco = ICONOS_PHOSPHOR_SUBTAB[el.dataset.subtab] || "circle";
+    const peso = temaIconoApp==="3d" ? "ph-fill" : PESOS_ICONO_PHOSPHOR[temaIconoApp];
+    el.innerHTML = `<i class="${peso} ph-${nombreIco}"></i>`;
+  });
+}
 const PESOS_ICONO_PHOSPHOR = {regular:"ph", bold:"ph-bold", duotone:"ph-duotone", fill:"ph-fill"};
 // Antes esto se leía de localStorage en el momento en que arranca el script -- pero en ese
 // instante todavía no hay sesión iniciada, así que siempre leía la clave "genérica" (sin
@@ -11566,6 +11583,8 @@ async function cargarPrefsNavUsuario(){
   aplicarTemaNavegacion();
   renderNavSuperior();
   renderSelectorTemaNav();
+  actualizarIconosSubtabs();
+  actualizarIconosDashCards();
 }
 const COLORES_ACENTO_APP = {
   verde:  {cian:"#2FD5C8", verde:"#0E9488", navy:"#0A1A26"},
@@ -11610,6 +11629,8 @@ function cambiarTemaNav(tipo, valor){
   aplicarTemaNavegacion();
   renderNavSuperior();
   renderSelectorTemaNav();
+  actualizarIconosSubtabs();
+  actualizarIconosDashCards();
   guardarPrefsNavUsuario();
 }
 function toggleBordeAnimado(){
