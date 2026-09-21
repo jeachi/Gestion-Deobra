@@ -2451,52 +2451,52 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="bento-tit">Módulos</div>
     <div class="dash-grid bento">
       <div class="dash-card" onclick="irA('asistencia')">
-        <div class="dash-card-icon">👷</div>
+        <div class="dash-card-icon" data-modulo="asistencia" data-emoji="👷">👷</div>
         <div class="dash-card-title">Nómina de Obra</div>
         <div class="dash-card-desc">Carga de asistencia diaria y reportes PDF por quincena.</div>
       </div>
       <div class="dash-card" onclick="irA('pedidos')">
-        <div class="dash-card-icon">📦</div>
+        <div class="dash-card-icon" data-modulo="pedidos" data-emoji="📦">📦</div>
         <div class="dash-card-title">Pedidos de Materiales</div>
         <div class="dash-card-desc">Orden de pedido con correlativo, control de entregas y carga de planos o fotos.</div>
       </div>
       <div class="dash-card" onclick="irA('caja')">
-        <div class="dash-card-icon">💰</div>
+        <div class="dash-card-icon" data-modulo="caja" data-emoji="💰">💰</div>
         <div class="dash-card-title">Caja Chica</div>
         <div class="dash-card-desc">Rendición de gastos por quincena, con conciliación de fondo y reporte PDF.</div>
       </div>
       <div class="dash-card" onclick="irA('certificados')">
-        <div class="dash-card-icon">🧾</div>
+        <div class="dash-card-icon" data-modulo="certificados" data-emoji="🧾">🧾</div>
         <div class="dash-card-title">Certificados</div>
         <div class="dash-card-desc">Certificados de avance por contratista, con ítems propios y saldo por cobrar.</div>
       </div>
       <div class="dash-card" onclick="irA('minutas')">
-        <div class="dash-card-icon">📝</div>
+        <div class="dash-card-icon" data-modulo="minutas" data-emoji="📝">📝</div>
         <div class="dash-card-title">Minutas</div>
         <div class="dash-card-desc">Actas de reunión con firma digital, en PDF listas para enviar.</div>
       </div>
       <div class="dash-card" onclick="irA('clima')">
-        <div class="dash-card-icon">🌤</div>
+        <div class="dash-card-icon" data-modulo="clima" data-emoji="🌤">🌤</div>
         <div class="dash-card-title">Libro climático</div>
         <div class="dash-card-desc">Registro diario del clima y si se pudo trabajar, con reporte PDF.</div>
       </div>
       <div class="dash-card" onclick="irA('remitos')">
-        <div class="dash-card-icon">📄</div>
+        <div class="dash-card-icon" data-modulo="remitos" data-emoji="📄">📄</div>
         <div class="dash-card-title">Remitos</div>
         <div class="dash-card-desc">Recepción de mercadería con firma digital, en PDF listo para enviar.</div>
       </div>
       <div class="dash-card" onclick="irA('herramientas')">
-        <div class="dash-card-icon">🧰</div>
+        <div class="dash-card-icon" data-modulo="herramientas" data-emoji="🧰">🧰</div>
         <div class="dash-card-title">Herramientas</div>
         <div class="dash-card-desc">Inventario, préstamos entre obras y reparaciones.</div>
       </div>
       <div class="dash-card" onclick="irA('planoavance')">
-        <div class="dash-card-icon">📐</div>
+        <div class="dash-card-icon" data-modulo="planoavance" data-emoji="📐">📐</div>
         <div class="dash-card-title">Plano de avance</div>
         <div class="dash-card-desc">Marcá el % de avance por actividad directo sobre el plano, con seguimiento semanal.</div>
       </div>
       <div class="dash-card" onclick="irA('trabajadores')">
-        <div class="dash-card-icon">⚙</div>
+        <div class="dash-card-icon" data-modulo="trabajadores" data-emoji="⚙">⚙</div>
         <div class="dash-card-title">Configuración</div>
         <div class="dash-card-desc">Altas y bajas de personal, catálogos, usuarios y respaldo de datos.</div>
       </div>
@@ -9041,10 +9041,22 @@ function renderEstadoNominaDash(){
     </div>
   </div>`;
 }
+// Pinta el ícono de cada tarjeta de módulo del Dashboard según el tema de ícono elegido en
+// Personalización (Fase 3 del repaso con UI UX Pro Max): antes quedaban en emoji fijo pase lo
+// que pase, sin usar el sistema de temas que el resto de la barra de navegación ya tiene. En el
+// tema "emoji" (el de por defecto) no cambia nada -- se mantiene el emoji propio de cada tarjeta,
+// que no siempre es el mismo que el de su pestaña en la barra inferior (p.ej. la tarjeta de
+// Nómina usa 👷 y su pestaña usa 🗓, cada uno pensado para su contexto).
+function actualizarIconosDashCards(){
+  document.querySelectorAll("#view-dashboard .dash-card-icon[data-modulo]").forEach(el=>{
+    el.innerHTML = temaIconoApp==="emoji" ? el.dataset.emoji : iconoModuloHtml(el.dataset.modulo);
+  });
+}
 function renderDashboard(){
   renderAvisosImportantesDash();
   renderEstadoNominaDash();
   renderChipsObraDash();
+  actualizarIconosDashCards();
   const filtroObra = dashboardObraFiltro;
   const trabActivos = trabajadores.filter(t=>t.estado==="Activo" && (!filtroObra || t.obra===filtroObra)).length;
   const pedPendientes = pedidosIndex.filter(p=>(p.estado==="Pendiente"||p.estado==="Parcial") && (!filtroObra || p.obra===filtroObra)).length;
