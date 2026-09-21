@@ -3435,6 +3435,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button type="button" class="pg-accion-btn" onclick="abrirNuevoMesPresupuesto()"><span class="ico">➕</span><span class="lbl">Agregar un mes nuevo</span></button>
           <button type="button" class="pg-accion-btn" onclick="document.getElementById('pg-input-excel-referencia').click()"><span class="ico">📥</span><span class="lbl">Capturar formato de Excel</span></button>
           <input type="file" id="pg-input-excel-referencia" accept=".xlsx,.xls" style="display:none;" onchange="capturarSoloReferenciaExcel(this)">
+          <button type="button" class="pg-accion-btn" id="btn-deshacer-insp" style="display:none;" onclick="confirmarDoble(this,'¿Deshacer la última carga de aprobación de Inspección? Cada ítem vuelve exactamente a como estaba antes de aplicarla.',()=>deshacerUltimaInspeccion())"><span class="ico">↩️</span><span class="lbl">Deshacer última carga de Inspección</span></button>
         </div>
 
         <button class="btn btn-danger" style="width:100%;margin-top:16px;" onclick="confirmarDoble(this,'⚠ Esto borra TODO el presupuesto importado de esta obra. Tocá de nuevo para confirmar',()=>eliminarPresupuestoObra())">🗑 Eliminar presupuesto y volver a importar</button>
@@ -13891,6 +13892,7 @@ async function prepararVistaPresupuesto(){
   if(!hayDatos) return;
   actualizarResumenPresupuesto();
   renderListaPresupuesto();
+  actualizarBotonDeshacerInspeccion();
 }
 // Devuelve, para un ítem, los datos del ÚLTIMO mes con algo cargado (acumulado>0 o es el único).
 // Se usa SOLO para cosas que necesitan de verdad el dato más reciente que existe (como calcular
@@ -14664,21 +14666,38 @@ async function onArchivoInspeccionSeleccionado(input){
   }
 }
 // ---------------- Pantalla: revisar/corregir antes de aplicar ----------------
+// Nada de esto toca presupuestoItems todavía -- es solo una vista previa armada con los datos
+// detectados. Recién se escribe algo (y se guarda) si se toca "✓ Aplicar" más abajo.
 let inspeccionEmparejadosActuales = [];
 function renderRevisionInspeccion(emparejados, sinEmparejar, mesN){
   inspeccionEmparejadosActuales = emparejados;
+  let cantCambios = 0, cantNuevos = 0, cantSinCambio = 0;
   const filasHtml = emparejados.map((f,i)=>{
     const it = presupuestoItems[f.itemIdx];
-    const entradaActual = obtenerEntradaMes(it, mesN);
+    // Ojo: obtenerEntradaMes() SIEMPRE devuelve un objeto (fabrica uno vacío si no existe todavía)
+    // -- para saber de verdad si ya había algo cargado hay que buscarlo directo en el historial.
+    const entradaExistente = (it.historialMeses||[]).find(m=>m.n===mesN);
     const inconsistente = Math.abs(f.anterior + f.enElMes - f.acumulado) > 0.015;
+    const cambiaDeVerdad = !entradaExistente || Math.abs((entradaExistente.acumulado||0) - f.acumulado) > 0.005
+      || Math.abs((entradaExistente.enElMes||0) - f.enElMes) > 0.005;
+    if(!entradaExistente) cantNuevos++;
+    else if(cambiaDeVerdad) cantCambios++;
+    else cantSinCambio++;
+    const bloqueDeclarado = entradaExistente
+      ? `<div style="font-size:10px;padding:4px 6px;margin-top:4px;border-radius:6px;background:${cambiaDeVerdad?"rgba(245,158,11,.14)":"var(--fondo)"};">
+           <b>Ya tenías cargado:</b> Ant ${(entradaExistente.anterior*100).toFixed(1)}% · Mes ${(entradaExistente.enElMes*100).toFixed(1)}% · Acum ${(entradaExistente.acumulado*100).toFixed(1)}%${entradaExistente.origen==="inspeccion"?" (de otra carga de Inspección)":" (auto-declarado)"}
+         </div>`
+      : `<div style="font-size:10px;padding:4px 6px;margin-top:4px;border-radius:6px;background:rgba(14,148,136,.10);"><b>Todavía no tenías nada cargado para este mes en este ítem.</b></div>`;
     return `<div class="insp-fila" data-idx="${i}" style="padding:9px 4px;border-bottom:1px solid var(--borde);">
       <div style="display:flex;align-items:flex-start;gap:8px;">
         <input type="checkbox" class="insp-incluir" checked style="margin-top:3px;">
         <div style="flex:1;">
           <div style="font-size:11.5px;font-weight:700;">${esc(it.nombre)}</div>
-          <div style="font-size:9.5px;color:var(--tinta-suave);">Detectado: "${esc(f.descripcion)}" · coincidencia ${(f.puntaje*100).toFixed(0)}%${entradaActual.origen==="inspeccion"?" · ya tenía una aprobación de Inspección cargada para este mes":""}</div>
-          ${inconsistente?`<div style="font-size:9.5px;color:#B45309;font-weight:700;">⚠ Anterior + Este mes no da el Acumulado -- revisá los valores</div>`:""}
-          <div style="display:flex;gap:6px;margin-top:5px;">
+          <div style="font-size:9.5px;color:var(--tinta-suave);">Detectado en el archivo: "${esc(f.descripcion)}" · coincidencia ${(f.puntaje*100).toFixed(0)}%</div>
+          ${bloqueDeclarado}
+          ${inconsistente?`<div style="font-size:9.5px;color:#B45309;font-weight:700;margin-top:4px;">⚠ Anterior + Este mes no da el Acumulado -- revisá los valores</div>`:""}
+          <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+            <span style="font-size:9.5px;font-weight:700;">Se va a dejar en:</span>
             <label style="font-size:9.5px;">Ant.<input type="number" class="insp-anterior" min="0" max="100" step="0.1" value="${(f.anterior*100).toFixed(1)}" style="width:52px;padding:5px;border:1.5px solid var(--borde);border-radius:6px;font-size:11px;text-align:center;">%</label>
             <label style="font-size:9.5px;">Mes<input type="number" class="insp-mes" min="-100" max="100" step="0.1" value="${(f.enElMes*100).toFixed(1)}" style="width:52px;padding:5px;border:1.5px solid var(--borde);border-radius:6px;font-size:11px;text-align:center;">%</label>
             <label style="font-size:9.5px;">Acum.<input type="number" class="insp-acumulado" min="0" max="100" step="0.1" value="${(f.acumulado*100).toFixed(1)}" style="width:52px;padding:5px;border:1.5px solid var(--borde);border-radius:6px;font-size:11px;text-align:center;">%</label>
@@ -14695,10 +14714,11 @@ function renderRevisionInspeccion(emparejados, sinEmparejar, mesN){
     </div>` : "";
   const html = `
     <h2 style="margin-top:0;">🔍 Revisar antes de aplicar — Mes ${mesN}</h2>
-    <p class="helper">Se encontraron ${emparejados.length} ítem${emparejados.length===1?"":"s"} coincidentes en el archivo. Revisá los valores (se pueden corregir a mano) y destildá los que no quieras aplicar.</p>
+    <p class="helper">Nada se guarda todavía. Se encontraron ${emparejados.length} ítem${emparejados.length===1?"":"s"} coincidentes: <b>${cantCambios}</b> cambian el valor que ya tenías, <b>${cantNuevos}</b> son nuevos y <b>${cantSinCambio}</b> ya estaban igual. Revisá "Ya tenías cargado" contra "Se va a dejar en" en cada uno, corregí lo que haga falta, y destildá los que no quieras aplicar.</p>
     <div id="insp-lista-revision">${filasHtml || '<p class="helper">No se detectó ningún ítem coincidente.</p>'}</div>
     ${sinEmparejarHtml}
-    <button class="btn btn-primary" style="width:100%;margin-top:14px;" onclick="confirmarInspeccionPresupuesto(${mesN})">✓ Aplicar aprobación de Inspección — Mes ${mesN}</button>
+    <p class="helper" style="margin-top:12px;">Después de aplicar vas a tener un botón "↩️ Deshacer última carga de Inspección" (en Configuración) por si algo no quedó bien -- vuelve todo a exactamente como estaba antes, sin tocar nada más.</p>
+    <button class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="confirmarInspeccionPresupuesto(${mesN})">✓ Aplicar aprobación de Inspección — Mes ${mesN}</button>
     <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cancelar</button>`;
   abrirPromptGenerico(html);
 }
@@ -14708,8 +14728,15 @@ function renderRevisionInspeccion(emparejados, sinEmparejar, mesN){
 // "Origen") para dónde se muestra esa comparación. Si el ítem ya tenía meses POSTERIORES cargados,
 // se reencadena su "Anterior"/"Acumulado" a partir de este valor corregido, para que no queden
 // arrastrando el acumulado viejo como si esta corrección no hubiera pasado.
+//
+// Antes de tocar nada se arma un RESPALDO con el estado exacto de cada entrada afectada (la del
+// propio mes Y las de los meses posteriores que se vayan a reencadenar) -- así "↩️ Deshacer última
+// carga de Inspección" puede volver todo a como estaba, sin adivinar nada. El respaldo se guarda
+// en memoria y también en Firestore (clave aparte por obra), para que siga disponible aunque se
+// cierre la app antes de decidir deshacer.
 async function confirmarInspeccionPresupuesto(mesN){
   const filas = document.querySelectorAll("#insp-lista-revision .insp-fila");
+  const respaldo = {mesN, archivo: inspeccionArchivoNombre, fecha: hoyISO(), entradas: []};
   let cambios = 0;
   filas.forEach(filaEl=>{
     const idx = parseInt(filaEl.dataset.idx, 10);
@@ -14723,7 +14750,10 @@ async function confirmarInspeccionPresupuesto(mesN){
     const enElMes = (parseFloat(filaEl.querySelector(".insp-mes").value)||0)/100;
     const acumulado = Math.max(0, Math.min(1, (parseFloat(filaEl.querySelector(".insp-acumulado").value)||0)/100));
     it.historialMeses = it.historialMeses || [];
-    let entrada = it.historialMeses.find(m=>m.n===mesN);
+    const entradaPrevia = it.historialMeses.find(m=>m.n===mesN);
+    const posterioresPrevios = it.historialMeses.filter(m=>m.n>mesN).map(m=>JSON.parse(JSON.stringify(m)));
+    respaldo.entradas.push({itemIdx: f.itemIdx, entradaAnterior: entradaPrevia ? JSON.parse(JSON.stringify(entradaPrevia)) : null, posterioresPrevios});
+    let entrada = entradaPrevia;
     if(entrada){
       if(entrada.origen!=="inspeccion"){
         entrada.declarado = {anterior:entrada.anterior, enElMes:entrada.enElMes, acumulado:entrada.acumulado, monto:entrada.monto};
@@ -14748,10 +14778,65 @@ async function confirmarInspeccionPresupuesto(mesN){
   });
   if(cambios===0){ showToast("No quedó ningún ítem tildado para aplicar."); return; }
   await guardarPresupuestoObra();
+  inspeccionUltimoRespaldo = respaldo;
+  try{
+    const obra = claveObraPresupuesto();
+    if(obra) await window.storage.set(`presupuesto_ultimo_respaldo_insp_${obra}`, JSON.stringify(respaldo), true);
+  }catch(e){ console.warn("No se pudo guardar el respaldo para deshacer (igual queda disponible en esta sesión):", e); }
   cerrarPromptGenerico();
   actualizarResumenPresupuesto();
   renderListaPresupuesto();
+  actualizarBotonDeshacerInspeccion();
   showToast(`✓ Aprobación de Inspección aplicada -- Mes ${mesN}, ${cambios} ítem${cambios===1?"":"s"}`);
+}
+// ---------------- Deshacer la última carga de Inspección ----------------
+let inspeccionUltimoRespaldo = null;
+async function actualizarBotonDeshacerInspeccion(){
+  const btn = document.getElementById("btn-deshacer-insp");
+  if(!btn) return;
+  let hayRespaldo = !!inspeccionUltimoRespaldo;
+  if(!hayRespaldo){
+    try{
+      const obra = claveObraPresupuesto();
+      const r = obra ? await window.storage.get(`presupuesto_ultimo_respaldo_insp_${obra}`, true) : null;
+      hayRespaldo = !!(r && r.value);
+    }catch(e){ hayRespaldo = false; }
+  }
+  btn.style.display = hayRespaldo ? "flex" : "none";
+}
+async function deshacerUltimaInspeccion(){
+  let respaldo = inspeccionUltimoRespaldo;
+  const obra = claveObraPresupuesto();
+  if(!respaldo && obra){
+    try{
+      const r = await window.storage.get(`presupuesto_ultimo_respaldo_insp_${obra}`, true);
+      respaldo = r && r.value ? JSON.parse(r.value) : null;
+    }catch(e){ respaldo = null; }
+  }
+  if(!respaldo){ showToast("No hay ninguna carga de Inspección para deshacer."); return; }
+  respaldo.entradas.forEach(e=>{
+    const it = presupuestoItems[e.itemIdx];
+    if(!it) return;
+    it.historialMeses = it.historialMeses || [];
+    const idx = it.historialMeses.findIndex(m=>m.n===respaldo.mesN);
+    if(e.entradaAnterior){
+      if(idx>=0) it.historialMeses[idx] = e.entradaAnterior; else it.historialMeses.push(e.entradaAnterior);
+    }else if(idx>=0){
+      it.historialMeses.splice(idx,1);
+    }
+    (e.posterioresPrevios||[]).forEach(prev=>{
+      const idxP = it.historialMeses.findIndex(m=>m.n===prev.n);
+      if(idxP>=0) it.historialMeses[idxP] = prev;
+    });
+    it.historialMeses.sort((a,b)=>a.n-b.n);
+  });
+  await guardarPresupuestoObra();
+  try{ if(obra) await window.storage.delete(`presupuesto_ultimo_respaldo_insp_${obra}`, true); }catch(e){}
+  inspeccionUltimoRespaldo = null;
+  actualizarResumenPresupuesto();
+  renderListaPresupuesto();
+  actualizarBotonDeshacerInspeccion();
+  showToast(`✓ Se deshizo la carga de Inspección del Mes ${respaldo.mesN} -- todo volvió a como estaba antes`);
 }
 // ---------------- Revisar porcentajes -- encuentra ítems con más de 100% o que bajaron entre meses ----------------
 // ---------------- Ajustar ítems para que cierren exacto con el contrato ----------------
