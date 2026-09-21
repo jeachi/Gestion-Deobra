@@ -492,9 +492,18 @@ section.view.active{display:block;}
 .dash-grid.bento .dash-card-desc{font-size:10px;line-height:1.3;}
 .dash-card{
   background:linear-gradient(160deg,#fff,var(--verde-claro));border:1.5px solid var(--verde);
-  border-radius:14px;padding:18px;cursor:pointer;transition:.15s;
+  border-radius:14px;padding:18px;cursor:pointer;transition:transform .15s,box-shadow .15s;
 }
 .dash-card:active{transform:scale(.98);}
+/* Solo en dispositivos con hover real (mouse/trackpad) -- en celular el :hover queda "pegado"
+   después de tocar, así que ahí se ve nada más el highlight táctil de siempre. */
+@media (hover:hover){
+  .dash-card:hover{transform:translateY(-2px);box-shadow:0 10px 22px -10px rgba(10,37,64,.28);}
+}
+@media (prefers-reduced-motion:reduce){
+  .dash-card{transition:none;}
+  .dash-card:hover{transform:none;}
+}
 .dash-card-icon{font-size:30px;margin-bottom:6px;}
 .dash-card-title{font-weight:800;font-size:15.5px;color:var(--verde-oscuro);margin-bottom:4px;}
 .dash-card-desc{font-size:12.5px;color:var(--tinta-suave);line-height:1.4;}
@@ -528,7 +537,8 @@ section.view.active{display:block;}
 /* Brillo cian de foco -- aplica a CUALQUIER campo de toda la app (no solo los envueltos en
    .field), para que tocar/tabular a un campo se sienta igual de "premium" en todos lados sin
    tener que retocar cada input suelto uno por uno. Also ayuda a accesibilidad con teclado. */
-input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,
+[role="button"]:focus-visible{
   outline:2px solid var(--cian,#2FD5C8);outline-offset:1px;
   box-shadow:0 0 0 4px rgba(47,213,200,.18);
 }
@@ -5248,6 +5258,27 @@ function ordenarTrabajadoresPorObra(){
 }
 function esc(s){ return String(s===null || s===undefined ? "" : s).replace(/"/g,"&quot;"); }
 
+// Vuelve navegable por teclado un bloque de tarjetas/chips con onclick (sin <button> real):
+// hoy quien solo usa teclado no puede llegar a ellas. Se aplica puntualmente donde ya se revisó
+// que el div clicable no tenga OTRO control (botón/input) adentro -- meterlo a ciegas en toda la
+// app duplicaría el foco en esos casos. Idempotente: se puede llamar de nuevo tras un re-render.
+function hacerClicablesAccesibles(raiz){
+  if(!raiz) return;
+  raiz.querySelectorAll('[onclick]:not([tabindex])').forEach(el=>{
+    el.setAttribute('tabindex','0');
+    if(!el.hasAttribute('role')) el.setAttribute('role','button');
+    el.addEventListener('keydown', function(ev){
+      if(ev.key==='Enter' || ev.key===' '){
+        ev.preventDefault();
+        el.click();
+      }
+    });
+  });
+}
+// Arranca ya mismo: las tarjetas del Dashboard (módulos, chips de clima) están en el HTML fijo
+// de la página, así que ya existen en el DOM en cuanto este script corre.
+hacerClicablesAccesibles(document.getElementById('view-dashboard'));
+
 
 /* ---------------- Fechas / quincena ---------------- */
 function diasDelMes(anio, mes1a12){ return new Date(anio, mes1a12, 0).getDate(); }
@@ -8796,6 +8827,7 @@ function renderChipsObraDash(){
   if(listaObras.length<=1){ cont.innerHTML = ""; return; } // con una sola obra (o ninguna), no tiene sentido filtrar
   cont.innerHTML = `<div class="chip-obra-dash${!dashboardObraFiltro?" sel":""}" onclick="cambiarFiltroObraDashboard(null)">Todas</div>` +
     listaObras.map(o=>`<div class="chip-obra-dash${dashboardObraFiltro===o?" sel":""}" onclick="cambiarFiltroObraDashboard('${esc(o)}')">${esc(o)}</div>`).join("");
+  hacerClicablesAccesibles(cont);
 }
 // ---------------- Centro de avisos del Dashboard ----------------
 // ---------------- "Esta semana" -- avisos de algo que se viene, no urgente todavía ----------------
