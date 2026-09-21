@@ -13,11 +13,17 @@
 <link rel="apple-touch-icon" href="icon-192.png?v=2">
 <link rel="icon" href="icon-192.png?v=2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://www.gstatic.com">
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- defer: ya no configura nada de una al cargar (ver asegurarWorkerPdfjs en el script principal,
+     que lo hace recién cuando hace falta) -- así esta librería pesada no bloquea el primer
+     renderizado de la app mientras se descarga. -->
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -18924,19 +18930,22 @@ async function prepararVistaPlanoAvance(){
 }
 
 
-// pdf.js se trae de un CDN (línea de arriba del todo del archivo) -- si no hay señal, el CDN está
-// caído, o algo lo bloquea, "pdfjsLib" nunca llega a existir. Sin este chequeo, la línea de abajo
-// tiraba una excepción sin atajar en la carga inicial del script que CORTABA ahí mismo toda la
-// inicialización que viene después (imagenPlano, poligonos, anotacionesTexto, proyectoMedidas y
-// lo que sea que se declare más abajo en el archivo quedaban sin inicializar) -- eso es lo que
-// causaba el "Cannot access 'imagenPlano' before initialization" al entrar a Plano de avance, y
-// probablemente rompía en silencio otras pantallas también. La función que sí usa pdfjsLib
-// (cargarImagenDesdeArchivo, para convertir un PDF a imagen) ya tiene su propio try/catch, así
-// que alcanza con evitar que ESTA línea explote para que el resto de la app arranque bien.
-if(typeof pdfjsLib !== "undefined"){
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-}else{
-  console.warn("pdf.js no se pudo cargar (sin señal o CDN bloqueado) -- subir un PDF como plano no va a funcionar, pero el resto de la app sigue.");
+// pdf.js se trae de un CDN con "defer" (no bloquea el arranque -- antes sí, y esto configuraba su
+// worker de una en el cuerpo principal del script, apenas se cargaba la página). Configurar el
+// worker acá y ahora, en cambio, deja que se haga recién cuando hace falta de verdad (justo antes
+// de convertir un PDF a imagen en cargarImagenDesdeArchivo), y a esa altura "defer" ya garantiza
+// que el script terminó de cargar. Si no hay señal, el CDN está caído, o algo lo bloquea,
+// "pdfjsLib" nunca llega a existir -- por eso el chequeo, para no romper esa conversión puntual
+// (con su propio try/catch) sin afectar el resto de la app.
+function asegurarWorkerPdfjs(){
+  if(typeof pdfjsLib === "undefined"){
+    console.warn("pdf.js no se pudo cargar (sin señal o CDN bloqueado) -- subir un PDF como plano no va a funcionar.");
+    return false;
+  }
+  if(!pdfjsLib.GlobalWorkerOptions.workerSrc){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  }
+  return true;
 }
 
 let imagenPlano = null; // Image ya cargada
@@ -20335,6 +20344,7 @@ function cargarImagenDesdeArchivo(file){
   return new Promise(async (resolve, reject)=>{
     if(file.type === "application/pdf"){
       try{
+        if(!asegurarWorkerPdfjs()) throw new Error("pdf.js no disponible (sin señal o CDN bloqueado)");
         const buf = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({data: buf}).promise;
         const page = await pdf.getPage(1);
