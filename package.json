@@ -1,0 +1,8 @@
+{
+  "name": "gestion-de-obra",
+  "private": true,
+  "description": "Sin build ni dependencias -- es un único index.html servido tal cual. Este package.json solo existe para correr los tests de tests/ con el test runner que ya trae Node.",
+  "scripts": {
+    "test": "node --test"
+  }
+}
