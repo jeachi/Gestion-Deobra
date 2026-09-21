@@ -34,6 +34,18 @@
 :root{
   --verde:#0E9488;
   --verde-oscuro:#0A2540;
+  /* Texto sobre fondos que usan --verde-claro (badges, chips, botones tenues): en modo claro es
+     igual a --verde-oscuro de siempre, pero en oscuro --verde-claro pasa a ser un verde MUY
+     oscuro y ese mismo texto quedaba casi invisible encima (contraste ~1.2:1) -- se redefine acá
+     abajo, en el bloque de modo oscuro, sin tocar --verde-oscuro (que sigue haciendo falta fijo
+     para los casos donde se usa como FONDO). */
+  --texto-en-verde-claro:var(--verde-oscuro);
+  /* Mismo problema, versión roja: #B42318 se eligió para leerse bien sobre blanco/rosa claro
+     (errores, alertas, "faltante"), pero contra las superficies oscuras del modo oscuro
+     (--papel/--fondo/--rojo-baja, todas mucho más oscuras ahí) el contraste cae a ~2.5-2.8:1,
+     por debajo del mínimo. En modo claro es igual al de siempre. */
+  --texto-alerta:#B42318;
+  --texto-exito:#1D7A2E;
   --verde-claro:#E3F7F5;
   --tinta:#1F2937;
   --tinta-suave:#4B5563;
@@ -75,6 +87,9 @@ button, .chip-opt, .tool-card, .cad-riel-btn, .mini-accion-plano, .plano-card, .
    siempre, fijo) así que no le cambia nada estar en cualquiera de los dos temas acá. */
 body.tema-oscuro{
   --verde-claro:#0f3a35;
+  --texto-en-verde-claro:#8FE9DB;
+  --texto-alerta:#FF6B6B;
+  --texto-exito:#4ADE80;
   --tinta:#E7EEF1;
   --tinta-suave:#9FB0B8;
   --papel:#131B22;
@@ -386,7 +401,7 @@ header.top .fila-usuario{
 .login-box input:focus{outline:2px solid var(--cian);outline-offset:1px;}
 .login-box .btn-primary{background:var(--cian-oscuro);}
 .login-box .btn-primary:hover{background:var(--navy);}
-#login-error,#login-error2{color:#B42318;font-weight:700;min-height:16px;margin-top:8px;}
+#login-error,#login-error2{color:var(--texto-alerta);font-weight:700;min-height:16px;margin-top:8px;}
 
 /* ---------- Tabs ---------- */
 .carrusel-tabs-wrap{display:none;
@@ -492,9 +507,18 @@ section.view.active{display:block;}
 .dash-grid.bento .dash-card-desc{font-size:10px;line-height:1.3;}
 .dash-card{
   background:linear-gradient(160deg,#fff,var(--verde-claro));border:1.5px solid var(--verde);
-  border-radius:14px;padding:18px;cursor:pointer;transition:.15s;
+  border-radius:14px;padding:18px;cursor:pointer;transition:transform .15s,box-shadow .15s;
 }
 .dash-card:active{transform:scale(.98);}
+/* Solo en dispositivos con hover real (mouse/trackpad) -- en celular el :hover queda "pegado"
+   después de tocar, así que ahí se ve nada más el highlight táctil de siempre. */
+@media (hover:hover){
+  .dash-card:hover{transform:translateY(-2px);box-shadow:0 10px 22px -10px rgba(10,37,64,.28);}
+}
+@media (prefers-reduced-motion:reduce){
+  .dash-card{transition:none;}
+  .dash-card:hover{transform:none;}
+}
 .dash-card-icon{font-size:30px;margin-bottom:6px;}
 .dash-card-title{font-weight:800;font-size:15.5px;color:var(--verde-oscuro);margin-bottom:4px;}
 .dash-card-desc{font-size:12.5px;color:var(--tinta-suave);line-height:1.4;}
@@ -528,7 +552,8 @@ section.view.active{display:block;}
 /* Brillo cian de foco -- aplica a CUALQUIER campo de toda la app (no solo los envueltos en
    .field), para que tocar/tabular a un campo se sienta igual de "premium" en todos lados sin
    tener que retocar cada input suelto uno por uno. Also ayuda a accesibilidad con teclado. */
-input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,
+[role="button"]:focus-visible{
   outline:2px solid var(--cian,#2FD5C8);outline-offset:1px;
   box-shadow:0 0 0 4px rgba(47,213,200,.18);
 }
@@ -571,12 +596,12 @@ table.trab input,table.trab select{
   font-family:inherit;width:100%;background:#fff;
 }
 .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;}
-.badge.activo{background:var(--verde-claro);color:var(--verde-oscuro);}
-.badge.baja{background:var(--rojo-baja);color:#B42318;}
+.badge.activo{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
+.badge.baja{background:var(--rojo-baja);color:var(--texto-alerta);}
 .tiny{font-size:11px;color:var(--tinta-suave);margin-top:4px;}
 .catalogo-lista{display:flex;flex-wrap:wrap;gap:6px;}
 .catalogo-chip{
-  display:flex;align-items:center;gap:6px;background:var(--verde-claro);color:var(--verde-oscuro);
+  display:flex;align-items:center;gap:6px;background:var(--verde-claro);color:var(--texto-en-verde-claro);
   padding:5px 6px 5px 12px;border-radius:999px;font-size:12.5px;font-weight:600;
 }
 .catalogo-chip button{
@@ -608,7 +633,7 @@ table.trab input,table.trab select{
 .item-foto-btn{display:flex;align-items:center;gap:5px;background:var(--fondo);border:1px solid var(--borde);border-radius:7px;padding:6px 10px;font-size:11.5px;font-weight:600;color:var(--tinta);cursor:pointer;}
 .item-foto-thumb-real{width:34px;height:34px;border-radius:6px;object-fit:cover;border:1px solid var(--borde);flex-shrink:0;}
 .item-foto-nombre{font-size:11px;color:var(--tinta-suave);flex:1;}
-.btn-agregar-material{width:100%;border:1.5px dashed var(--verde);background:var(--verde-claro);color:var(--verde-oscuro);border-radius:var(--radius);padding:12px;font-size:13.5px;font-weight:700;margin-top:4px;cursor:pointer;}
+.btn-agregar-material{width:100%;border:1.5px dashed var(--verde);background:var(--verde-claro);color:var(--texto-en-verde-claro);border-radius:var(--radius);padding:12px;font-size:13.5px;font-weight:700;margin-top:4px;cursor:pointer;}
 
 /* ---- Clima ---- */
 .condicion-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:7px;}
@@ -617,7 +642,7 @@ table.trab input,table.trab select{
 .condicion-btn.sel{border-color:var(--verde);background:var(--verde-claro);}
 .trabajo-row{display:flex;gap:8px;}
 .trabajo-btn{flex:1;border:1.5px solid var(--borde);border-radius:8px;padding:10px;text-align:center;font-size:12px;font-weight:700;cursor:pointer;color:var(--tinta);}
-.trabajo-btn.si.sel{border-color:#0E9488;background:var(--verde-claro);color:#0A2540;}
+.trabajo-btn.si.sel{border-color:#0E9488;background:var(--verde-claro);color:var(--texto-en-verde-claro);}
 .trabajo-btn.parcial.sel{border-color:#C98A00;background:#FFF6D8;color:#7A5B00;}
 .trabajo-btn.no.sel{border-color:#B42318;background:#FBD5D5;color:#B42318;}
 .filtro-obra-input{width:100%;border:1px solid var(--borde);border-radius:8px;padding:10px;font-size:13px;margin-bottom:14px;background:#fff;box-sizing:border-box;}
@@ -633,7 +658,7 @@ table.trab input,table.trab select{
 .dia-entry-clima .obs{font-size:11.5px;color:var(--tinta-suave);margin-top:2px;}
 .dia-entry-clima .obra-tag{font-size:10.5px;color:var(--tinta-suave);}
 .badge-trabajo{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;margin-top:5px;display:inline-block;}
-.badge-si{background:var(--verde-claro);color:#0A2540;}
+.badge-si{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
 .badge-no{background:#FBD5D5;color:#B42318;}
 .badge-parcial{background:#FFF6D8;color:#7A5B00;}
 .dia-quitar{margin-left:auto;border:none;background:none;color:var(--tinta-suave);font-size:14px;cursor:pointer;flex-shrink:0;}
@@ -654,21 +679,21 @@ table.trab input,table.trab select{
 .foto-drop{border:1.5px dashed var(--borde);border-radius:10px;height:100px;display:flex;align-items:center;justify-content:center;color:var(--tinta-suave);font-size:12px;background:var(--fondo);cursor:pointer;overflow:hidden;}
 .chip-row{display:flex;gap:7px;flex-wrap:wrap;}
 .chip-opt{border:1.5px solid var(--borde);border-radius:999px;padding:8px 14px;font-size:12px;font-weight:700;color:var(--tinta);background:var(--papel);cursor:pointer;}
-.chip-opt.sel{border-color:var(--verde);background:var(--verde-claro);color:var(--verde-oscuro);}
+.chip-opt.sel{border-color:var(--verde);background:var(--verde-claro);color:var(--texto-en-verde-claro);}
 .herr-item{background:#fff;border:1px solid var(--borde);border-radius:10px;padding:12px;margin-bottom:10px;display:flex;gap:10px;}
 .herr-foto{width:52px;height:52px;border-radius:8px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#0E9488,#0A2540);}
 .herr-info{flex:1;min-width:0;}
 .herr-nombre{font-weight:800;font-size:13px;color:var(--verde-oscuro);}
 .herr-meta{font-size:10.5px;color:var(--tinta-suave);margin-top:2px;}
 .badge-estado-herr{font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:999px;margin-top:5px;display:inline-block;}
-.be-bien{background:var(--verde-claro);color:#0A2540;}
+.be-bien{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
 .be-danada{background:#FBD5D5;color:#B42318;}
 .be-reparacion{background:#FFF6D8;color:#7A5B00;}
 .be-prestada{background:#E3F0FF;color:#0A4A8A;}
 .botones-fila-herr{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
 .btn-mini{border:1px solid var(--borde);border-radius:7px;padding:5px 9px;font-size:10.5px;font-weight:700;background:#fff;color:var(--tinta);cursor:pointer;}
-.btn-mini.peligro{border-color:#B42318;color:#B42318;}
-.btn-mini.admin{border-color:var(--verde);color:var(--verde-oscuro);background:var(--verde-claro);}
+.btn-mini.peligro{border-color:#B42318;color:var(--texto-alerta);}
+.btn-mini.admin{border-color:var(--verde);color:var(--texto-en-verde-claro);background:var(--verde-claro);}
 .herr-obs-item{font-size:10.5px;color:var(--tinta-suave);border-top:1px dashed var(--borde);padding-top:6px;margin-top:6px;}
 #herr-modal-overlay{position:fixed;inset:0;background:rgba(10,37,64,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;}
 #herr-modal-panel{background:#fff;border-radius:14px;padding:16px;width:100%;max-width:420px;box-shadow:0 20px 50px rgba(0,0,0,.3);max-height:88vh;overflow-y:auto;}
@@ -705,7 +730,7 @@ table.trab input,table.trab select{
 
 /* ---- Observaciones de obra ---- */
 .chip-filtro{border:1.3px solid var(--borde);border-radius:999px;padding:6px 13px;font-size:11px;font-weight:700;background:#fff;color:var(--tinta);cursor:pointer;}
-.chip-filtro.sel{border-color:var(--verde);background:var(--verde-claro);color:var(--verde-oscuro);}
+.chip-filtro.sel{border-color:var(--verde);background:var(--verde-claro);color:var(--texto-en-verde-claro);}
 .obs-item{background:#fff;border:1px solid var(--borde);border-radius:14px;overflow:hidden;margin-bottom:14px;box-shadow:0 2px 10px rgba(10,37,64,.06);}
 .obs-item.prior-alta{border-left:4px solid #DC5A5A;}
 .obs-item.prior-media{border-left:4px solid #D4A017;}
@@ -746,7 +771,7 @@ table.tabla-asist td{padding:8px 4px;border-bottom:1px solid var(--fondo);}
 .pct-num{font-weight:800;font-size:11px;white-space:nowrap;}
 .inf-alto .pct-bar-fill{background:#0E9488;} .inf-alto .pct-num{color:#0A7A5C;}
 .inf-medio .pct-bar-fill{background:#FBBF24;} .inf-medio .pct-num{color:#B45309;}
-.inf-bajo .pct-bar-fill{background:#F87171;} .inf-bajo .pct-num{color:#B42318;}
+.inf-bajo .pct-bar-fill{background:#F87171;} .inf-bajo .pct-num{color:var(--texto-alerta);}
 
 /* ---- Materiales recibidos ---- */
 .barra-mat{margin-bottom:12px;}
@@ -766,7 +791,7 @@ table.tabla-asist td{padding:8px 4px;border-bottom:1px solid var(--fondo);}
 .fila-preview-asist{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--fondo);font-size:12px;}
 .fila-preview-asist:last-child{border-bottom:none;}
 .badge-p{font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap;}
-.badge-presente{background:var(--verde-claro);color:#0A2540;}
+.badge-presente{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
 .badge-ausente{background:#FBD5D5;color:#B42318;}
 .badge-enfermo{background:#E3F0FF;color:#0A4A8A;}
 .botones-preview-asist{display:flex;gap:8px;margin-top:10px;}
@@ -794,7 +819,7 @@ table.tabla-asist td{padding:8px 4px;border-bottom:1px solid var(--fondo);}
 .match-item .remito-nombre b{color:var(--tinta);}
 .match-item .pregunta{font-size:12.5px;font-weight:700;color:var(--verde-oscuro);margin:6px 0 8px;}
 .opciones-match{display:flex;gap:8px;flex-wrap:wrap;}
-.opcion-match{border:1.3px solid var(--verde);background:var(--verde-claro);color:var(--verde-oscuro);border-radius:8px;padding:8px 12px;font-size:11.5px;font-weight:700;cursor:pointer;}
+.opcion-match{border:1.3px solid var(--verde);background:var(--verde-claro);color:var(--texto-en-verde-claro);border-radius:8px;padding:8px 12px;font-size:11.5px;font-weight:700;cursor:pointer;}
 .opcion-nuevo{border:1.3px dashed var(--borde);background:#fff;color:var(--tinta-suave);border-radius:8px;padding:8px 12px;font-size:11.5px;font-weight:700;cursor:pointer;}
 
 .item-atencion{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--fondo);cursor:pointer;}
@@ -962,8 +987,11 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
 
 
 /* ---- Menú lateral (estilo cajón deslizante, no el que sube desde abajo) ---- */
-#menu-agrupado-overlay{position:fixed;inset:0;background:rgba(6,10,13,.55);z-index:70;opacity:0;pointer-events:none;transition:opacity .25s ease;}
-#menu-agrupado-overlay.abierto{opacity:1;pointer-events:auto;}
+/* visibility (con su propia transición retrasada) además de opacity: solo opacity+pointer-events
+   dejaba el botón "cerrar" de adentro enfocable y en el orden de Tab aunque el menú estuviera
+   invisible -- alguien navegando solo con teclado podía terminar con el foco "perdido" ahí. */
+#menu-agrupado-overlay{position:fixed;inset:0;background:rgba(6,10,13,.55);z-index:70;opacity:0;visibility:hidden;pointer-events:none;transition:opacity .25s ease,visibility 0s linear .25s;}
+#menu-agrupado-overlay.abierto{opacity:1;visibility:visible;pointer-events:auto;transition:opacity .25s ease,visibility 0s linear;}
 #menu-agrupado-panel{
   position:fixed;top:0;bottom:0;left:0;width:82%;max-width:320px;
   background:var(--navy-oscuro,#0A1A26);
@@ -994,7 +1022,19 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
 .bg-item:hover{background:var(--fondo);}
 .bg-item .t{font-size:13.5px;font-weight:700;color:var(--tinta);}
 .bg-item .s{font-size:11.5px;color:var(--tinta-suave);margin-top:2px;}
-.bg-vacio{padding:26px 16px;text-align:center;color:var(--tinta-suave);font-size:13px;}
+/* Estado vacío genérico (ícono + título + subtítulo) -- nació para el buscador global pero se
+   reutiliza en cualquier lista/sección de la app que pueda no tener nada que mostrar todavía. */
+.estado-vacio{padding:34px 20px 30px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.estado-vacio-ico{width:46px;height:46px;border-radius:50%;background:var(--verde-claro);color:var(--verde);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.estado-vacio-ico svg{width:22px;height:22px;}
+.estado-vacio-tit{font-size:14px;font-weight:700;color:var(--tinta);}
+.estado-vacio-sub{font-size:12px;color:var(--tinta-suave);line-height:1.45;max-width:320px;}
+/* Variante compacta -- para donde el estado vacío no es lo único en la pantalla (una tarjeta chica,
+   una fila de tabla), y el tamaño completo de arriba se vería desproporcionado. */
+.estado-vacio.compacto{padding:20px 16px;gap:7px;}
+.estado-vacio.compacto .estado-vacio-ico{width:36px;height:36px;}
+.estado-vacio.compacto .estado-vacio-ico svg{width:17px;height:17px;}
+.estado-vacio.compacto .estado-vacio-tit{font-size:12.5px;}
 
 .menu-grupo-tit{font-size:10.5px;font-weight:800;color:var(--nav-acento, var(--verde));text-transform:uppercase;letter-spacing:.5px;padding:14px 10px 6px;display:flex;align-items:center;gap:7px;}
 .menu-grupo-ico{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;font-size:13px;flex-shrink:0;}
@@ -1019,7 +1059,7 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
   touch-action:none;
 }
 
-.chip-caja-base{display:flex;align-items:center;gap:8px;background:var(--verde-claro);border:1.3px solid var(--verde);border-radius:999px;padding:8px 14px;margin-bottom:14px;font-size:11.5px;font-weight:700;color:var(--verde-oscuro);}
+.chip-caja-base{display:flex;align-items:center;gap:8px;background:var(--verde-claro);border:1.3px solid var(--verde);border-radius:999px;padding:8px 14px;margin-bottom:14px;font-size:11.5px;font-weight:700;color:var(--texto-en-verde-claro);}
 .chip-caja-base .icono{font-size:14px;flex-shrink:0;}
 
 .rc-datos-box{background:linear-gradient(160deg,var(--verde-claro),#fff);border:1.3px solid var(--verde);border-radius:12px;padding:14px;}
@@ -1112,7 +1152,7 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
 .estado-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;}
 .estado-badge.Pendiente{background:#FBD5D5;color:#B42318;}
 .estado-badge.Parcial{background:#FFF3CD;color:#7A5A00;}
-.estado-badge.Completo{background:var(--verde-claro);color:var(--verde-oscuro);}
+.estado-badge.Completo{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
 
 .pedido-card{
   background:#fff;border:1px solid var(--borde);border-left:5px solid var(--tinta-suave);border-radius:16px;padding:14px 16px;margin-bottom:12px;
@@ -1126,7 +1166,7 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
 .pedido-card .ped-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
 .franja-vencidos{background:#fff;border:1px solid #FBD5D5;border-left:4px solid #B42318;border-radius:10px;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:12px;gap:8px;}
 .franja-vencidos.activa{background:var(--verde-claro);border-color:var(--verde);border-left-color:var(--verde);}
-.franja-vencidos .fv-txt{font-size:12.5px;font-weight:700;color:#B42318;}
+.franja-vencidos .fv-txt{font-size:12.5px;font-weight:700;color:var(--texto-alerta);}
 .franja-vencidos.activa .fv-txt{color:var(--verde-oscuro);}
 .franja-vencidos .fv-der{display:flex;align-items:center;gap:10px;flex-shrink:0;}
 .franja-vencidos .fv-reporte{border:none;background:transparent;font-size:16px;cursor:pointer;padding:2px 4px;line-height:1;}
@@ -1198,7 +1238,7 @@ table.op-items td.op-u{text-align:center;border-bottom:1px solid #555;font-size:
 .rgp-num{font-weight:800;color:#0A2540;white-space:nowrap;}
 .rgp-obra{font-weight:600;color:#0E9488;}
 .rgp-material{color:#1F2937;}
-.rgp-falta{color:#B42318;font-weight:800;text-align:center;}
+.rgp-falta{color:var(--texto-alerta);font-weight:800;text-align:center;}
 .rgp-un{color:#4B5563;text-align:center;}
 .rgp-fecha{color:#4B5563;white-space:nowrap;}
 .rgp-footer{padding:14px 4px;font-size:11px;color:#4B5563;font-style:italic;}
@@ -1220,7 +1260,7 @@ table.op-items td.op-u{text-align:center;border-bottom:1px solid #555;font-size:
 .cc-proyeccion-label{font-size:10px;font-weight:600;color:var(--tinta-suave);margin-top:2px;text-align:right;}
 .cc-items-tabla input[type=text],.cc-items-tabla input[type=number]{width:100%;border:1px solid var(--borde);border-radius:5px;padding:5px 6px;font-size:12.5px;font-family:inherit;}
 .cc-items-total{font-size:12px;font-weight:700;margin-top:6px;text-align:right;}
-.cc-items-total.warn{color:#B42318;}
+.cc-items-total.warn{color:var(--texto-alerta);}
 .cc-items-total.ok{color:var(--verde-oscuro);}
 .certificado-fila{cursor:pointer;}
 .cert-form-tabla input[type=number]{width:90px;border:1px solid var(--borde);border-radius:5px;padding:5px 6px;font-size:12.5px;font-family:inherit;text-align:right;}
@@ -1338,10 +1378,10 @@ table.op-items td.op-u{text-align:center;border-bottom:1px solid #555;font-size:
   display:flex;flex-direction:column;gap:6px;font-size:13.5px;
 }
 .rc-resumen b{float:right;}
-.rc-diferencia b{color:#B42318;}
+.rc-diferencia b{color:var(--texto-alerta);}
 .rc-diferencia.ok b{color:var(--verde-oscuro);}
 .rc-diferencia.positiva b{color:#1D4ED8;font-weight:800;}
-.rc-diferencia.negativa b{color:#B42318;font-weight:800;}
+.rc-diferencia.negativa b{color:var(--texto-alerta);font-weight:800;}
 /* ---- Línea de tiempo de certificados (detalle del contratista) ---- */
 .timeline-cert-wrap{overflow-x:auto;margin-top:14px;padding-bottom:2px;}
 .timeline-cert{display:flex;align-items:flex-start;min-width:0;position:relative;padding-top:16px;}
@@ -1457,7 +1497,7 @@ table.grid th.sticky-col{background:var(--verde-oscuro);z-index:6;}
 .col-obra{left:184px;min-width:70px;max-width:70px;text-align:left !important;font-size:10.5px;}
 table.grid td.col-obra{box-shadow:3px 0 6px rgba(0,0,0,.15);}
 .scroll-hint{
-  display:flex;align-items:center;gap:6px;background:var(--verde-claro);color:var(--verde-oscuro);
+  display:flex;align-items:center;gap:6px;background:var(--verde-claro);color:var(--texto-en-verde-claro);
   font-weight:700;font-size:12.5px;padding:8px 12px;border-radius:999px;margin-bottom:10px;
   width:fit-content;
 }
@@ -1498,7 +1538,7 @@ tr.fila-baja td.total-cell{background:#F6B8B8 !important;}
 .log-txt b{color:var(--tinta);}
 .log-time{color:var(--tinta-suave);font-size:10.5px;margin-top:2px;}
 input.input-alerta{border:1.5px solid var(--rojo-borde) !important;background:var(--rojo-baja);}
-.cf-alerta-retroceso{color:#B42318;font-size:10.5px;font-weight:700;margin-top:2px;white-space:nowrap;}
+.cf-alerta-retroceso{color:var(--texto-alerta);font-size:10.5px;font-weight:700;margin-top:2px;white-space:nowrap;}
 .cf-ref-plano{color:#0E9488;font-size:10px;font-weight:600;margin-top:2px;white-space:nowrap;}
 /* ---- Comparador apilado del formulario de certificado ---- */
 .comp-fila{margin-bottom:12px;}
@@ -1581,9 +1621,9 @@ input.input-alerta.input-difiere-plano{border-color:var(--rojo-borde) !important
 #asistente-imagen-preview{margin:0 16px 8px;flex-shrink:0;}
 #asistente-doc-preview{
   display:flex;align-items:center;gap:8px;margin:0 16px 8px;padding:7px 10px;
-  background:var(--verde-claro);border-radius:8px;font-size:11.5px;color:var(--verde-oscuro);flex-shrink:0;
+  background:var(--verde-claro);border-radius:8px;font-size:11.5px;color:var(--texto-en-verde-claro);flex-shrink:0;
 }
-.asistente-imagen-fila{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--verde-claro);border-radius:8px;font-size:11.5px;color:var(--verde-oscuro);margin-bottom:4px;}
+.asistente-imagen-fila{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--verde-claro);border-radius:8px;font-size:11.5px;color:var(--texto-en-verde-claro);margin-bottom:4px;}
 .asistente-imagen-fila img{width:34px;height:34px;object-fit:cover;border-radius:5px;flex-shrink:0;}
 .asistente-imagen-fila button{margin-left:auto;border:none;background:#B42318;color:#fff;width:18px;height:18px;border-radius:50%;font-size:10px;cursor:pointer;flex-shrink:0;}
 #asistente-doc-preview button{margin-left:auto;border:none;background:#B42318;color:#fff;width:18px;height:18px;border-radius:50%;font-size:10px;cursor:pointer;flex-shrink:0;}
@@ -1734,7 +1774,7 @@ input.input-alerta.input-difiere-plano{border-color:var(--rojo-borde) !important
 .chip-rapido-dia:active{transform:scale(.95);background:var(--verde-claro);border-color:var(--verde);}
 .dia-header-banner{
   display:flex;justify-content:space-between;align-items:center;
-  background:var(--verde-claro);color:var(--verde-oscuro);font-weight:800;
+  background:var(--verde-claro);color:var(--texto-en-verde-claro);font-weight:800;
   padding:9px 12px;border-radius:var(--radius-sm);margin-bottom:10px;font-size:14px;
 }
 .dia-header-banner.weekend{background:var(--weekend);color:#8A4413;}
@@ -2112,7 +2152,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .plano-info{padding:7px 8px;}
 .plano-info .nombre{font-size:11px;font-weight:800;color:var(--verde-oscuro);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .plano-info .meta{font-size:9px;color:var(--tinta-suave);margin-top:2px;}
-.chip-contratista{display:inline-block;background:var(--verde-claro);color:var(--verde-oscuro);font-size:8.5px;font-weight:700;padding:1px 6px;border-radius:10px;margin-top:4px;}
+.chip-contratista{display:inline-block;background:var(--verde-claro);color:var(--texto-en-verde-claro);font-size:8.5px;font-weight:700;padding:1px 6px;border-radius:10px;margin-top:4px;}
 .plano-card-nuevo{background:#fff;border:1.5px dashed var(--borde);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--tinta-suave);font-size:10.5px;font-weight:700;gap:4px;min-height:112px;cursor:pointer;}
 .plano-card-nuevo.maestro{border-color:#C9A227;color:#8a6d10;background:#FFFBEB;}
 .plano-card.es-maestro{border:1.5px solid #C9A227;}
@@ -2129,7 +2169,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .btn-cat.btn-primary,.btn-cat.verde-fill{background:var(--verde);border-color:var(--verde);}
 .btn-cat.btn-primary .lbl,.btn-cat.verde-fill .lbl{color:#fff;}
 .btn-cat.rojo{border-color:#FBD5D5;}
-.btn-cat.rojo .lbl{color:#B42318;}
+.btn-cat.rojo .lbl{color:var(--texto-alerta);}
 /* El estado deshabilitado tiene que verse CLARAMENTE apagado (gris), nunca como una versión
    clarita del color activo -- si no, parece un botón "trabado" en vez de uno que todavía no se
    puede usar (ej: "Cerrar área" antes de tener 3 puntos puestos). */
@@ -2137,7 +2177,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .btn-cat:disabled .ico,.btn-cat:disabled .lbl{color:#B0B8BE !important;}
 .div-v{width:1px;align-self:stretch;background:var(--fondo);margin:0 2px;flex-shrink:0;}
 
-.estado-dibujo{font-size:11.5px;color:var(--verde-oscuro);background:var(--verde-claro);border-radius:8px;padding:8px 10px;margin-top:8px;display:none;}
+.estado-dibujo{font-size:11.5px;color:var(--texto-en-verde-claro);background:var(--verde-claro);border-radius:8px;padding:8px 10px;margin-top:8px;display:none;}
 
 .lista-actividad{border:1px solid var(--borde);border-radius:10px;padding:10px 12px;margin-bottom:10px;}
 .lista-actividad .cab{display:flex;align-items:center;gap:8px;}
@@ -2411,52 +2451,52 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="bento-tit">Módulos</div>
     <div class="dash-grid bento">
       <div class="dash-card" onclick="irA('asistencia')">
-        <div class="dash-card-icon">👷</div>
+        <div class="dash-card-icon" data-modulo="asistencia" data-emoji="👷">👷</div>
         <div class="dash-card-title">Nómina de Obra</div>
         <div class="dash-card-desc">Carga de asistencia diaria y reportes PDF por quincena.</div>
       </div>
       <div class="dash-card" onclick="irA('pedidos')">
-        <div class="dash-card-icon">📦</div>
+        <div class="dash-card-icon" data-modulo="pedidos" data-emoji="📦">📦</div>
         <div class="dash-card-title">Pedidos de Materiales</div>
         <div class="dash-card-desc">Orden de pedido con correlativo, control de entregas y carga de planos o fotos.</div>
       </div>
       <div class="dash-card" onclick="irA('caja')">
-        <div class="dash-card-icon">💰</div>
+        <div class="dash-card-icon" data-modulo="caja" data-emoji="💰">💰</div>
         <div class="dash-card-title">Caja Chica</div>
         <div class="dash-card-desc">Rendición de gastos por quincena, con conciliación de fondo y reporte PDF.</div>
       </div>
       <div class="dash-card" onclick="irA('certificados')">
-        <div class="dash-card-icon">🧾</div>
+        <div class="dash-card-icon" data-modulo="certificados" data-emoji="🧾">🧾</div>
         <div class="dash-card-title">Certificados</div>
         <div class="dash-card-desc">Certificados de avance por contratista, con ítems propios y saldo por cobrar.</div>
       </div>
       <div class="dash-card" onclick="irA('minutas')">
-        <div class="dash-card-icon">📝</div>
+        <div class="dash-card-icon" data-modulo="minutas" data-emoji="📝">📝</div>
         <div class="dash-card-title">Minutas</div>
         <div class="dash-card-desc">Actas de reunión con firma digital, en PDF listas para enviar.</div>
       </div>
       <div class="dash-card" onclick="irA('clima')">
-        <div class="dash-card-icon">🌤</div>
+        <div class="dash-card-icon" data-modulo="clima" data-emoji="🌤">🌤</div>
         <div class="dash-card-title">Libro climático</div>
         <div class="dash-card-desc">Registro diario del clima y si se pudo trabajar, con reporte PDF.</div>
       </div>
       <div class="dash-card" onclick="irA('remitos')">
-        <div class="dash-card-icon">📄</div>
+        <div class="dash-card-icon" data-modulo="remitos" data-emoji="📄">📄</div>
         <div class="dash-card-title">Remitos</div>
         <div class="dash-card-desc">Recepción de mercadería con firma digital, en PDF listo para enviar.</div>
       </div>
       <div class="dash-card" onclick="irA('herramientas')">
-        <div class="dash-card-icon">🧰</div>
+        <div class="dash-card-icon" data-modulo="herramientas" data-emoji="🧰">🧰</div>
         <div class="dash-card-title">Herramientas</div>
         <div class="dash-card-desc">Inventario, préstamos entre obras y reparaciones.</div>
       </div>
       <div class="dash-card" onclick="irA('planoavance')">
-        <div class="dash-card-icon">📐</div>
+        <div class="dash-card-icon" data-modulo="planoavance" data-emoji="📐">📐</div>
         <div class="dash-card-title">Plano de avance</div>
         <div class="dash-card-desc">Marcá el % de avance por actividad directo sobre el plano, con seguimiento semanal.</div>
       </div>
       <div class="dash-card" onclick="irA('trabajadores')">
-        <div class="dash-card-icon">⚙</div>
+        <div class="dash-card-icon" data-modulo="trabajadores" data-emoji="⚙">⚙</div>
         <div class="dash-card-title">Configuración</div>
         <div class="dash-card-desc">Altas y bajas de personal, catálogos, usuarios y respaldo de datos.</div>
       </div>
@@ -2725,7 +2765,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           </label>
         </div>
         <p class="tiny" id="respaldo-info" style="margin-top:8px;"></p>
-        <p class="tiny" style="color:#B42318;">⚠ Restaurar un respaldo reemplaza los datos actuales por los del archivo — usalo solo si estás recuperando de un problema.</p>
+        <p class="tiny" style="color:var(--texto-alerta);">⚠ Restaurar un respaldo reemplaza los datos actuales por los del archivo — usalo solo si estás recuperando de un problema.</p>
       </div>
     </div>
   </section>
@@ -3683,7 +3723,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     </div>
     <div style="display:flex;gap:6px;margin-bottom:4px;">
       <input type="text" id="prompt-texto-plano-input" placeholder="ej: 1.20 x 0.80" style="flex:1;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;font-weight:700;text-align:center;box-sizing:border-box;">
-      <button type="button" id="btn-insertar-x-medida" onclick="insertarXEnMedida()" title="Insertar el signo x entre las dos medidas" style="width:44px;flex-shrink:0;border:1.5px solid var(--verde);border-radius:8px;background:var(--verde-claro);color:var(--verde-oscuro);font-size:17px;font-weight:900;">✕</button>
+      <button type="button" id="btn-insertar-x-medida" onclick="insertarXEnMedida()" title="Insertar el signo x entre las dos medidas" style="width:44px;flex-shrink:0;border:1.5px solid var(--verde);border-radius:8px;background:var(--verde-claro);color:var(--texto-en-verde-claro);font-size:17px;font-weight:900;">✕</button>
     </div>
     <p class="tiny" id="prompt-texto-plano-orientacion" style="margin:0 0 10px;color:var(--tinta-suave);">Orientación: Ancho x Alto</p>
     <div id="prompt-texto-plano-unidad-wrap">
@@ -3835,7 +3875,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <input type="text" id="pin-maestro-nombre" placeholder="Nombre de la zona (ej: Cocina)" style="flex:1;border:1.5px solid var(--borde);border-radius:9px;padding:9px 10px;font-size:14px;font-weight:800;" onchange="guardarNombrePinMaestro()">
       <button type="button" onclick="iniciarCopiarPin()" title="Copiar este pin (con sus pendientes y vínculos) a otra zona" style="border:none;background:var(--fondo);width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;">📋</button>
       <button type="button" onclick="centrarPinEnZona()" title="Centrar este pin en el área total del contratista que caiga en este punto" style="border:none;background:var(--fondo);width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer;">🎯</button>
-      <button type="button" id="btn-eliminar-pin-maestro" onclick="eliminarPinMaestro(this)" title="Eliminar este pin (tocá 2 veces)" style="border:none;background:var(--fondo);color:#B42318;width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer;">🗑️</button>
+      <button type="button" id="btn-eliminar-pin-maestro" onclick="eliminarPinMaestro(this)" title="Eliminar este pin (tocá 2 veces)" style="border:none;background:var(--fondo);color:var(--texto-alerta);width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer;">🗑️</button>
       <button type="button" onclick="cerrarPanelPinMaestro()" style="border:none;background:var(--fondo);width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;">✕</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--fondo);border-bottom:1px solid var(--borde);">
@@ -5204,7 +5244,7 @@ function renderTrabajadores(){
       <td><input value="${esc(t.obs)}" placeholder="Ej: renunció" onchange="actualizarTrabajador('${t.id}','obs',this.value); renderAsistencia(); renderVistaDia();"></td>
       <td><button class="btn btn-danger btn-sm" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarTrabajador('${t.id}'))">Quitar</button></td>
     </tr>
-  `).join("") || `<tr><td colspan="8" class="empty-msg">Todavía no cargaste trabajadores. Usá el formulario de arriba o "Cargar ejemplo del Excel".</td></tr>`;
+  `).join("") || `<tr><td colspan="8">${estadoVacioHtml(ICO_VACIO_BANDEJA, "Todavía no cargaste trabajadores", 'Usá el formulario de arriba o "Cargar ejemplo del Excel".')}</td></tr>`;
   // vuelve a marcar el <select> de cada fila en el valor correcto (innerHTML no fija "selected" dinámico)
   [...tbody.querySelectorAll("tr")].forEach((tr,i)=>{
     const t = trabajadores[i]; if(!t) return;
@@ -5243,6 +5283,44 @@ function ordenarTrabajadoresPorObra(){
   showToast("Personal reordenado: por obra, con los serenos al final de cada una ✓");
 }
 function esc(s){ return String(s===null || s===undefined ? "" : s).replace(/"/g,"&quot;"); }
+
+// Vuelve navegable por teclado cualquier "tarjeta/chip" con onclick que no sea ya un control
+// nativo (button/a/input/select/textarea ya son accesibles solos -- tocarlos de nuevo duplicaría
+// el click al apretar Enter/Espacio). También deja afuera los fondos "tocar para cerrar" del
+// estilo onclick="if(event.target===this) cerrarX()": son un gesto de mouse/touch, no algo que
+// tenga sentido ofrecer como parada de Tab (ya tienen su botón "✕" real al lado).
+// Con esto, quien solo usa teclado deja de toparse con un montón de tarjetas/chips a los que
+// antes no podía llegar de ninguna forma.
+const SELECTOR_CLICABLE_ACCESIBLE =
+  '[onclick]:not([tabindex]):not(button):not(a):not(input):not(select):not(textarea)';
+function esClicableParaCerrarFondo(el){
+  return /event\.target\s*===\s*this/.test(el.getAttribute('onclick')||'');
+}
+function hacerClicablesAccesibles(raiz){
+  if(!raiz || raiz.nodeType!==1) return;
+  const candidatos = raiz.matches(SELECTOR_CLICABLE_ACCESIBLE) ? [raiz] : [];
+  raiz.querySelectorAll(SELECTOR_CLICABLE_ACCESIBLE).forEach(el=>candidatos.push(el));
+  candidatos.forEach(el=>{
+    if(esClicableParaCerrarFondo(el)) return;
+    el.setAttribute('tabindex','0');
+    if(!el.hasAttribute('role')) el.setAttribute('role','button');
+    el.addEventListener('keydown', function(ev){
+      if(ev.key==='Enter' || ev.key===' '){
+        ev.preventDefault();
+        el.click();
+      }
+    });
+  });
+}
+// Pasada inicial sobre todo lo que ya está en el HTML fijo de la página (las 13 pantallas están
+// todas en el DOM desde el arranque, solo ocultas con display:none hasta que se navega a ellas),
+// y un observer que repite lo mismo para cualquier tarjeta/chip que se agregue después por JS
+// (listas de pedidos, remitos, resultados de búsqueda, etc.) -- así no hace falta ir a tocar cada
+// función de render una por una, ni se rompe si mañana se agrega una nueva.
+hacerClicablesAccesibles(document.body);
+new MutationObserver(muts=>{
+  muts.forEach(m=>m.addedNodes.forEach(nodo=>hacerClicablesAccesibles(nodo)));
+}).observe(document.body, {childList:true, subtree:true});
 
 
 /* ---------------- Fechas / quincena ---------------- */
@@ -5767,7 +5845,7 @@ async function renderInformesAsistencia(){
 
   document.getElementById("inf-detalle").innerHTML = `
     <div class="fila"><span>Días trabajados (obra)</span><b>${stats.diasTrabajados}</b></div>
-    <div class="fila"><span>Ausencias reales</span><b style="color:#B42318;">${stats.totalAusente}</b></div>
+    <div class="fila"><span>Ausencias reales</span><b style="color:var(--texto-alerta);">${stats.totalAusente}</b></div>
     <div class="fila"><span>🤒 Enfermos</span><b style="color:#0A4A8A;">${stats.totalEnfermo}</b></div>
     <div class="fila"><span>Vacaciones / paro</span><b>${stats.totalJustificado}</b></div>
     ${stats.totalOtraObra>0 ? `<div class="fila"><span>🔁 Cubierto / otra obra</span><b style="color:#7C3AED;">${stats.totalOtraObra}</b></div>` : ""}
@@ -6224,7 +6302,7 @@ async function renderMaterialesRecibidos(){
   document.getElementById("rec-barras").innerHTML = `<p class="tiny">Calculando…</p>`;
   const lista = await calcularMaterialesRecibidos();
   if(lista.length===0){
-    document.getElementById("rec-barras").innerHTML = `<p class="empty-msg">Todavía no hay materiales marcados como entregados en este filtro.</p>`;
+    document.getElementById("rec-barras").innerHTML = estadoVacioHtml(ICO_VACIO_BANDEJA, "Sin entregas en este filtro", "Todavía no hay materiales marcados como entregados.", {compacto:true});
     document.getElementById("tbody-recibidos").innerHTML = "";
     return;
   }
@@ -7816,7 +7894,7 @@ async function abrirSelectorPlantillaPedido(){
           <div style="font-weight:700;font-size:13px;">${esc(p.nombre)}</div>
           <div style="font-size:10.5px;color:var(--tinta-suave);">${p.items.length} material${p.items.length===1?"":"es"}</div>
         </div>
-        <button type="button" onclick="eliminarPlantillaPedido('${p.id}')" style="background:none;border:none;color:#B42318;font-size:16px;padding:6px;">🗑</button>
+        <button type="button" onclick="eliminarPlantillaPedido('${p.id}')" style="background:none;border:none;color:var(--texto-alerta);font-size:16px;padding:6px;">🗑</button>
       </div>`).join("")}
     <button class="btn btn-outline" style="width:100%;margin-top:12px;" onclick="cerrarPromptGenerico()">Cerrar</button>`;
   abrirPromptGenerico(html);
@@ -8334,7 +8412,7 @@ function renderDetallePedido(pedido){
         <div class="ef-desc">${esc(it.desc)}</div>
         <div class="ef-meta">Pedido: ${it.cant||0} ${esc(it.un||"")}
           ${it.cerrado ? ` · <span style="color:var(--verde-oscuro);font-weight:700;">Cerrado sin completar (no llega el resto)</span>`
-            : (!completo && faltante>0 ? ` · <span style="color:#B42318;font-weight:700;">Faltan: ${faltante} ${esc(it.un||"")}</span>` : "")}
+            : (!completo && faltante>0 ? ` · <span style="color:var(--texto-alerta);font-weight:700;">Faltan: ${faltante} ${esc(it.un||"")}</span>` : "")}
         </div>
       </div>
       <input class="ef-cant" type="number" step="any" value="${it.entregado||0}" ${it.cerrado?"disabled":""}
@@ -8732,7 +8810,7 @@ function construirHtmlPendientes(pedido){
       <td class="op-d" width="320">${esc(it.desc)}</td>
       <td class="op-c" width="60">${it.cant}</td>
       <td class="op-c" width="70">${it.entregado}</td>
-      <td class="op-c" width="70" style="${it.faltante>0?'color:#B42318;font-weight:700;':'color:#1D7A2E;'}">${it.faltante>0 ? it.faltante : "✓"}</td>
+      <td class="op-c" width="70" style="${it.faltante>0?'color:var(--texto-alerta);font-weight:700;':'color:var(--texto-exito);'}">${it.faltante>0 ? it.faltante : "✓"}</td>
       <td class="op-u" width="50">${esc(it.un||"")}</td>
     </tr>
   `).join("");
@@ -8963,10 +9041,22 @@ function renderEstadoNominaDash(){
     </div>
   </div>`;
 }
+// Pinta el ícono de cada tarjeta de módulo del Dashboard según el tema de ícono elegido en
+// Personalización (Fase 3 del repaso con UI UX Pro Max): antes quedaban en emoji fijo pase lo
+// que pase, sin usar el sistema de temas que el resto de la barra de navegación ya tiene. En el
+// tema "emoji" (el de por defecto) no cambia nada -- se mantiene el emoji propio de cada tarjeta,
+// que no siempre es el mismo que el de su pestaña en la barra inferior (p.ej. la tarjeta de
+// Nómina usa 👷 y su pestaña usa 🗓, cada uno pensado para su contexto).
+function actualizarIconosDashCards(){
+  document.querySelectorAll("#view-dashboard .dash-card-icon[data-modulo]").forEach(el=>{
+    el.innerHTML = temaIconoApp==="emoji" ? el.dataset.emoji : iconoModuloHtml(el.dataset.modulo);
+  });
+}
 function renderDashboard(){
   renderAvisosImportantesDash();
   renderEstadoNominaDash();
   renderChipsObraDash();
+  actualizarIconosDashCards();
   const filtroObra = dashboardObraFiltro;
   const trabActivos = trabajadores.filter(t=>t.estado==="Activo" && (!filtroObra || t.obra===filtroObra)).length;
   const pedPendientes = pedidosIndex.filter(p=>(p.estado==="Pendiente"||p.estado==="Parcial") && (!filtroObra || p.obra===filtroObra)).length;
@@ -9183,7 +9273,7 @@ function renderActividadRecienteDash(){
   const ultimas = (actividadLog||[]).slice(0,4);
   cont.innerHTML = `
     <h2>🕒 Últimas actividades</h2>
-    ${ultimas.length===0 ? `<p class="tiny">Todavía no hay actividad registrada.</p>` : ultimas.map((a,i)=>`
+    ${ultimas.length===0 ? estadoVacioHtml(ICO_VACIO_BANDEJA, "Todavía no hay actividad registrada", null, {compacto:true}) : ultimas.map((a,i)=>`
       <div class="dash-act-item">
         <div class="dash-act-punto-line"><div class="dash-act-punto"></div>${i<ultimas.length-1?'<div class="dash-act-linea"></div>':""}</div>
         <div><div class="dash-act-txt"><b>${esc(a.usuario)}</b> ${esc(a.texto)}</div><div class="dash-act-hora">${fechaCortaActividad(a.fecha)}</div></div>
@@ -9683,7 +9773,7 @@ function renderDetalleRendicion(rendicion){
       </div>
       <div style="font-weight:800;">${formatoMoneda(g.monto)}</div>
     </div>
-  `).join("") || `<p class="empty-msg">Sin gastos cargados.</p>`;
+  `).join("") || estadoVacioHtml(ICO_VACIO_BANDEJA, "Sin gastos cargados", null, {compacto:true});
   const filasFondo = rendicion.fondo.map(f=>`
     <div class="entrega-fila">
       <div class="ef-info"><div class="ef-desc">${esc(f.detalle||"(sin detalle)")}</div></div>
@@ -11168,15 +11258,27 @@ function iconoGrupoHtml(grupoId, emoji){
   const peso = temaIconoApp==="3d" ? "ph-fill" : PESOS_ICONO_PHOSPHOR[temaIconoApp];
   return `<i class="${peso} ph-${nombreIco}"></i>`;
 }
-// ---------------- Buscador global ----------------
-// Busca de una sola vez en todos los módulos que ya están cargados en memoria. No consulta
-// Firestore: usa lo que la app ya trajo, así funciona al instante y también sin señal.
+// ---------------- Estado vacío genérico (ícono + título + subtítulo) ----------------
+// Iconos decorativos (aria-hidden): el texto de al lado ya dice todo, así que un lector de
+// pantalla no necesita anunciarlos aparte. Se usa en el buscador global y en cualquier lista o
+// sección de la app que pueda no tener nada que mostrar todavía.
+const ICO_VACIO_BUSCAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="20" y1="20" x2="15.3" y2="15.3"></line></svg>`;
+const ICO_VACIO_SIN_RESULTADOS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"></circle><line x1="20" y1="20" x2="15.3" y2="15.3"></line><line x1="8" y1="8" x2="13" y2="13"></line><line x1="13" y1="8" x2="8" y2="13"></line></svg>`;
+const ICO_VACIO_BANDEJA = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 13.5V6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v7.5"></path><path d="M4 13.5h4.5l1.2 2.4a1 1 0 0 0 .9.6h2.8a1 1 0 0 0 .9-.6l1.2-2.4H20"></path><path d="M4 13.5v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"></path></svg>`;
+function estadoVacioHtml(icoSvg, titulo, sub, opts){
+  const compacto = opts && opts.compacto ? " compacto" : "";
+  return `<div class="estado-vacio${compacto}"><div class="estado-vacio-ico">${icoSvg}</div>` +
+    `<div class="estado-vacio-tit">${titulo}</div>` +
+    (sub ? `<div class="estado-vacio-sub">${sub}</div>` : "") +
+    `</div>`;
+}
 function abrirBuscadorGlobal(){
   document.getElementById("buscador-global-overlay").style.display = "flex";
   const input = document.getElementById("buscador-global-input");
   input.value = "";
-  document.getElementById("buscador-global-resultados").innerHTML =
-    `<div class="bg-vacio">Escribí para buscar en trabajadores, pedidos, remitos, herramientas, observaciones, minutas y el presupuesto.</div>`;
+  document.getElementById("buscador-global-resultados").innerHTML = estadoVacioHtml(ICO_VACIO_BUSCAR,
+    "Buscá en toda la obra",
+    "Trabajadores, pedidos, remitos, herramientas, observaciones, minutas y presupuesto.");
   setTimeout(()=>input.focus(), 120);
 }
 function cerrarBuscadorGlobal(){
@@ -11191,7 +11293,7 @@ function ejecutarBusquedaGlobal(){
   const crudo = document.getElementById("buscador-global-input").value.trim();
   const cont = document.getElementById("buscador-global-resultados");
   if(crudo.length < 2){
-    cont.innerHTML = `<div class="bg-vacio">Escribí al menos 2 letras.</div>`;
+    cont.innerHTML = estadoVacioHtml(ICO_VACIO_BUSCAR, "Escribí al menos 2 letras");
     return;
   }
   const q = normalizarBusqueda(crudo);
@@ -11235,7 +11337,9 @@ function ejecutarBusquedaGlobal(){
   }))});
 
   if(grupos.length===0){
-    cont.innerHTML = `<div class="bg-vacio">Sin resultados para "${esc(crudo)}".<br><span style="font-size:11.5px;">Ojo: solo busca en lo que ya se cargó en este dispositivo.</span></div>`;
+    cont.innerHTML = estadoVacioHtml(ICO_VACIO_SIN_RESULTADOS,
+      `Sin resultados para "${esc(crudo)}"`,
+      "Probá con otro término o revisá cómo lo escribiste. Ojo: solo busca en lo que ya se cargó en este dispositivo.");
     return;
   }
   cont.innerHTML = grupos.map(g=>{
@@ -12117,7 +12221,7 @@ function renderInventarioHerramientas(){
       const vencido = h.prestamo.fechaEntrega && h.prestamo.fechaEntrega<hoyISO();
       if(vencido){
         const diasAtraso = Math.floor((new Date(hoyISO())-new Date(h.prestamo.fechaEntrega+"T00:00:00"))/86400000);
-        metaExtra += ` <span style="color:#B42318;font-weight:800;">⏰ atrasada ${diasAtraso} día${diasAtraso===1?"":"s"}</span>`;
+        metaExtra += ` <span style="color:var(--texto-alerta);font-weight:800;">⏰ atrasada ${diasAtraso} día${diasAtraso===1?"":"s"}</span>`;
       }
     }
     const obsHtml = (h.observaciones||[]).slice(-2).map(o=>`<div class="herr-obs-item">💬 ${esc(o.texto)} <span style="opacity:.7;">(${o.fecha})</span></div>`).join("");
@@ -12255,7 +12359,7 @@ function abrirHistorialHerramienta(id){
       return `<div class="entrega-fila">
         <div class="ef-info">
           <div class="ef-desc">${p.tipo==="persona"?"🧑":"🏗️"} ${esc(p.tipo==="persona"?p.persona:p.obraDestino)}</div>
-          <div class="ef-meta">Enviada ${p.fechaEnvio?new Date(p.fechaEnvio+"T00:00:00").toLocaleDateString("es-AR"):"-"} · Devuelta ${p.fechaRecepcion?new Date(p.fechaRecepcion+"T00:00:00").toLocaleDateString("es-AR"):"-"}${tarde?` <span style="color:#B42318;font-weight:800;">⏰ tarde</span>`:""}</div>
+          <div class="ef-meta">Enviada ${p.fechaEnvio?new Date(p.fechaEnvio+"T00:00:00").toLocaleDateString("es-AR"):"-"} · Devuelta ${p.fechaRecepcion?new Date(p.fechaRecepcion+"T00:00:00").toLocaleDateString("es-AR"):"-"}${tarde?` <span style="color:var(--texto-alerta);font-weight:800;">⏰ tarde</span>`:""}</div>
         </div>
       </div>`;
     }).join("")}
@@ -12855,7 +12959,7 @@ function renderListaRecordatorios(){
       <div class="rec-botones">
         <button class="btn btn-outline btn-sm" style="color:#0A4A8A;border-color:#5B9BD5;" onclick="editarRecordatorio('${r.id}')">✏️ Editar</button>
         ${r.estado==="pendiente" ? `<button class="btn btn-outline btn-sm" onclick="marcarRecordatorioHecho('${r.id}')">✓ Marcar hecho</button>` : `<button class="btn btn-outline btn-sm" onclick="reabrirRecordatorio('${r.id}')">↺ Reabrir</button>`}
-        <button class="btn btn-outline btn-sm" style="color:#B42318;border-color:#DC5A5A;" onclick="eliminarRecordatorio('${r.id}')">🗑 Eliminar</button>
+        <button class="btn btn-outline btn-sm" style="color:var(--texto-alerta);border-color:#DC5A5A;" onclick="eliminarRecordatorio('${r.id}')">🗑 Eliminar</button>
       </div>
     </div>`;
   }).join("") || `<p class="empty-msg">No hay recordatorios ${recFiltroEstado==="pendiente"?"pendientes":"hechos"}.</p>`;
@@ -14259,7 +14363,7 @@ function revisarPorcentajesPresupuesto(){
         <div style="font-weight:800;font-size:12px;color:${todoAl100?"var(--verde)":"#B42318"};">${todoAl100?"✓ Todo lo cargado está al 100%":"⚠ Todavía no todo llegó al 100%"}</div>
         <div style="font-size:11px;margin-top:4px;">Ejecutado al Mes ${maxMes} (según el % de cada ítem): <b>${formatoMoneda(montoEjecutado)}</b></div>
         <div style="font-size:11px;">Total presupuestado (a valor 100%): <b>${formatoMoneda(montoTotal)}</b></div>
-        ${!todoAl100 ? `<div style="font-size:11px;color:#B42318;font-weight:700;margin-top:2px;">Falta ejecutar: ${formatoMoneda(gap)} -- ver el detalle de qué ítems están incompletos más abajo.</div>` : ""}
+        ${!todoAl100 ? `<div style="font-size:11px;color:var(--texto-alerta);font-weight:700;margin-top:2px;">Falta ejecutar: ${formatoMoneda(gap)} -- ver el detalle de qué ítems están incompletos más abajo.</div>` : ""}
       </div>`;
   }
   const listaSinPrecio = itemsSinPrecio.length===0 ? "" : `
@@ -14270,7 +14374,7 @@ function revisarPorcentajesPresupuesto(){
     ${itemsCoefDistinto.map(x=>`<div style="background:rgba(220,90,90,.1);border:1px solid rgba(220,90,90,.3);border-radius:9px;padding:9px 11px;margin-bottom:6px;font-size:11px;">
       <div style="font-weight:700;">${esc(x.it.nombre)} <span style="color:var(--tinta-suave);font-weight:400;">(Rubro ${esc(x.it.rubro)})</span></div>
       <div style="margin-top:3px;">Precio base: ${formatoMoneda(x.it.precioBase||0)} × ${coefActual} = <b>${formatoMoneda(x.esperado)}</b> esperado</div>
-      <div>Precio cargado: <b>${formatoMoneda(x.it.precioConCoef||0)}</b> -- diferencia de <b style="color:#B42318;">${formatoMoneda(x.diferencia)}</b></div>
+      <div>Precio cargado: <b>${formatoMoneda(x.it.precioConCoef||0)}</b> -- diferencia de <b style="color:var(--texto-alerta);">${formatoMoneda(x.diferencia)}</b></div>
     </div>`).join("")}`;
   const problemas = [];
   presupuestoItems.forEach(it=>{
@@ -18250,7 +18354,7 @@ function renderListaSnapshots(){
     const filas = historial.map((h,i)=>{
       const anterior = i>0 ? historial[i-1].pct : null;
       const delta = anterior!==null ? h.pct - anterior : null;
-      const deltaTxt = delta===null ? "" : (delta>=0 ? ` <span style="color:var(--verde);font-weight:800;">+${delta}%</span>` : ` <span style="color:#B42318;font-weight:800;">${delta}%</span>`);
+      const deltaTxt = delta===null ? "" : (delta>=0 ? ` <span style="color:var(--verde);font-weight:800;">+${delta}%</span>` : ` <span style="color:var(--texto-alerta);font-weight:800;">${delta}%</span>`);
       return `<div class="capa-fila" style="padding-left:0;">
         <div class="pa-nombre">${esc(h.etiqueta)}</div>
         <div class="pct-txt" style="width:auto;">${h.pct}%${deltaTxt}</div>
@@ -18799,7 +18903,20 @@ async function prepararVistaPlanoAvance(){
 }
 
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+// pdf.js se trae de un CDN (línea de arriba del todo del archivo) -- si no hay señal, el CDN está
+// caído, o algo lo bloquea, "pdfjsLib" nunca llega a existir. Sin este chequeo, la línea de abajo
+// tiraba una excepción sin atajar en la carga inicial del script que CORTABA ahí mismo toda la
+// inicialización que viene después (imagenPlano, poligonos, anotacionesTexto, proyectoMedidas y
+// lo que sea que se declare más abajo en el archivo quedaban sin inicializar) -- eso es lo que
+// causaba el "Cannot access 'imagenPlano' before initialization" al entrar a Plano de avance, y
+// probablemente rompía en silencio otras pantallas también. La función que sí usa pdfjsLib
+// (cargarImagenDesdeArchivo, para convertir un PDF a imagen) ya tiene su propio try/catch, así
+// que alcanza con evitar que ESTA línea explote para que el resto de la app arranque bien.
+if(typeof pdfjsLib !== "undefined"){
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}else{
+  console.warn("pdf.js no se pudo cargar (sin señal o CDN bloqueado) -- subir un PDF como plano no va a funcionar, pero el resto de la app sigue.");
+}
 
 let imagenPlano = null; // Image ya cargada
 let poligonos = []; // {nombreCompleto, nombreBase, capa, color, puntos:[[x,y],...], area}
