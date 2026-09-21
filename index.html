@@ -20440,6 +20440,41 @@ function zoomAjustar(){
   const factorAlto = (wrap.clientHeight-4)/canvas.height;
   aplicarZoom(Math.min(factorAncho, factorAlto));
 }
+// ---------------- Zoom con rueda del mouse (paridad con escritorio) ----------------
+// El visor ya tenía pellizco de 2 dedos en celular/tablet, pero nada para mouse -- alguien
+// revisando el plano desde una compu quedaba limitado a los botones +/-. La rueda sola hace zoom
+// (no hace falta Ctrl), igual que en cualquier visor CAD/mapa; ancla el punto bajo el cursor con
+// la misma matemática que ya usa el pellizco, para que lo que estás mirando no "salte".
+function manejarRuedaZoomPlano(e){
+  if(!imagenPlano) return;
+  e.preventDefault();
+  const wrap = document.getElementById("canvas-wrap");
+  const rect = wrap.getBoundingClientRect();
+  const cursorX = e.clientX - rect.left, cursorY = e.clientY - rect.top;
+  const contenidoX = wrap.scrollLeft + cursorX, contenidoY = wrap.scrollTop + cursorY;
+  const zoomAnterior = zoomActual;
+  aplicarZoom(zoomActual * (e.deltaY < 0 ? 1.12 : 1/1.12));
+  const f = zoomActual / zoomAnterior;
+  wrap.scrollLeft = contenidoX*f - cursorX;
+  wrap.scrollTop = contenidoY*f - cursorY;
+}
+document.getElementById("canvas-wrap").addEventListener("wheel", manejarRuedaZoomPlano, {passive:false});
+// ---------------- Atajos de teclado (paridad con escritorio) ----------------
+// Solo activos con el Plano de avance abierto y sin el foco en un campo de texto (para no pisar
+// Ctrl+Z de un navegador escribiendo una observación, por ejemplo). Los mismos comandos que ya
+// existen como botones -- esto no agrega funciones nuevas, solo una forma más rápida de llegar
+// a ellas para quien usa teclado.
+document.addEventListener("keydown", function(e){
+  const vista = document.getElementById("view-planoavance");
+  if(!vista || !vista.classList.contains("active")) return;
+  const tag = (e.target && e.target.tagName) || "";
+  if(tag==="INPUT" || tag==="TEXTAREA" || tag==="SELECT" || (e.target && e.target.isContentEditable)) return;
+  if((e.ctrlKey||e.metaKey) && !e.shiftKey && e.key.toLowerCase()==="z"){ e.preventDefault(); deshacerGeneral(); return; }
+  if((e.ctrlKey||e.metaKey) && (e.key.toLowerCase()==="y" || (e.shiftKey && e.key.toLowerCase()==="z"))){ e.preventDefault(); rehacerGeneral(); return; }
+  if(e.key==="Escape"){ salirDeModosDibujoActivos(); return; }
+  if(e.key==="+" || e.key==="="){ zoomIn(); return; }
+  if(e.key==="-" || e.key==="_"){ zoomOut(); return; }
+});
 // Abre/cierra los cajones flotantes del riel ("Vista", "Capas", "Dibujar") -- cerrados por
 // defecto para dejarle el máximo de pantalla al plano; solo uno abierto a la vez.
 // ---------------- Riel de herramientas adaptativo: los 3 lugares libres muestran las últimas
