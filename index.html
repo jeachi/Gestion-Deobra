@@ -1309,7 +1309,6 @@ table.op-items td.op-u{text-align:center;border-bottom:1px solid #555;font-size:
 #tabla-gastos-caja input,#tabla-gastos-caja select,#tabla-fondo-caja input{
   width:100%;border:1px solid var(--borde);border-radius:5px;padding:5px 6px;font-size:12.5px;font-family:inherit;
 }
-.monto-preview{font-size:11px;font-weight:700;color:var(--verde-oscuro);text-align:right;margin-top:2px;}
 .rc-total-linea{text-align:right;font-size:14px;font-weight:700;margin-top:10px;color:var(--verde-oscuro);}
 /* En el celular, la tabla de Gastos (6 columnas) obligaba a hacer scroll horizontal Y vertical
    para completar una sola factura. Acá abajo de 640px cada fila pasa a ser una tarjeta con los
@@ -9499,6 +9498,17 @@ function formatoMoneda(n){
   const abs = Math.abs(v);
   return signo+"$"+abs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+// Máscara de "centavos" para inputs de monto: a medida que se escriben dígitos, los últimos 2
+// pasan a ser los centavos y el resto la parte entera -- así el campo muestra el monto ya
+// formateado en pesos ($1.234,56) mientras se escribe, en vez de dejar un número suelto y una
+// vista previa aparte al costado que hay que ir a mirar. Devuelve el valor numérico real para
+// guardarlo en el dato -- el input en sí solo muestra el texto formateado.
+function formatearInputMoneda(el){
+  const digitos = el.value.replace(/\D/g, "");
+  const valor = digitos ? parseInt(digitos, 10) / 100 : 0;
+  el.value = digitos ? formatoMoneda(valor) : "";
+  return valor;
+}
 function renderTablaGastos(){
   const tbody = document.getElementById("tbody-gastos-caja");
   const optsTipo = tiposCosto.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join("");
@@ -9510,9 +9520,8 @@ function renderTablaGastos(){
       <td data-label="Observaciones"><input value="${esc(g.observaciones)}" onchange="rcGastos[${i}].observaciones=this.value"></td>
       <td data-label="Centro costo"><input value="${esc(g.centroCosto)}" onchange="rcGastos[${i}].centroCosto=this.value"></td>
       <td data-label="Monto">
-        <input type="number" step="any" value="${esc(g.monto)}"
-          oninput="rcGastos[${i}].monto=this.value; document.getElementById('mp-g-${i}').textContent=formatoMoneda(this.value); actualizarTotalesForm();">
-        <div class="monto-preview" id="mp-g-${i}">${g.monto?formatoMoneda(g.monto):"$0"}</div>
+        <input type="text" inputmode="numeric" value="${g.monto?formatoMoneda(g.monto):''}"
+          oninput="rcGastos[${i}].monto=formatearInputMoneda(this); actualizarTotalesForm();">
       </td>
       <td data-label=""><button class="btn btn-danger btn-sm" onclick="quitarFilaGasto(${i})">× Quitar</button></td>
     </tr>
@@ -9543,9 +9552,8 @@ function renderTablaFondo(){
     <tr>
       <td data-label="Detalle"><input value="${esc(f.detalle)}" placeholder="Ej: Entrega Diego 01/07" onchange="rcFondo[${i}].detalle=this.value"></td>
       <td data-label="Monto">
-        <input type="number" step="any" value="${esc(f.monto)}"
-          oninput="rcFondo[${i}].monto=this.value; document.getElementById('mp-f-${i}').textContent=formatoMoneda(this.value); actualizarTotalesForm();">
-        <div class="monto-preview" id="mp-f-${i}">${f.monto?formatoMoneda(f.monto):"$0"}</div>
+        <input type="text" inputmode="numeric" value="${f.monto?formatoMoneda(f.monto):''}"
+          oninput="rcFondo[${i}].monto=formatearInputMoneda(this); actualizarTotalesForm();">
       </td>
       <td data-label=""><button class="btn btn-danger btn-sm" onclick="quitarFilaFondo(${i})">× Quitar</button></td>
     </tr>
