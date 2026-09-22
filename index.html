@@ -15807,7 +15807,7 @@ function abrirSelectorMesesPdfA1(){
   if(max===0){ showToast("Todavía no hay ningún mes cargado."); return; }
   const html = `
     <h2 style="margin-top:0;">🖨 PDF tamaño A1</h2>
-    <p class="helper">Elegí qué meses incluir -- con menos meses entran cómodos en la hoja y la letra sale más grande y legible. Si necesitás verlos todos, generá varios PDF por tramos.</p>
+    <p class="helper">Elegí qué meses incluir -- la letra se ajusta sola para que entre en 2 hojas A1 como máximo. Si con estos meses no entra ni con letra chica, se avisa para elegir menos meses o tildar "Solo pendientes".</p>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
       <div style="flex:1;">
         <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:4px;">Desde el mes</div>
@@ -15818,6 +15818,10 @@ function abrirSelectorMesesPdfA1(){
         <input type="number" id="pg-a1-hasta" min="1" max="${max}" value="${Math.min(max,4)}" style="width:100%;padding:9px;border:1.5px solid var(--borde);border-radius:8px;font-size:14px;text-align:center;box-sizing:border-box;">
       </div>
     </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;cursor:pointer;font-size:12.5px;">
+      <input type="checkbox" id="pg-a1-solo-pendientes" style="width:18px;height:18px;">
+      Solo ítems pendientes (menos de 100% acumulado al mes "hasta")
+    </label>
     <button class="btn btn-primary" style="width:100%;" onclick="confirmarGenerarPdfA1()">✓ Generar PDF</button>
     <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cancelar</button>`;
   abrirPromptGenerico(html);
@@ -15826,16 +15830,35 @@ function confirmarGenerarPdfA1(){
   const max = maxMesCargado();
   const desde = Math.max(1, Math.min(max, parseInt(document.getElementById("pg-a1-desde").value)||1));
   const hasta = Math.max(desde, Math.min(max, parseInt(document.getElementById("pg-a1-hasta").value)||desde));
+  const soloPendientes = document.getElementById("pg-a1-solo-pendientes").checked;
   cerrarPromptGenerico();
-  generarPdfA1TodosLosMeses(desde, hasta);
+  generarPdfA1TodosLosMeses(desde, hasta, soloPendientes);
 }
-function generarPdfA1TodosLosMeses(desde, hasta){
+// Mide, FUERA de pantalla (sin que se vea ni moleste), cuánto ocuparía en píxeles el reporte ya
+// armado con un tamaño de letra puntual -- así se puede probar varios tamaños y elegir el más
+// grande que entre en el límite de hojas, en vez de adivinar un tamaño fijo según la cantidad de
+// meses (que no tenía en cuenta cuántos ítems había, la otra mitad de lo que hace larga la tabla).
+function medirAltoReportePdfA1(htmlReporte, anchoPx){
+  let cont = document.getElementById("pg-a1-medidor-oculto");
+  if(!cont){
+    cont = document.createElement("div");
+    cont.id = "pg-a1-medidor-oculto";
+    cont.style.cssText = "position:absolute;left:-99999px;top:0;visibility:hidden;pointer-events:none;";
+    document.body.appendChild(cont);
+  }
+  cont.style.width = anchoPx+"px";
+  cont.innerHTML = htmlReporte;
+  const alto = cont.scrollHeight;
+  cont.innerHTML = "";
+  return alto;
+}
+function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
   if(presupuestoItems.length===0){ showToast("Todavía no hay presupuesto cargado."); return; }
   const max = maxMesCargado();
   desde = desde || 1;
   hasta = hasta || max;
-  const cantMeses = hasta-desde+1;
-  const fontSize = cantMeses<=2 ? 13 : cantMeses<=4 ? 11 : cantMeses<=8 ? 9 : 7;
+  const itemsBase = soloPendientes ? presupuestoItems.filter(it=>entradaHastaMes(it,hasta).acumulado<1) : presupuestoItems;
+  if(itemsBase.length===0){ showToast("No hay ítems pendientes en el rango elegido."); return; }
   const cols = columnasReportePresupuesto;
   const colsBase = [
     {id:"unidad", th:"Unid.", val:it=>esc(it.unidad), align:"center"},
@@ -15855,11 +15878,12 @@ function generarPdfA1TodosLosMeses(desde, hasta){
   if(colsMes.length===0){ showToast("Elegí al menos una columna de mes en ⚙️ Columnas de los reportes."); return; }
   const idxColMontoMes = colsMes.findIndex(c=>c.id==="monto_mes"||c.id==="monto_acumulado");
   const rubros = {};
-  presupuestoItems.forEach(it=>{
+  itemsBase.forEach(it=>{
     if(!rubros[it.rubro]) rubros[it.rubro] = {nombre: it.rubroNombre, items: []};
     rubros[it.rubro].items.push(it);
   });
   let thMeses = "", filasHtml = "";
+  const totalGeneralPorMes = {}; // monto real a certificar de TODOS los rubros juntos, mes por mes -- va en la fila final
   for(let n=desde; n<=hasta; n++) thMeses += `<th colspan="${colsMes.length}" style="background:#0A2540;color:#fff;">MES ${n}</th>`;
   let thSub = "";
   for(let n=desde; n<=hasta; n++) colsMes.forEach(c=>{ thSub += `<th>${c.th}</th>`; });
@@ -15877,6 +15901,7 @@ function generarPdfA1TodosLosMeses(desde, hasta){
     for(let n=desde; n<=hasta; n++){
       let sumMonto = 0;
       grupo.items.forEach(it=>{ sumMonto += obtenerEntradaMes(it, n).monto; });
+      totalGeneralPorMes[n] = (totalGeneralPorMes[n]||0) + sumMonto;
       colsMes.forEach((c,i)=>{ filasHtml += `<td align="right">${i===idxColMontoMes ? formatoMoneda(sumMonto) : ""}</td>`; });
     }
     filasHtml += `</tr>`;
@@ -15894,11 +15919,18 @@ function generarPdfA1TodosLosMeses(desde, hasta){
       filasHtml += `</tr>`;
     });
   });
+  // Fila final, bien destacada: lo que hay que certificar en total ese mes, sumando todos los
+  // rubros -- un solo valor por mes (no repetido por cada sub-columna Ant./Mes/Acum.), sea cual
+  // sea la combinación de columnas que se haya elegido mostrar.
+  filasHtml += `<tr style="background:#0A2540;color:#fff;font-weight:800;">
+    <td colspan="${2+colsBase.length}">TOTAL A CERTIFICAR</td>
+    ${Array.from({length:hasta-desde+1},(_,i)=>desde+i).map(n=>`<td colspan="${colsMes.length}" align="right">${formatoMoneda(totalGeneralPorMes[n]||0)}</td>`).join("")}
+  </tr>`;
   const obra = claveObraPresupuesto();
   const tituloRango = desde===hasta ? `MES ${desde}` : `MES ${desde} A ${hasta}`;
-  const html = `<div class="print-page" style="width:100% !important;min-width:0 !important;box-sizing:border-box;padding:6px 10px !important;">
+  const armarHtml = (fontSize)=>`<div class="print-page" style="width:100% !important;min-width:0 !important;box-sizing:border-box;padding:6px 10px !important;">
     <table class="rc-header-tabla" width="100%" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">PRESUPUESTO GENERAL — ${tituloRango}</td>
+      <td class="rc-titulo-corp">PRESUPUESTO GENERAL — ${tituloRango}${soloPendientes?" (solo pendientes)":""}</td>
       <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
     </tr></table>
     <div class="rc-semana-row">${esc(obra)} · Generado el ${new Date().toLocaleDateString("es-AR")}</div>
@@ -15910,7 +15942,25 @@ function generarPdfA1TodosLosMeses(desde, hasta){
       <tbody>${filasHtml}</tbody>
     </table>
   </div>`;
-  mostrarModalPDF(html, "portrait", `Presupuesto_A1_${tituloRango.replace(/ /g,"_")}_${nombreArchivoSeguro(obra)}.pdf`, null, {w:594, h:841});
+  // Se prueba con letra cada vez más chica hasta que el contenido entre en 2 hojas A1 -- medido de
+  // verdad (fuera de pantalla), no adivinado solo por la cantidad de meses como antes (que no
+  // tenía en cuenta cuántos ítems había, la otra mitad de lo que hace larga la tabla). Si ni con la
+  // letra más chica entra, se genera igual con esa y se avisa para elegir menos meses o pendientes.
+  const MARGEN_A1_MM = 5, PX_POR_MM = 96/25.4;
+  const anchoContenidoPx = (594 - 2*MARGEN_A1_MM) * PX_POR_MM;
+  const altoUnaHojaPx = (841 - 2*MARGEN_A1_MM) * PX_POR_MM;
+  const candidatosFuente = [13,12,11,10,9,8,7,6.5,6,5.5,5];
+  let htmlFinal = null, entroEnDosHojas = false;
+  for(const fs of candidatosFuente){
+    const candidato = armarHtml(fs);
+    const altoPx = medirAltoReportePdfA1(candidato, anchoContenidoPx);
+    if(Math.ceil(altoPx/altoUnaHojaPx) <= 2){ htmlFinal = candidato; entroEnDosHojas = true; break; }
+  }
+  if(!entroEnDosHojas){
+    htmlFinal = armarHtml(candidatosFuente[candidatosFuente.length-1]);
+    showToast('⚠ Ni con letra chica entra en 2 hojas -- probá con menos meses o tildá "Solo pendientes"');
+  }
+  mostrarModalPDF(htmlFinal, "portrait", `Presupuesto_A1_${tituloRango.replace(/ /g,"_")}_${nombreArchivoSeguro(obra)}.pdf`, null, {w:594, h:841});
   registrarActividad(`generó el PDF tamaño A1 (todos los meses) del presupuesto de "${obra}"`);
 }
 function prepararVistaMinutas(){
