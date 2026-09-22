@@ -15893,7 +15893,7 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
     const montoRubroBase = grupo.items.reduce((s,it)=>s+(it.precioBase||0),0);
     // El subtotal del capítulo va DIRECTO en la fila del rubro (no en una fila aparte abajo). El
     // nombre no se corta en varias líneas (aunque se pase un poco del ancho de su celda).
-    filasHtml += `<tr style="background:#D9EDE9;font-weight:bold;"><td>${esc(key)}</td><td style="white-space:nowrap;overflow:visible;">${esc(grupo.nombre||"")}</td>`;
+    filasHtml += `<tr style="background:#D9EDE9;font-weight:bold;"><td>${esc(key)}</td><td style="max-width:170px;white-space:normal;word-break:break-word;">${esc(grupo.nombre||"")}</td>`;
     colsBase.forEach(c=>{
       const esPrecioTotal = c.id==="precio_base" || c.id==="precio_coef";
       filasHtml += `<td align="right">${esPrecioTotal ? formatoMoneda(c.id==="precio_base"?montoRubroBase:montoRubro) : ""}</td>`;
@@ -15906,7 +15906,7 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
     }
     filasHtml += `</tr>`;
     grupo.items.forEach(it=>{
-      filasHtml += `<tr><td>${esc(it.rubro)}</td><td style="white-space:nowrap;overflow:visible;">${esc(it.nombre)}</td>${colsBase.map(c=>`<td align="${c.align}">${c.val(it)}</td>`).join("")}`;
+      filasHtml += `<tr><td>${esc(it.rubro)}</td><td style="max-width:170px;white-space:normal;word-break:break-word;">${esc(it.nombre)}</td>${colsBase.map(c=>`<td align="${c.align}">${c.val(it)}</td>`).join("")}`;
       for(let n=desde; n<=hasta; n++){
         const m = obtenerEntradaMes(it, n);
         // Mismo lenguaje visual de siempre: verde para lo que ya llegó al 100%, celeste para lo
