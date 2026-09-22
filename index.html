@@ -15805,9 +15805,14 @@ function exportarExcelFormatoOriginal(){
 function abrirSelectorMesesPdfA1(){
   const max = maxMesCargado();
   if(max===0){ showToast("Todavía no hay ningún mes cargado."); return; }
+  // Mismo catálogo que "⚙️ Columnas de los reportes", pero sin "Origen (Declarado/Inspección)"
+  // -- esa es propia del PDF de un solo mes, no tiene ningún efecto acá. Elegir las columnas queda
+  // a mano, en el mismo lugar donde se eligen los meses, en vez de tener que ir a otra pantalla
+  // aparte -- y lo que se elija acá queda guardado como preferencia general, igual que ya pasaba.
+  const colsA1 = COLUMNAS_REPORTE_PRESUPUESTO.filter(c=>c.id!=="origen_insp");
   const html = `
     <h2 style="margin-top:0;">🖨 PDF tamaño A1</h2>
-    <p class="helper">Elegí qué meses incluir -- la letra se ajusta sola para que entre en 2 hojas A1 como máximo. Si con estos meses no entra ni con letra chica, se avisa para elegir menos meses o tildar "Solo pendientes".</p>
+    <p class="helper">Elegí qué meses incluir -- la letra se ajusta sola, lo más grande posible, para que entre en 2 hojas A1 como máximo. Si con estos meses no entra ni con la letra más chica, se avisa para elegir menos meses o tildar "Solo pendientes".</p>
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;">
       <div style="flex:1;">
         <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:4px;">Desde el mes</div>
@@ -15822,6 +15827,14 @@ function abrirSelectorMesesPdfA1(){
       <input type="checkbox" id="pg-a1-solo-pendientes" style="width:18px;height:18px;">
       Solo ítems pendientes (menos de 100% acumulado al mes "hasta")
     </label>
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px;">Columnas a incluir</div>
+    <div id="pg-a1-columnas" style="margin-bottom:14px;">
+      ${colsA1.map(c=>`
+        <label style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--borde);cursor:pointer;">
+          <input type="checkbox" data-col="${c.id}" ${columnasReportePresupuesto.includes(c.id)?"checked":""} style="width:17px;height:17px;">
+          <span style="font-size:12.5px;">${c.lbl}</span>
+        </label>`).join("")}
+    </div>
     <button class="btn btn-primary" style="width:100%;" onclick="confirmarGenerarPdfA1()">✓ Generar PDF</button>
     <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cancelar</button>`;
   abrirPromptGenerico(html);
@@ -15831,6 +15844,10 @@ function confirmarGenerarPdfA1(){
   const desde = Math.max(1, Math.min(max, parseInt(document.getElementById("pg-a1-desde").value)||1));
   const hasta = Math.max(desde, Math.min(max, parseInt(document.getElementById("pg-a1-hasta").value)||desde));
   const soloPendientes = document.getElementById("pg-a1-solo-pendientes").checked;
+  // Igual que en "⚙️ Columnas de los reportes": lo elegido acá pasa a ser la preferencia general
+  // (PDF del mes actual, Excel y este A1 comparten la misma), así no hay que elegir dos veces.
+  columnasReportePresupuesto = [...document.querySelectorAll("#pg-a1-columnas input[data-col]:checked")].map(inp=>inp.dataset.col);
+  try{ localStorage.setItem("columnas_reporte_presupuesto", JSON.stringify(columnasReportePresupuesto)); }catch(e){}
   cerrarPromptGenerico();
   generarPdfA1TodosLosMeses(desde, hasta, soloPendientes);
 }
@@ -15876,14 +15893,19 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
     {id:"monto_acumulado", th:"$ Acum.", val:(it,n)=>formatoMoneda(obtenerEntradaMes(it,n).acumulado*it.precioConCoef), align:"right"}
   ].filter(c=>cols.includes(c.id));
   if(colsMes.length===0){ showToast("Elegí al menos una columna de mes en ⚙️ Columnas de los reportes."); return; }
-  const idxColMontoMes = colsMes.findIndex(c=>c.id==="monto_mes"||c.id==="monto_acumulado");
   const rubros = {};
   itemsBase.forEach(it=>{
     if(!rubros[it.rubro]) rubros[it.rubro] = {nombre: it.rubroNombre, items: []};
     rubros[it.rubro].items.push(it);
   });
   let thMeses = "", filasHtml = "";
-  const totalGeneralPorMes = {}; // monto real a certificar de TODOS los rubros juntos, mes por mes -- va en la fila final
+  // Totales de TODOS los rubros juntos, mes por mes -- van en la fila final. El $ es una suma
+  // directa; el % Anterior/Mes/Acumulado es un PROMEDIO PONDERADO por el precio de cada ítem
+  // (mismo criterio que "Avance general" en el resumen de arriba) -- sumar % de ítems con precios
+  // distintos sin ponderar no significa nada.
+  const precioTotalGeneral = itemsBase.reduce((s,it)=>s+(it.precioConCoef||0), 0);
+  const totalMontoMesPorMes = {}, totalMontoAcumPorMes = {};
+  const totalPonderadoAntPorMes = {}, totalPonderadoMesPorMes = {}, totalPonderadoAcumPorMes = {};
   for(let n=desde; n<=hasta; n++) thMeses += `<th colspan="${colsMes.length}" style="background:#0A2540;color:#fff;">MES ${n}</th>`;
   let thSub = "";
   for(let n=desde; n<=hasta; n++) colsMes.forEach(c=>{ thSub += `<th>${c.th}</th>`; });
@@ -15893,20 +15915,27 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
     const montoRubroBase = grupo.items.reduce((s,it)=>s+(it.precioBase||0),0);
     // El subtotal del capítulo va DIRECTO en la fila del rubro (no en una fila aparte abajo). El
     // nombre no se corta en varias líneas (aunque se pase un poco del ancho de su celda).
-    filasHtml += `<tr style="background:#D9EDE9;font-weight:bold;"><td>${esc(key)}</td><td style="max-width:170px;white-space:normal;word-break:break-word;">${esc(grupo.nombre||"")}</td>`;
+    filasHtml += `<tr style="background:#D9EDE9;font-weight:bold;"><td>${esc(key)}</td><td style="max-width:340px;white-space:normal;word-break:break-word;">${esc(grupo.nombre||"")}</td>`;
     colsBase.forEach(c=>{
       const esPrecioTotal = c.id==="precio_base" || c.id==="precio_coef";
       filasHtml += `<td align="right">${esPrecioTotal ? formatoMoneda(c.id==="precio_base"?montoRubroBase:montoRubro) : ""}</td>`;
     });
     for(let n=desde; n<=hasta; n++){
       let sumMonto = 0;
-      grupo.items.forEach(it=>{ sumMonto += obtenerEntradaMes(it, n).monto; });
-      totalGeneralPorMes[n] = (totalGeneralPorMes[n]||0) + sumMonto;
-      colsMes.forEach((c,i)=>{ filasHtml += `<td align="right">${i===idxColMontoMes ? formatoMoneda(sumMonto) : ""}</td>`; });
+      grupo.items.forEach(it=>{
+        const m = obtenerEntradaMes(it, n);
+        sumMonto += m.monto;
+        totalMontoAcumPorMes[n] = (totalMontoAcumPorMes[n]||0) + m.acumulado*it.precioConCoef;
+        totalPonderadoAntPorMes[n] = (totalPonderadoAntPorMes[n]||0) + m.anterior*it.precioConCoef;
+        totalPonderadoMesPorMes[n] = (totalPonderadoMesPorMes[n]||0) + m.enElMes*it.precioConCoef;
+        totalPonderadoAcumPorMes[n] = (totalPonderadoAcumPorMes[n]||0) + m.acumulado*it.precioConCoef;
+      });
+      totalMontoMesPorMes[n] = (totalMontoMesPorMes[n]||0) + sumMonto;
+      colsMes.forEach((c,i)=>{ filasHtml += `<td align="right">${c.id==="monto_mes" ? formatoMoneda(sumMonto) : c.id==="monto_acumulado" ? formatoMoneda(grupo.items.reduce((s,it)=>s+obtenerEntradaMes(it,n).acumulado*it.precioConCoef,0)) : ""}</td>`; });
     }
     filasHtml += `</tr>`;
     grupo.items.forEach(it=>{
-      filasHtml += `<tr><td>${esc(it.rubro)}</td><td style="max-width:170px;white-space:normal;word-break:break-word;">${esc(it.nombre)}</td>${colsBase.map(c=>`<td align="${c.align}">${c.val(it)}</td>`).join("")}`;
+      filasHtml += `<tr><td>${esc(it.rubro)}</td><td style="max-width:340px;white-space:normal;word-break:break-word;">${esc(it.nombre)}</td>${colsBase.map(c=>`<td align="${c.align}">${c.val(it)}</td>`).join("")}`;
       for(let n=desde; n<=hasta; n++){
         const m = obtenerEntradaMes(it, n);
         // Mismo lenguaje visual de siempre: verde para lo que ya llegó al 100%, celeste para lo
@@ -15920,11 +15949,19 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
     });
   });
   // Fila final, bien destacada: lo que hay que certificar en total ese mes, sumando todos los
-  // rubros -- un solo valor por mes (no repetido por cada sub-columna Ant./Mes/Acum.), sea cual
-  // sea la combinación de columnas que se haya elegido mostrar.
+  // rubros -- con un valor por CADA sub-columna elegida (Ant./Mes/Acum. como promedio ponderado
+  // por precio, $ como suma real), no un solo número genérico por mes.
   filasHtml += `<tr style="background:#0A2540;color:#fff;font-weight:800;">
     <td colspan="${2+colsBase.length}">TOTAL A CERTIFICAR</td>
-    ${Array.from({length:hasta-desde+1},(_,i)=>desde+i).map(n=>`<td colspan="${colsMes.length}" align="right">${formatoMoneda(totalGeneralPorMes[n]||0)}</td>`).join("")}
+    ${Array.from({length:hasta-desde+1},(_,i)=>desde+i).map(n=>colsMes.map(c=>{
+      let val = "";
+      if(c.id==="pct_anterior") val = precioTotalGeneral>0 ? (totalPonderadoAntPorMes[n]/precioTotalGeneral*100).toFixed(1)+"%" : "-";
+      else if(c.id==="pct_mes") val = precioTotalGeneral>0 ? (totalPonderadoMesPorMes[n]/precioTotalGeneral*100).toFixed(1)+"%" : "-";
+      else if(c.id==="pct_acumulado") val = precioTotalGeneral>0 ? (totalPonderadoAcumPorMes[n]/precioTotalGeneral*100).toFixed(1)+"%" : "-";
+      else if(c.id==="monto_mes") val = formatoMoneda(totalMontoMesPorMes[n]||0);
+      else if(c.id==="monto_acumulado") val = formatoMoneda(totalMontoAcumPorMes[n]||0);
+      return `<td align="${c.align||"center"}">${val}</td>`;
+    }).join("")).join("")}
   </tr>`;
   const obra = claveObraPresupuesto();
   const tituloRango = desde===hasta ? `MES ${desde}` : `MES ${desde} A ${hasta}`;
@@ -15946,10 +15983,14 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
   // verdad (fuera de pantalla), no adivinado solo por la cantidad de meses como antes (que no
   // tenía en cuenta cuántos ítems había, la otra mitad de lo que hace larga la tabla). Si ni con la
   // letra más chica entra, se genera igual con esa y se avisa para elegir menos meses o pendientes.
+  // Los candidatos arrancan bastante más grandes que en un reporte A4 normal -- una hoja A1 mide
+  // 594x841mm (más de 4 veces el área de una A4), así que con pocos ítems conviene aprovechar ese
+  // tamaño real con letra bien legible en vez de imprimir números chiquitos en una hoja enorme; el
+  // piso (10px) tampoco baja tanto como antes (llegaba a 5px, ilegible incluso de cerca).
   const MARGEN_A1_MM = 5, PX_POR_MM = 96/25.4;
   const anchoContenidoPx = (594 - 2*MARGEN_A1_MM) * PX_POR_MM;
   const altoUnaHojaPx = (841 - 2*MARGEN_A1_MM) * PX_POR_MM;
-  const candidatosFuente = [13,12,11,10,9,8,7,6.5,6,5.5,5];
+  const candidatosFuente = [26,24,22,20,18,16,15,14,13,12,11,10];
   let htmlFinal = null, entroEnDosHojas = false;
   for(const fs of candidatosFuente){
     const candidato = armarHtml(fs);
