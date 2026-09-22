@@ -3362,7 +3362,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="row-flex">
         <div class="field" style="flex:1;min-width:150px;">
           <label>Obra</label>
-          <select id="min-obra"></select>
+          <select id="min-obra" onchange="renderObservacionesParaCitarEnMinuta()"></select>
         </div>
         <div class="field" style="flex:1;min-width:150px;">
           <label>Fecha</label>
@@ -3373,6 +3373,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <label>Contenido de la minuta</label>
         <textarea id="min-contenido" rows="6" placeholder="Temas tratados, acuerdos, próximos pasos..."></textarea>
       </div>
+      <div id="min-observaciones-citar" style="margin-bottom:14px;"></div>
 
       <h2 style="margin-top:16px;">Firmas</h2>
       <p class="helper" style="margin-bottom:10px;">Cada firmante dibuja su firma con el dedo y completa su nombre y cargo.</p>
@@ -3402,7 +3403,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <div class="pg-chip"><div class="valor" id="pg-chip-avance">-%</div><div class="etiqueta">Avance general</div></div>
           <div class="pg-chip"><div class="valor" id="pg-chip-monto">-</div><div class="etiqueta">Certificado mes actual</div></div>
           <div class="pg-chip"><div class="valor" id="pg-chip-coef">-</div><div class="etiqueta">Coeficiente vigente</div></div>
-          <div class="pg-chip"><div class="valor" id="pg-chip-mes">-</div><div class="etiqueta">Mes actual</div></div>
+          <div class="pg-chip" onclick="abrirMesActualPresupuesto()" style="cursor:pointer;" title="Tocá para cambiar el mes actual"><div class="valor" id="pg-chip-mes">-</div><div class="etiqueta">Mes actual ✏️</div></div>
         </div>
         <div id="pg-contrato-verif" style="margin-top:8px;padding:9px 11px;border-radius:9px;font-size:11px;"></div>
 
@@ -4208,6 +4209,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <select class="filtro-obra-input" id="obs-filtro-obra" onchange="renderListaObservaciones()">
         <option value="">Todas las obras</option>
       </select>
+      <button class="btn btn-outline" style="width:100%;margin:8px 0;" onclick="generarReporteObservacionesPDF()">📄 Generar reporte PDF</button>
       <div class="resumen-mes" id="obs-resumen"></div>
       <div class="chip-row" id="obs-filtro-prioridad" style="margin-bottom:14px;">
         <div class="chip-filtro sel" data-val="" onclick="filtrarPrioridadObs('',this)">Todas</div>
@@ -5685,6 +5687,11 @@ function detectarFaltasSeguidas(mesStr, umbral){
   });
   return alertas;
 }
+// Clima ya registra, obra por obra, si ese día no se trabajó (lluvia u otro motivo) -- esto evita
+// que Asistencia tenga que adivinarlo de nuevo a mano, tipeando "LL" trabajador por trabajador.
+function climaNoLaborable(fecha, obra){
+  return climaRegistros.find(r=>r.fecha===fecha && r.obra===obra && r.seTrabajo==="no") || null;
+}
 function renderVistaDia(){
   const inp = document.getElementById("sel-dia");
   if(!inp || !inp.value) return;
@@ -5708,7 +5715,17 @@ function renderVistaDia(){
     <div style="background:#FBEAEA;border:1px solid #DC5A5A;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#B42318;font-weight:700;">
       ⚠ ${faltasSeguidas.map(a=>`${esc(a.nombre)} lleva ${a.dias} días seguidos ausente`).join(" · ")}
     </div>` : "";
-  let html = avisoFaltas + `<div class="dia-header-banner ${finde?'weekend':''}"><span>${nombreFecha}${finde?' · Fin de semana':''}</span><span>${filas.length} persona(s)</span></div>`;
+  // Si Clima ya dice que en alguna de las obras de hoy no se trabajó (lluvia u otro motivo), se
+  // ofrece completar de una sola vez los casilleros vacíos de esos trabajadores con "LL" -- nunca
+  // pisa un valor que ya esté cargado.
+  const obrasLluviaHoy = [...new Set(filas.filter(f=>f.trabajador).map(f=>f.trabajador.obra).filter(Boolean))]
+    .filter(obra=>climaNoLaborable(inp.value, obra));
+  const avisoLluvia = obrasLluviaHoy.length>0 ? `
+    <div style="background:#EAF4FB;border:1px solid #3B82F6;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#1D4ED8;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+      <span>🌧️ Clima marcó que no se trabajó en ${obrasLluviaHoy.map(esc).join(", ")} este día</span>
+      <button type="button" onclick="aplicarLluviaClimaDia()" style="background:#3B82F6;color:#fff;border:none;border-radius:7px;padding:6px 10px;font-size:11px;font-weight:800;">Marcar "LL" en los vacíos</button>
+    </div>` : "";
+  let html = avisoFaltas + avisoLluvia + `<div class="dia-header-banner ${finde?'weekend':''}"><span>${nombreFecha}${finde?' · Fin de semana':''}</span><span>${filas.length} persona(s)</span></div>`;
   html += filas.map(f=>{
     const t = f.trabajador;
     const reg = data[f.id] || {obra:(t?t.obra:""), days:{}, notaQ1:"", notaQ2:""};
@@ -5731,7 +5748,7 @@ function renderVistaDia(){
         <div class="avatar-mini ${esSereno?'sereno':''}"></div>
         <div class="dia-info">
           <div class="dia-nombre">${nombreHtml}</div>
-          <div class="dia-meta">${t?esc(t.categoria||""):""}${t&&t.obra?" · "+esc(t.obra):""}${baja?" · BAJA":""}</div>
+          <div class="dia-meta">${t?esc(t.categoria||""):""}${t&&t.obra?" · "+esc(t.obra):""}${baja?" · BAJA":""}${t&&val===""&&climaNoLaborable(inp.value,t.obra)?" · 🌧️ Lluvia (Clima)":""}</div>
         </div>
         <input class="dia-valor ${cls}" id="dia-input-${f.id}" value="${esc(String(val))}" ${baja?"disabled":""}
           onchange="setDia('${f.id}',${diaS},this.value); actualizarClaseDiaInput('${f.id}'); enfocarSiguienteDia('${f.id}');"
@@ -5743,6 +5760,34 @@ function renderVistaDia(){
     </div>`;
   }).join("") || `<p class="empty-msg">Agregá trabajadores primero en la pestaña Trabajadores.</p>`;
   document.getElementById("lista-dia").innerHTML = html;
+}
+// Completa de una sola vez, con "LL", el casillero de este día de cada trabajador cuya obra Clima
+// ya marcó como no laborable -- nunca pisa un valor ya cargado (si alguien ya tenía "8" o "A" ese
+// día, se deja tal cual), y respeta las mismas reglas que el resto de la pantalla (los Sereno no
+// usan el código "LL", y a alguien de baja no se le toca nada).
+async function aplicarLluviaClimaDia(){
+  const inp = document.getElementById("sel-dia");
+  if(!inp || !inp.value) return;
+  const diaS = parseInt(inp.value.split("-")[2], 10);
+  const data = asistenciaCache[mesActual] || {};
+  let cambios = 0;
+  filasParaMes(mesActual).forEach(f=>{
+    const t = f.trabajador;
+    if(!t || esBajaVigente(t)) return;
+    const esSereno = (t.categoria||"").toLowerCase().includes("sereno");
+    if(esSereno) return;
+    if(!climaNoLaborable(inp.value, t.obra)) return;
+    const reg = data[f.id];
+    if(!reg || (reg.days[diaS]||"")!=="") return;
+    reg.days[diaS] = "LL";
+    cambios++;
+  });
+  if(cambios===0){ showToast("No había ningún casillero vacío para marcar."); return; }
+  await guardarAsistenciaMes(mesActual);
+  registrarActividadAsistenciaDebounced();
+  renderAsistencia();
+  renderVistaDia();
+  showToast(`✓ Se marcó "Lluvia" en ${cambios} casillero${cambios===1?"":"s"} vacío${cambios===1?"":"s"}`);
 }
 // Después de cargar el dato de una persona (tipeando o con un chip rápido), salta solo al
 // campo de la siguiente persona en la lista — así se carga toda la nómina sin tener que
@@ -12018,7 +12063,7 @@ function prepararVistaRemitos(){
   quitarFirmaPreview(document.getElementById("rem-chofer-firma"));
   document.getElementById("lista-autorizaciones-remito").innerHTML = "";
   agregarAutorizacionRemito();
-  remItems = [{cant:"",detalle:""},{cant:"",detalle:""}];
+  remItems = [{cant:"",detalle:"",esHerramienta:false},{cant:"",detalle:"",esHerramienta:false}];
   renderItemsRemito();
   document.getElementById("avisos-remito-form-box").style.display = "none";
   renderListaRemitos();
@@ -12034,10 +12079,14 @@ function renderItemsRemito(){
         <div class="item-campo" style="flex:0 0 70px;"><label>Cant.</label><input value="${esc(it.cant)}" onchange="remItems[${i}].cant=this.value"></div>
         <div class="item-campo" style="flex:1;"><label>Detalle</label><input value="${esc(it.detalle)}" onchange="remItems[${i}].detalle=this.value"></div>
       </div>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;cursor:pointer;">
+        <input type="checkbox" ${it.esHerramienta?"checked":""} onchange="remItems[${i}].esHerramienta=this.checked">
+        🔧 Es una herramienta -- agregarla sola al inventario de Herramientas al guardar
+      </label>
     </div>
   `).join("");
 }
-function agregarItemRemito(){ remItems.push({cant:"",detalle:""}); renderItemsRemito(); }
+function agregarItemRemito(){ remItems.push({cant:"",detalle:"",esHerramienta:false}); renderItemsRemito(); }
 function quitarItemRemito(i){ remItems.splice(i,1); renderItemsRemito(); }
 
 function agregarAutorizacionRemito(){
@@ -12112,7 +12161,33 @@ async function guardarRemito(){
   registrarActividad(`cargó el Remito N° ${numero} de ${esc(obra)}`);
   nexoAvisoFlotante("guardado", "Remito guardado ✓");
   renderListaRemitos();
+  await agregarHerramientasDesdeRemito(itemsValidos, obra, fecha);
   mostrarModalPDF(construirHtmlRemito(remito), "portrait", `Remito_${numero}_${nombreArchivoSeguro(obra)}.pdf`);
+}
+// Antes había que cargar dos veces lo mismo: una vez como ítem del remito y otra vez a mano en
+// Herramientas. Cualquier ítem que se haya tildado "Es una herramienta" al cargar el remito entra
+// directo al inventario de Herramientas -- misma obra, misma fecha, sin pedir nada más (la
+// herramienta queda como "nueva"/"bien" y se puede completar el resto del detalle después, igual
+// que cualquier otra que se cargue a mano).
+async function agregarHerramientasDesdeRemito(itemsRemito, obra, fecha){
+  const marcados = itemsRemito.filter(it=>it.esHerramienta);
+  if(marcados.length===0) return;
+  const nuevas = marcados.map(it=>({
+    id: uid(), nombre: it.detalle.trim(), obra,
+    cantidad: parseInt(it.cant)||1,
+    foto: null, condicionInicial: "nueva",
+    fechaCompra: fecha, fechaIngresoObra: fecha,
+    estado: "bien", observaciones: [], reparacion: null, prestamo: null,
+    creadoPor: sesionActual?sesionActual.username:"", timestamp: new Date().toISOString()
+  }));
+  herramientas.unshift(...nuevas);
+  const ok = await guardarHerramientasIndex();
+  if(!ok){
+    nuevas.forEach(n=>{ const i = herramientas.findIndex(h=>h.id===n.id); if(i>=0) herramientas.splice(i,1); });
+    showToast("El remito se guardó, pero no se pudo agregar la(s) herramienta(s) al inventario (revisá conexión y cargala a mano en Herramientas).");
+    return;
+  }
+  showToast(`✓ Además se agregó${nuevas.length===1?"":"ron"} ${nuevas.length} herramienta${nuevas.length===1?"":"s"} al inventario`);
 }
 
 function construirHtmlRemito(remito){
@@ -13393,6 +13468,45 @@ async function eliminarObservacion(id){
   if(o) registrarActividad(`eliminó la observación "${esc(o.titulo)}"`);
   showToast("Observación eliminada");
   renderListaObservaciones();
+}
+// Era la única de las listas de seguimiento (Herramientas, Clima, Minutas ya tienen la suya) sin
+// reporte imprimible -- justo el tipo de lista que se lleva a una reunión de obra. Mismo estilo que
+// esos otros reportes.
+const OBS_ESTADO_TXT = {detectado:"Detectado", asignado:"Asignado", en_curso:"En curso", resuelto:"Resuelto"};
+function generarReporteObservacionesPDF(){
+  const filtradas = observacionesFiltradas();
+  const obraSel = document.getElementById("obs-filtro-obra").value;
+  if(filtradas.length===0){ showToast("No hay observaciones para generar el reporte."); return; }
+  const abiertas = filtradas.filter(o=>o.estado!=="resuelto").length;
+  const enCurso = filtradas.filter(o=>o.estado==="en_curso").length;
+  const resueltas = filtradas.filter(o=>o.estado==="resuelto").length;
+  const badgeTxt = {alta:"🔴 Alta", media:"🟡 Media", baja:"🔵 Baja"};
+  const filas = filtradas.map(o=>`<tr>
+      <td>${esc(o.titulo)}</td><td>${esc(o.obra)}</td><td>${esc(o.responsable||"")}</td>
+      <td>${badgeTxt[o.prioridad]||""}</td><td>${OBS_ESTADO_TXT[o.estado]||o.estado}</td>
+      <td>${o.fecha?new Date(o.fecha+"T00:00:00").toLocaleDateString("es-AR"):""}</td>
+    </tr>${o.descripcion ? `<tr><td colspan="6" style="padding:2px 8px 10px 16px;font-size:10px;color:#4B5563;background:#F9FAFB;border-bottom:1px solid #E5E7EB;">${esc(o.descripcion)}</td></tr>` : ""}`).join("");
+  const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;min-height:990px;box-sizing:border-box;">
+    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
+      <td class="rc-titulo-corp">OBSERVACIONES DE OBRA${obraSel ? " — "+esc(obraSel) : ""}</td>
+      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
+    </tr></table>
+    <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"}</div>
+
+    <table class="rgp-stats" width="700" cellspacing="0" cellpadding="0" style="margin:16px 0;"><tr>
+      <td class="rgp-stat-box"><div class="rgp-stat-num">${filtradas.length}</div><div class="rgp-stat-label">Total</div></td>
+      <td class="rgp-stat-box"><div class="rgp-stat-num">${abiertas}</div><div class="rgp-stat-label">Abiertas</div></td>
+      <td class="rgp-stat-box"><div class="rgp-stat-num">${enCurso}</div><div class="rgp-stat-label">En curso</div></td>
+      <td class="rgp-stat-box"><div class="rgp-stat-num">${resueltas}</div><div class="rgp-stat-label">Resueltas</div></td>
+    </tr></table>
+
+    <div style="margin:20px 0 8px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Detalle</div>
+    <table class="trab" width="700" cellspacing="0" cellpadding="0" style="font-size:11.5px;">
+      <thead><tr><th>Título</th><th>Obra</th><th>Responsable</th><th>Prioridad</th><th>Estado</th><th>Fecha</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+  </div>`;
+  mostrarModalPDF(html, "portrait", `Observaciones_${nombreArchivoSeguro(obraSel||"Todas")}.pdf`);
 }
 
 /* ==================== CLIMA Y MINUTAS ==================== */
@@ -15406,6 +15520,10 @@ async function confirmarMesActualPresupuesto(n){
   await guardarPresupuestoObra();
   cerrarPromptGenerico();
   actualizarResumenPresupuesto();
+  // Sin esto, el chip de arriba cambiaba pero la lista de ítems de abajo (el % de cada uno) seguía
+  // mostrando los valores del mes viejo hasta que algo MÁS la volviera a dibujar (buscar algo,
+  // tildar "Solo pendientes") -- parecía que el cambio de mes "no hacía nada".
+  renderListaPresupuesto();
   showToast(n ? `✓ Mes actual: Mes ${n}` : "✓ Vuelve a tomar el último mes cargado automáticamente");
 }
 // ---------------- PDF del mes actual ----------------
@@ -15803,7 +15921,36 @@ function prepararVistaMinutas(){
   agregarFirmaMinuta();
   document.getElementById("avisos-minuta-box").style.display = "none";
   renderListaMinutas();
+  renderObservacionesParaCitarEnMinuta();
   mostrarBotonFlotanteGuardar("Guardar minuta", generarMinutaPDF, "📝");
+}
+// Un acta de reunión suele hablar de puntos pendientes que ya están cargados en Observaciones --
+// antes había que volver a escribirlos de memoria. Esto lista las observaciones ABIERTAS de la
+// obra elegida y, con un toque, agrega una línea prolija al contenido de la minuta -- solo texto,
+// no crea ningún vínculo de datos entre los dos módulos (así una minuta vieja sigue siendo válida
+// aunque esa observación después se borre o cambie).
+function renderObservacionesParaCitarEnMinuta(){
+  const cont = document.getElementById("min-observaciones-citar");
+  if(!cont) return;
+  const obra = document.getElementById("min-obra").value;
+  const abiertas = (typeof observaciones!=="undefined" ? observaciones : []).filter(o=>o.obra===obra && o.estado!=="resuelto");
+  if(!obra || abiertas.length===0){ cont.innerHTML = ""; return; }
+  const badgeTxt = {alta:"🔴", media:"🟡", baja:"🔵"};
+  cont.innerHTML = `
+    <div style="background:var(--fondo);border-radius:9px;padding:9px 11px;">
+      <div style="font-size:11px;font-weight:800;margin-bottom:6px;">📋 Observaciones abiertas de ${esc(obra)} -- tocá para citarlas en el contenido:</div>
+      ${abiertas.map(o=>`<button type="button" onclick="citarObservacionEnMinuta('${o.id}')" style="display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--borde);border-radius:7px;padding:7px 9px;margin-bottom:5px;font-size:11px;">
+        ${badgeTxt[o.prioridad]||""} ${esc(o.titulo)}${o.responsable?` <span style="color:var(--tinta-suave);">(${esc(o.responsable)})</span>`:""}
+      </button>`).join("")}
+    </div>`;
+}
+function citarObservacionEnMinuta(id){
+  const o = (observaciones||[]).find(x=>x.id===id);
+  if(!o) return;
+  const area = document.getElementById("min-contenido");
+  const linea = `• Observación pendiente: ${o.titulo}${o.responsable?" -- responsable: "+o.responsable:""}${o.descripcion?" ("+o.descripcion+")":""}`;
+  area.value = area.value ? (area.value.replace(/\n+$/,"") + "\n" + linea + "\n") : (linea + "\n");
+  showToast("✓ Agregada al contenido de la minuta");
 }
 function recolectarFirmasMinuta(){
   const firmas = [];
