@@ -15326,8 +15326,8 @@ function maxMesCargado(){
   return max;
 }
 function abrirSelectorMesesPresupuesto(){
+  if(presupuestoItems.length===0){ showToast("Todavía no hay presupuesto cargado."); return; }
   const max = maxMesCargado();
-  if(max===0){ showToast("Todavía no hay ningún mes cargado."); return; }
   const montoTotal = presupuestoItems.reduce((s,it)=>s+it.precioConCoef,0);
   let filas = "";
   for(let n=1; n<=max; n++){
@@ -15347,7 +15347,8 @@ function abrirSelectorMesesPresupuesto(){
     <h2 style="margin-top:0;">📅 Certificados por mes</h2>
     <p class="helper">Tocá un mes para ver su certificado completo y, si hace falta, ajustar los decimales para que cierre exacto contra el monto real.</p>
     ${filas}
-    <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cerrar</button>`;
+    <button class="btn btn-primary" style="width:100%;margin-top:${max>0?"2px":"0"};margin-bottom:8px;" onclick="abrirDetalleMesPresupuesto(${max+1})">+ Agregar Mes ${max+1}</button>
+    <button class="btn btn-outline" style="width:100%;" onclick="cerrarPromptGenerico()">Cerrar</button>`;
   abrirPromptGenerico(html);
 }
 function abrirDetalleMesPresupuesto(n){
