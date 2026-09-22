@@ -14213,12 +14213,36 @@ function renderListaPresupuesto(){
             <div class="nombre">${esc(it.nombre)}</div>
             ${meta.length ? `<div class="meta">${meta.join(" · ")}</div>` : ""}
           </div>
-          <div class="pct-actual">${(m.acumulado*100).toFixed(0)}%</div>
+          <input type="number" step="0.01" min="0" max="100" value="${(m.acumulado*100).toFixed(2)}" data-idx="${it._idx}" onchange="guardarPctInlinePresupuesto(this)" title="% acumulado del Mes ${mesRef||1} -- se guarda solo al salir del campo">
+          <span style="font-size:11px;font-weight:800;color:var(--verde);flex-shrink:0;">%</span>
         </div>`;
       });
     }
   });
   cont.innerHTML = html || `<p class="helper" style="margin:10px 0;">Nada coincide con la búsqueda.</p>`;
+}
+// Edita el % acumulado directo desde la lista, sin pasar por "Ver / editar por mes" -- se guarda
+// para el "Mes actual" elegido arriba (si nunca se tocó, es el último mes cargado; si no hay
+// ninguno cargado todavía, arranca en el Mes 1). El "Anterior" se arrastra del último mes con
+// datos ANTES de este (no exige que exista el mes justo anterior), así que también sirve para
+// ítems que venían atrasados respecto al resto.
+async function guardarPctInlinePresupuesto(inputEl){
+  const idx = parseInt(inputEl.dataset.idx);
+  const it = presupuestoItems[idx];
+  if(!it) return;
+  const n = mesActualPresupuesto() || 1;
+  const nuevoAcum = Math.max(0, Math.min(100, parseFloat(inputEl.value)||0))/100;
+  it.historialMeses = it.historialMeses || [];
+  let entrada = it.historialMeses.find(m=>m.n===n);
+  if(!entrada){ entrada = {n, anterior:0, enElMes:0, acumulado:0, monto:0}; it.historialMeses.push(entrada); it.historialMeses.sort((a,b)=>a.n-b.n); }
+  const anterior = entradaHastaMes(it, n-1).acumulado;
+  entrada.anterior = anterior;
+  entrada.acumulado = nuevoAcum;
+  entrada.enElMes = Math.max(0, nuevoAcum-anterior);
+  entrada.monto = entrada.enElMes*it.precioConCoef;
+  await guardarPresupuestoObra();
+  actualizarResumenPresupuesto();
+  renderListaPresupuesto();
 }
 function toggleRubroPresupuesto(key){
   if(presupuestoRubrosColapsados.has(key)) presupuestoRubrosColapsados.delete(key);
@@ -15326,8 +15350,8 @@ function maxMesCargado(){
   return max;
 }
 function abrirSelectorMesesPresupuesto(){
+  if(presupuestoItems.length===0){ showToast("Todavía no hay presupuesto cargado."); return; }
   const max = maxMesCargado();
-  if(max===0){ showToast("Todavía no hay ningún mes cargado."); return; }
   const montoTotal = presupuestoItems.reduce((s,it)=>s+it.precioConCoef,0);
   let filas = "";
   for(let n=1; n<=max; n++){
@@ -15347,7 +15371,8 @@ function abrirSelectorMesesPresupuesto(){
     <h2 style="margin-top:0;">📅 Certificados por mes</h2>
     <p class="helper">Tocá un mes para ver su certificado completo y, si hace falta, ajustar los decimales para que cierre exacto contra el monto real.</p>
     ${filas}
-    <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cerrar</button>`;
+    <button class="btn btn-primary" style="width:100%;margin-top:${max>0?"2px":"0"};margin-bottom:8px;" onclick="abrirDetalleMesPresupuesto(${max+1})">+ Agregar Mes ${max+1}</button>
+    <button class="btn btn-outline" style="width:100%;" onclick="cerrarPromptGenerico()">Cerrar</button>`;
   abrirPromptGenerico(html);
 }
 function abrirDetalleMesPresupuesto(n){
@@ -15508,9 +15533,12 @@ function abrirMesActualPresupuesto(){
     const sel = presupuestoMesActual===n;
     opciones += `<button onclick="confirmarMesActualPresupuesto(${n})" style="width:100%;text-align:left;background:${sel?"rgba(14,148,136,.15)":"var(--fondo)"};border:1.5px solid ${sel?"var(--verde)":"var(--borde)"};border-radius:9px;padding:10px 12px;margin-bottom:6px;font-weight:700;font-size:12.5px;">Mes ${n}${sel?" ✓":""}</button>`;
   }
+  const siguiente = max+1;
+  const selSiguiente = presupuestoMesActual===siguiente;
+  opciones += `<button onclick="confirmarMesActualPresupuesto(${siguiente})" style="width:100%;text-align:left;background:${selSiguiente?"rgba(14,148,136,.15)":"var(--fondo)"};border:1.5px dashed ${selSiguiente?"var(--verde)":"var(--borde)"};border-radius:9px;padding:10px 12px;margin-bottom:6px;font-weight:700;font-size:12.5px;">+ Mes ${siguiente} (nuevo)${selSiguiente?" ✓":""}</button>`;
   const html = `
     <h2 style="margin-top:0;">📌 ¿Cuál es el mes actual?</h2>
-    <p class="helper">El que estás trabajando/preparando ahora -- se usa para el botón "🖨 PDF del mes actual".</p>
+    <p class="helper">El que estás trabajando/preparando ahora -- se usa para el botón "🖨 PDF del mes actual" y para el % que edités directo en la lista de ítems. Elegí "+ Mes ${siguiente} (nuevo)" para empezar a cargar el mes siguiente.</p>
     ${opciones}
     <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cerrar</button>`;
   abrirPromptGenerico(html);
