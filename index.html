@@ -14118,7 +14118,7 @@ let columnasReportePresupuesto = cargarColumnasReportePresupuesto();
 function abrirSelectorColumnasReportePresupuesto(){
   const html = `
     <h2 style="margin-top:0;">⚙️ Columnas de los reportes</h2>
-    <p class="helper">Se aplica a los 3: el PDF del mes actual, el Excel de todos los meses, y el PDF tamaño A1. "Designación" y el subtotal por rubro siempre se muestran.</p>
+    <p class="helper">Se aplica a los 3: el PDF del mes actual, el Excel de todos los meses, y el PDF tamaño A1. "Descripción" y el subtotal por rubro siempre se muestran.</p>
     ${COLUMNAS_REPORTE_PRESUPUESTO.map(c=>`
       <label style="display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--borde);cursor:pointer;">
         <input type="checkbox" data-col="${c.id}" ${columnasReportePresupuesto.includes(c.id)?"checked":""} style="width:19px;height:19px;">
@@ -15532,7 +15532,7 @@ function generarPdfMesActualPresupuesto(){
   const n = mesActualPresupuesto();
   const obra = claveObraPresupuesto();
   const cols = columnasReportePresupuesto;
-  // "Designación" siempre va -- las demás columnas se arman dinámicamente según lo elegido en
+  // "Descripción" siempre va -- las demás columnas se arman dinámicamente según lo elegido en
   // "⚙️ Columnas de los reportes", en el mismo orden en que aparecen en ese selector.
   const defCols = [
     {id:"unidad", th:"Unid.", val:it=>esc(it.unidad), align:"center"},
@@ -15563,7 +15563,7 @@ function generarPdfMesActualPresupuesto(){
       const m = obtenerEntradaMes(it, n);
       totalGeneralAcum += m.acumulado*it.precioConCoef;
       totalGeneralMonto += m.enElMes*it.precioConCoef;
-      filasHtml += `<tr><td>${esc(it.nombre)}</td>${defCols.map(c=>`<td align="${c.align}">${c.val(it)}</td>`).join("")}</tr>`;
+      filasHtml += `<tr><td style="max-width:340px;white-space:normal;word-break:break-word;line-height:1.3em;max-height:2.6em;overflow:hidden;">${esc(it.nombre)}</td>${defCols.map(c=>`<td align="${c.align}">${c.val(it)}</td>`).join("")}</tr>`;
     });
   });
   const montoTotal = presupuestoItems.reduce((s,it)=>s+it.precioConCoef,0);
@@ -15579,7 +15579,7 @@ function generarPdfMesActualPresupuesto(){
       <td class="rgp-stat-box"><div class="rgp-stat-num" style="font-size:15px;">${formatoMoneda(totalGeneralAcum)}</div><div class="rgp-stat-label">Certificado acumulado</div></td>
     </tr></table>
     <table class="trab" width="100%" cellspacing="0" cellpadding="0" style="font-size:9.5px;">
-      <thead><tr><th>Designación</th>${defCols.map(c=>`<th>${c.th}</th>`).join("")}</tr></thead>
+      <thead><tr><th>Descripción</th>${defCols.map(c=>`<th>${c.th}</th>`).join("")}</tr></thead>
       <tbody>${filasHtml}</tbody>
     </table>
   </div>`;
@@ -15915,7 +15915,7 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
     const montoRubroBase = grupo.items.reduce((s,it)=>s+(it.precioBase||0),0);
     // El subtotal del capítulo va DIRECTO en la fila del rubro (no en una fila aparte abajo). El
     // nombre no se corta en varias líneas (aunque se pase un poco del ancho de su celda).
-    filasHtml += `<tr style="background:#D9EDE9;font-weight:bold;"><td>${esc(key)}</td><td style="max-width:340px;white-space:normal;word-break:break-word;">${esc(grupo.nombre||"")}</td>`;
+    filasHtml += `<tr style="background:#D9EDE9;font-weight:bold;"><td>${esc(key)}</td><td style="max-width:340px;white-space:normal;word-break:break-word;line-height:1.3em;max-height:2.6em;overflow:hidden;">${esc(grupo.nombre||"")}</td>`;
     colsBase.forEach(c=>{
       const esPrecioTotal = c.id==="precio_base" || c.id==="precio_coef";
       filasHtml += `<td align="right">${esPrecioTotal ? formatoMoneda(c.id==="precio_base"?montoRubroBase:montoRubro) : ""}</td>`;
@@ -15935,7 +15935,7 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
     }
     filasHtml += `</tr>`;
     grupo.items.forEach(it=>{
-      filasHtml += `<tr><td>${esc(it.rubro)}</td><td style="max-width:340px;white-space:normal;word-break:break-word;">${esc(it.nombre)}</td>${colsBase.map(c=>`<td align="${c.align}">${c.val(it)}</td>`).join("")}`;
+      filasHtml += `<tr><td>${esc(it.rubro)}</td><td style="max-width:340px;white-space:normal;word-break:break-word;line-height:1.3em;max-height:2.6em;overflow:hidden;">${esc(it.nombre)}</td>${colsBase.map(c=>`<td align="${c.align}">${c.val(it)}</td>`).join("")}`;
       for(let n=desde; n<=hasta; n++){
         const m = obtenerEntradaMes(it, n);
         // Mismo lenguaje visual de siempre: verde para lo que ya llegó al 100%, celeste para lo
@@ -15973,7 +15973,7 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
     <div class="rc-semana-row">${esc(obra)} · Generado el ${new Date().toLocaleDateString("es-AR")}</div>
     <table class="trab" width="100%" cellspacing="0" cellpadding="0" style="font-size:${fontSize}px;">
       <thead>
-        <tr><th rowspan="2">Rubro</th><th rowspan="2">Designación</th>${colsBase.map(c=>`<th rowspan="2">${c.th}</th>`).join("")}${thMeses}</tr>
+        <tr><th rowspan="2">Rubro</th><th rowspan="2">Descripción</th>${colsBase.map(c=>`<th rowspan="2">${c.th}</th>`).join("")}${thMeses}</tr>
         <tr>${thSub}</tr>
       </thead>
       <tbody>${filasHtml}</tbody>
