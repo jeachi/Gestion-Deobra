@@ -12912,7 +12912,10 @@ let obsPrioridadSel = "media";
 let obsFotoData = null;
 let obsFiltroPrioridad = "";
 const OBS_ESTADOS = ["detectado","asignado","en_curso","resuelto"];
-const OBS_ESTADOS_LBL = {detectado:"Detectado", asignado:"Asignado", en_curso:"En curso", resuelto:"Resuelto"};
+// El paso "asignado" se muestra como "Materiales" -- se usa para marcar si ya se consiguió el
+// material que hace falta, no si se le asignó la tarea a alguien (se deja la clave interna
+// "asignado" tal cual para no romper observaciones ya guardadas con ese estado).
+const OBS_ESTADOS_LBL = {detectado:"Detectado", asignado:"Materiales", en_curso:"En curso", resuelto:"Resuelto"};
 
 async function cargarObservaciones(){
   try{
@@ -13441,7 +13444,7 @@ function renderListaObservaciones(){
         </div>
         ${o.descripcion ? `<div class="obs-desc">${esc(o.descripcion)}</div>` : ""}
         <div class="estado-track" onclick="avanzarEstadoObservacion('${o.id}')" title="Tocá para avanzar el estado">${puntos}</div>
-        <div class="estado-lbl"><span>Detectado</span><span>Asignado</span><span>En curso</span><span>Resuelto</span></div>
+        <div class="estado-lbl"><span>Detectado</span><span title="¿Ya tenés el material?">Materiales</span><span>En curso</span><span>Resuelto</span></div>
         <div class="obs-botones">
           ${sesionActual && sesionActual.role==="admin" ? `<button type="button" class="btn-mini peligro" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarObservacion('${o.id}'))">🗑 Eliminar</button>` : ``}
         </div>
@@ -13472,7 +13475,7 @@ async function eliminarObservacion(id){
 // Era la única de las listas de seguimiento (Herramientas, Clima, Minutas ya tienen la suya) sin
 // reporte imprimible -- justo el tipo de lista que se lleva a una reunión de obra. Mismo estilo que
 // esos otros reportes.
-const OBS_ESTADO_TXT = {detectado:"Detectado", asignado:"Asignado", en_curso:"En curso", resuelto:"Resuelto"};
+const OBS_ESTADO_TXT = {detectado:"Detectado", asignado:"Materiales", en_curso:"En curso", resuelto:"Resuelto"};
 function generarReporteObservacionesPDF(){
   const filtradas = observacionesFiltradas();
   const obraSel = document.getElementById("obs-filtro-obra").value;
