@@ -748,6 +748,8 @@ table.trab input,table.trab select{
 .obs-item.prior-media{border-left:4px solid #D4A017;}
 .obs-item.prior-baja{border-left:4px solid #1D6FE0;}
 .obs-foto{width:100%;height:170px;background:linear-gradient(135deg,#94a3ad,#5c6b74);object-fit:cover;display:block;}
+.obs-despues{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.obs-foto-despues{width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0;}
 .obs-cuerpo{padding:13px;}
 .obs-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
 .obs-titulo{font-weight:800;font-size:13.5px;color:var(--verde-oscuro);}
@@ -757,7 +759,7 @@ table.trab input,table.trab select{
 .bp-alta{background:#FBD5D5;color:#B42318;}
 .bp-media{background:#FFF6D8;color:#7A5B00;}
 .bp-baja{background:#E3F0FF;color:#0A4A8A;}
-.estado-track{display:flex;align-items:center;gap:4px;margin-top:10px;cursor:pointer;}
+.estado-track{display:flex;align-items:flex-start;gap:4px;margin-top:10px;}
 
 /* ---- Informes de Asistencia ---- */
 .resumen-general-inf{display:flex;gap:12px;align-items:center;margin-bottom:16px;}
@@ -1093,9 +1095,12 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
   50%{ box-shadow:0 8px 24px rgba(14,148,136,.4), 0 0 0 10px rgba(47,213,200,0); }
 }
 @media (max-width:380px){ .fab-guardar{padding:12px 20px;font-size:12.5px;} }
-.estado-punto{flex:1;height:4px;border-radius:2px;background:var(--borde);}
-.estado-punto.activo{background:var(--verde);}
-.estado-lbl{font-size:9px;color:var(--tinta-suave);margin-top:4px;display:flex;justify-content:space-between;}
+.estado-paso{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;padding:6px 2px 0;margin:0;cursor:pointer;font:inherit;-webkit-tap-highlight-color:transparent;}
+.estado-paso .barra{width:100%;height:4px;border-radius:2px;background:var(--borde);}
+.estado-paso.activo .barra{background:var(--verde);}
+.estado-paso .txt{font-size:9px;color:var(--tinta-suave);}
+.estado-paso.activo .txt{color:var(--verde);font-weight:700;}
+.estado-paso:focus-visible{outline:2px solid var(--verde);outline-offset:2px;border-radius:4px;}
 .obs-botones{display:flex;gap:6px;margin-top:10px;}
 .minuta-item .botones{display:flex;gap:6px;}
 #firma-modal-overlay{position:fixed;inset:0;background:rgba(10,37,64,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;}
@@ -4209,7 +4214,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <select class="filtro-obra-input" id="obs-filtro-obra" onchange="renderListaObservaciones()">
         <option value="">Todas las obras</option>
       </select>
-      <button class="btn btn-outline" style="width:100%;margin:8px 0;" onclick="generarReporteObservacionesPDF()">📄 Generar reporte PDF</button>
+      <button class="btn btn-outline" style="width:100%;margin:8px 0 0;" onclick="generarReporteObservacionesPDF()">📄 Generar reporte PDF</button>
+      <button class="btn btn-outline" style="width:100%;margin:8px 0;" onclick="generarInformeFotograficoObservacionesPDF()">🖼️ Informe fotográfico (por día)</button>
+      <input type="file" id="obs-foto-despues-input" accept="image/*" style="display:none;" onchange="handleFotoObservacionDespues(this)">
       <div class="resumen-mes" id="obs-resumen"></div>
       <div class="chip-row" id="obs-filtro-prioridad" style="margin-bottom:14px;">
         <div class="chip-filtro sel" data-val="" onclick="filtrarPrioridadObs('',this)">Todas</div>
@@ -12978,6 +12985,33 @@ function reabrirMarcadoObservacion(){
     document.getElementById("obs-foto-img").src = dataUrlMarcada;
   });
 }
+// Foto de "después" -- para dejar registrado cómo quedó una vez reparada. Un solo <input> oculto
+// compartido por toda la lista (no uno por ítem): el botón de cada observación guarda a cuál le
+// corresponde en obsFotoDespuesTargetId antes de abrirlo.
+let obsFotoDespuesTargetId = null;
+function elegirFotoObservacionDespues(id){
+  obsFotoDespuesTargetId = id;
+  document.getElementById("obs-foto-despues-input").click();
+}
+function handleFotoObservacionDespues(input){
+  const file = input.files[0];
+  input.value = "";
+  const id = obsFotoDespuesTargetId;
+  obsFotoDespuesTargetId = null;
+  if(!file || !id) return;
+  comprimirImagenMiniatura(file, (dataUrl)=>{
+    abrirEditorMarcado(dataUrl, async (dataUrlMarcada)=>{
+      const o = observaciones.find(x=>x.id===id);
+      if(!o) return;
+      const anterior = o.fotoDespues;
+      o.fotoDespues = dataUrlMarcada;
+      const ok = await guardarObservacionesIndex();
+      if(!ok){ o.fotoDespues = anterior; return; }
+      registrarActividad(`agregó una foto de "después" a la observación "${esc(o.titulo)}"`);
+      renderListaObservaciones();
+    });
+  });
+}
 
 let pendientesSubvistaActual = "recordatorios";
 function cambiarVistaPendientes(v){
@@ -13431,7 +13465,19 @@ function renderListaObservaciones(){
   const badgeTxt = {alta:"🔴 Alta", media:"🟡 Media", baja:"🔵 Baja"};
   document.getElementById("lista-observaciones").innerHTML = filtradas.map(o=>{
     const idxEstado = OBS_ESTADOS.indexOf(o.estado);
-    const puntos = OBS_ESTADOS.map((e,i)=>`<div class="estado-punto ${i<=idxEstado?"activo":""}"></div>`).join("");
+    // Cada paso es un botón propio (no un solo div para todo el track) -- así se puede tocar
+    // cualquiera de los 4 para ir directo a él, o volver a tocar el paso ACTUAL para deshacerlo
+    // (vuelve al anterior), sin tener que ir dando la vuelta completa si tocaste por error.
+    const pasos = OBS_ESTADOS.map((e,i)=>{
+      const activo = i<=idxEstado;
+      const esActual = i===idxEstado;
+      const titulo = esActual
+        ? `Tocá para volver a "${esc(OBS_ESTADO_TXT[OBS_ESTADOS[Math.max(0,i-1)]])}"`
+        : `Tocá para pasar a "${esc(OBS_ESTADO_TXT[e])}"`;
+      return `<button type="button" class="estado-paso ${activo?"activo":""}" title="${titulo}"${esActual?' aria-current="step"':""} onclick="tocarEstadoObservacion('${o.id}',${i})">
+        <span class="barra"></span><span class="txt">${OBS_ESTADO_TXT[e]}</span>
+      </button>`;
+    }).join("");
     return `<div class="obs-item prior-${o.prioridad}">
       ${o.foto ? `<img class="obs-foto" src="${o.foto}">` : `<div class="obs-foto"></div>`}
       <div class="obs-cuerpo">
@@ -13443,8 +13489,11 @@ function renderListaObservaciones(){
           <span class="badge-prior ${badgeClase[o.prioridad]}">${badgeTxt[o.prioridad]}</span>
         </div>
         ${o.descripcion ? `<div class="obs-desc">${esc(o.descripcion)}</div>` : ""}
-        <div class="estado-track" onclick="avanzarEstadoObservacion('${o.id}')" title="Tocá para avanzar el estado">${puntos}</div>
-        <div class="estado-lbl"><span>Detectado</span><span title="¿Ya tenés el material?">Materiales</span><span>En curso</span><span>Resuelto</span></div>
+        <div class="estado-track" role="group" aria-label="Estado de la observación">${pasos}</div>
+        <div class="obs-despues">
+          ${o.fotoDespues ? `<img class="obs-foto-despues" src="${o.fotoDespues}">` : ``}
+          <button type="button" class="btn-mini" onclick="elegirFotoObservacionDespues('${o.id}')">📷 ${o.fotoDespues?"Cambiar foto de después":"Foto de después"}</button>
+        </div>
         <div class="obs-botones">
           ${sesionActual && sesionActual.role==="admin" ? `<button type="button" class="btn-mini peligro" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarObservacion('${o.id}'))">🗑 Eliminar</button>` : ``}
         </div>
@@ -13452,14 +13501,19 @@ function renderListaObservaciones(){
     </div>`;
   }).join("") || `<p class="empty-msg">Todavía no hay observaciones cargadas.</p>`;
 }
-async function avanzarEstadoObservacion(id){
+// Tocar un paso más adelante salta directo a él; tocar el paso ACTUAL lo desactiva (vuelve al
+// anterior) -- corrige un toque por error sin tener que avanzar de a uno hasta dar la vuelta.
+async function tocarEstadoObservacion(id, i){
   const o = observaciones.find(x=>x.id===id);
   if(!o) return;
-  const idx = OBS_ESTADOS.indexOf(o.estado);
-  if(idx>=OBS_ESTADOS.length-1){ showToast("Ya está en \"Resuelto\""); return; }
-  o.estado = OBS_ESTADOS[idx+1];
+  const idxActual = OBS_ESTADOS.indexOf(o.estado);
+  const nuevoIdx = (i===idxActual) ? Math.max(0, i-1) : i;
+  const nuevoEstado = OBS_ESTADOS[nuevoIdx];
+  if(nuevoEstado===o.estado) return;
+  const estadoAnterior = o.estado;
+  o.estado = nuevoEstado;
   const ok = await guardarObservacionesIndex();
-  if(!ok) return;
+  if(!ok){ o.estado = estadoAnterior; return; }
   if(o.estado==="resuelto") registrarActividad(`marcó como resuelta la observación "${esc(o.titulo)}"`);
   renderListaObservaciones();
 }
@@ -13510,6 +13564,49 @@ function generarReporteObservacionesPDF(){
     </table>
   </div>`;
   mostrarModalPDF(html, "portrait", `Observaciones_${nombreArchivoSeguro(obraSel||"Todas")}.pdf`);
+}
+// Agrupa las mismas observaciones filtradas (obra/prioridad) por día, mostrando la foto de "antes"
+// y la de "después" una al lado de la otra -- pensado para llevar a una reunión de obra o
+// mandarlo por WhatsApp con el botón "📲 Enviar por WhatsApp" que ya trae el cuadro de vista previa.
+function generarInformeFotograficoObservacionesPDF(){
+  const filtradas = observacionesFiltradas();
+  const obraSel = document.getElementById("obs-filtro-obra").value;
+  if(filtradas.length===0){ showToast("No hay observaciones para generar el informe."); return; }
+  const badgeTxt = {alta:"🔴 Alta", media:"🟡 Media", baja:"🔵 Baja"};
+  const porDia = {};
+  filtradas.forEach(o=>{
+    const dia = o.fecha || "";
+    (porDia[dia] = porDia[dia]||[]).push(o);
+  });
+  const fotoBox = (src, etiqueta)=>`<td width="150" style="padding:4px;">
+      <div style="width:142px;height:106px;border-radius:6px;overflow:hidden;background:#E5E7EB;display:flex;align-items:center;justify-content:center;">
+        ${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:9px;color:#9CA3AF;">Sin foto</span>`}
+      </div>
+      <div style="font-size:9px;color:#6B7280;text-align:center;margin-top:2px;">${etiqueta}</div>
+    </td>`;
+  const bloquesHtml = Object.keys(porDia).sort((a,b)=>b.localeCompare(a)).map(dia=>{
+    const tituloDia = dia ? new Date(dia+"T00:00:00").toLocaleDateString("es-AR",{weekday:"long", day:"numeric", month:"long", year:"numeric"}) : "Sin fecha";
+    const itemsHtml = porDia[dia].map(o=>`<table width="700" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
+        ${fotoBox(o.foto, "Antes")}
+        ${fotoBox(o.fotoDespues, "Después")}
+        <td style="vertical-align:top;padding:4px 4px 4px 10px;">
+          <div style="font-family:Arial;font-size:12px;font-weight:bold;color:#0A2540;">${esc(o.titulo)} ${badgeTxt[o.prioridad]||""}</div>
+          <div style="font-size:10px;color:#4B5563;margin-top:2px;">${esc(o.obra)}${o.responsable?" · "+esc(o.responsable):""} · ${OBS_ESTADO_TXT[o.estado]||o.estado}</div>
+          ${o.descripcion ? `<div style="font-size:10px;color:#4B5563;margin-top:4px;">${esc(o.descripcion)}</div>` : ""}
+        </td>
+      </tr></table>`).join("");
+    return `<div style="font-family:Arial;font-size:12px;font-weight:bold;color:#fff;background:#0A2540;padding:6px 10px;border-radius:6px;margin:16px 0 10px;text-transform:capitalize;">${esc(tituloDia)}</div>${itemsHtml}`;
+  }).join("");
+  const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;box-sizing:border-box;">
+    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
+      <td class="rc-titulo-corp">INFORME FOTOGRÁFICO DE OBSERVACIONES${obraSel ? " — "+esc(obraSel) : ""}</td>
+      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
+    </tr></table>
+    <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"}</div>
+    ${bloquesHtml}
+  </div>`;
+  mostrarModalPDF(html, "portrait", `Informe_fotografico_observaciones_${nombreArchivoSeguro(obraSel||"Todas")}.pdf`);
+  registrarActividad(`generó el informe fotográfico de observaciones${obraSel?` de "${esc(obraSel)}"`:""}`);
 }
 
 /* ==================== CLIMA Y MINUTAS ==================== */
