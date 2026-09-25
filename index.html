@@ -625,6 +625,11 @@ table.trab input,table.trab select{
   border:none;background:transparent;color:#C9971C;width:auto;height:auto;border-radius:0;
   font-size:14px;cursor:pointer;padding:0;margin-right:2px;
 }
+.catalogo-chip.chip-finalizada{background:var(--fondo);color:var(--tinta-suave);text-decoration:line-through;}
+.catalogo-chip .btn-finalizar{
+  border:none;background:rgba(0,0,0,.08);color:inherit;width:auto;height:auto;border-radius:999px;
+  font-size:10px;font-weight:700;cursor:pointer;padding:3px 8px;margin-right:2px;text-decoration:none;
+}
 
 /* ---------- Pedidos de Materiales ---------- */
 .chk-abc{
@@ -748,6 +753,8 @@ table.trab input,table.trab select{
 .obs-item.prior-media{border-left:4px solid #D4A017;}
 .obs-item.prior-baja{border-left:4px solid #1D6FE0;}
 .obs-foto{width:100%;height:170px;background:linear-gradient(135deg,#94a3ad,#5c6b74);object-fit:cover;display:block;}
+.obs-despues{display:flex;align-items:center;gap:8px;margin-top:8px;}
+.obs-foto-despues{width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0;}
 .obs-cuerpo{padding:13px;}
 .obs-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
 .obs-titulo{font-weight:800;font-size:13.5px;color:var(--verde-oscuro);}
@@ -757,7 +764,7 @@ table.trab input,table.trab select{
 .bp-alta{background:#FBD5D5;color:#B42318;}
 .bp-media{background:#FFF6D8;color:#7A5B00;}
 .bp-baja{background:#E3F0FF;color:#0A4A8A;}
-.estado-track{display:flex;align-items:center;gap:4px;margin-top:10px;cursor:pointer;}
+.estado-track{display:flex;align-items:flex-start;gap:4px;margin-top:10px;}
 
 /* ---- Informes de Asistencia ---- */
 .resumen-general-inf{display:flex;gap:12px;align-items:center;margin-bottom:16px;}
@@ -1093,9 +1100,12 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
   50%{ box-shadow:0 8px 24px rgba(14,148,136,.4), 0 0 0 10px rgba(47,213,200,0); }
 }
 @media (max-width:380px){ .fab-guardar{padding:12px 20px;font-size:12.5px;} }
-.estado-punto{flex:1;height:4px;border-radius:2px;background:var(--borde);}
-.estado-punto.activo{background:var(--verde);}
-.estado-lbl{font-size:9px;color:var(--tinta-suave);margin-top:4px;display:flex;justify-content:space-between;}
+.estado-paso{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;padding:6px 2px 0;margin:0;cursor:pointer;font:inherit;-webkit-tap-highlight-color:transparent;}
+.estado-paso .barra{width:100%;height:4px;border-radius:2px;background:var(--borde);}
+.estado-paso.activo .barra{background:var(--verde);}
+.estado-paso .txt{font-size:9px;color:var(--tinta-suave);}
+.estado-paso.activo .txt{color:var(--verde);font-weight:700;}
+.estado-paso:focus-visible{outline:2px solid var(--verde);outline-offset:2px;border-radius:4px;}
 .obs-botones{display:flex;gap:6px;margin-top:10px;}
 .minuta-item .botones{display:flex;gap:6px;}
 #firma-modal-overlay{position:fixed;inset:0;background:rgba(10,37,64,.6);z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;}
@@ -2587,7 +2597,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div id="card-cfg-obras" style="display:none;">
       <div class="card">
         <h2>🏗 Obras</h2>
-        <p class="helper" style="margin-bottom:10px;">Tocá la estrella para marcar la obra favorita — se precarga sola en los formularios de toda la app.</p>
+        <p class="helper" style="margin-bottom:10px;">Tocá la estrella para marcar la obra favorita — se precarga sola en los formularios de toda la app. Una obra "🏁 Finalizada" deja de aparecer en el Dashboard y en los formularios para cargar algo nuevo, pero su historial en cada módulo se sigue viendo igual — reactivala cuando haga falta.</p>
         <div class="row-flex" style="margin-bottom:8px;">
           <input id="nueva-obra" type="text" placeholder="Ej: Escuela Nº 12" style="flex:1;min-width:120px;">
           <button class="btn btn-outline btn-sm" onclick="agregarObra()">+ Agregar</button>
@@ -4209,7 +4219,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <select class="filtro-obra-input" id="obs-filtro-obra" onchange="renderListaObservaciones()">
         <option value="">Todas las obras</option>
       </select>
-      <button class="btn btn-outline" style="width:100%;margin:8px 0;" onclick="generarReporteObservacionesPDF()">📄 Generar reporte PDF</button>
+      <button class="btn btn-outline" style="width:100%;margin:8px 0 0;" onclick="generarReporteObservacionesPDF()">📄 Generar reporte PDF</button>
+      <button class="btn btn-outline" style="width:100%;margin:8px 0;" onclick="generarInformeFotograficoObservacionesPDF()">🖼️ Informe fotográfico (por día)</button>
+      <input type="file" id="obs-foto-despues-input" accept="image/*" style="display:none;" onchange="handleFotoObservacionDespues(this)">
       <div class="resumen-mes" id="obs-resumen"></div>
       <div class="chip-row" id="obs-filtro-prioridad" style="margin-bottom:14px;">
         <div class="chip-filtro sel" data-val="" onclick="filtrarPrioridadObs('',this)">Todas</div>
@@ -4795,6 +4807,7 @@ function actualizarIndicadorSyncHeader(n){
 let trabajadores = [];              // [{id,nombre,categoria,obra,estado,fechaBaja,obs}]
 let categorias = [];                 // catálogo de categorías
 let obras = [];                      // catálogo de obras
+let obrasFinalizadas = [];           // subconjunto de "obras" marcado como finalizado (ver obrasActivas)
 let asistenciaCache = {};           // { "YYYY-MM": { [workerId]: {obra, days:{1:val,...}, notaQ1, notaQ2, filaExtra:false} } }
 let mesActual = mesHoyISO();
 let quincenaActual = 1;
@@ -4949,6 +4962,10 @@ async function cargarCatalogos(){
     const r2 = await window.storage.get("obras", true);
     obras = r2 && r2.value ? JSON.parse(r2.value) : [...OBRAS_DEFAULT];
   }catch(e){ obras = [...OBRAS_DEFAULT]; }
+  try{
+    const r3 = await window.storage.get("obras_finalizadas", true);
+    obrasFinalizadas = r3 && r3.value ? JSON.parse(r3.value) : [];
+  }catch(e){ obrasFinalizadas = []; }
 }
 async function guardarCategorias(){
   try{ await window.storage.set("categorias", JSON.stringify(categorias), true); }
@@ -4957,6 +4974,45 @@ async function guardarCategorias(){
 async function guardarObras(){
   try{ await window.storage.set("obras", JSON.stringify(obras), true); }
   catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+}
+async function guardarObrasFinalizadas(){
+  try{ await window.storage.set("obras_finalizadas", JSON.stringify(obrasFinalizadas), true); }
+  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+}
+// Una obra "finalizada" sigue existiendo -- su historial en cada módulo se sigue viendo tal cual --
+// pero desaparece del Dashboard y de los selectores para cargar algo NUEVO (asistencia, pedidos,
+// observaciones, etc.), hasta que se reactive desde Configuración.
+function obrasActivas(){ return obras.filter(o=>!obrasFinalizadas.includes(o)); }
+function obraPorDefecto(){
+  const activas = obrasActivas();
+  if(obraPredeterminada && activas.includes(obraPredeterminada)) return obraPredeterminada;
+  return activas[0] || "";
+}
+// Arma las <option> de un selector para cargar algo nuevo: solo obras activas, salvo que
+// "valorActual" (por ejemplo, la obra de un registro que se está editando) sea una que ya se
+// finalizó -- ahí se agrega igual, para no dejar el campo en blanco al editar algo viejo.
+function opcionesObra(valorActual){
+  const lista = obrasActivas();
+  const extra = (valorActual && !lista.includes(valorActual)) ? [valorActual] : [];
+  return [...lista, ...extra].map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+}
+async function toggleFinalizadaObra(o){
+  if(obrasFinalizadas.includes(o)){
+    obrasFinalizadas = obrasFinalizadas.filter(x=>x!==o);
+    await guardarObrasFinalizadas();
+    registrarActividad(`reactivó la obra "${esc(o)}"`);
+    showToast(`✓ "${o}" reactivada`);
+  }else{
+    obrasFinalizadas = [...obrasFinalizadas, o];
+    await guardarObrasFinalizadas();
+    // Si justo estaba filtrando el Dashboard por esta obra, se saca el filtro -- si no, el
+    // Dashboard seguiría mostrando los datos de una obra que se supone que ya no aparece más ahí.
+    if(typeof dashboardObraFiltro!=="undefined" && dashboardObraFiltro===o) dashboardObraFiltro = null;
+    registrarActividad(`marcó la obra "${esc(o)}" como finalizada`);
+    showToast(`✓ "${o}" marcada como finalizada`);
+  }
+  renderCatalogos();
+  if(typeof renderDashboard==="function") renderDashboard();
 }
 let mesesConErrorDeCarga = {}; // {mes: true} si falló la lectura — para no guardar encima por error
 async function cargarAsistenciaMes(mes){
@@ -5161,12 +5217,17 @@ function renderCatalogos(){
     <span class="catalogo-chip">${esc(c)}<button onclick="quitarCategoria(${i})" title="Quitar">✕</button></span>
   `).join("") || `<span class="tiny">Sin categorías cargadas.</span>`;
   const lo = document.getElementById("lista-obras");
-  lo.innerHTML = obras.map((o,i)=>`
-    <span class="catalogo-chip ${obraPredeterminada===o?'chip-default':''}">
-      <button class="btn-star" title="Marcar como predeterminada" onclick="marcarObraPredeterminada('${esc(o).replace(/'/g,"\\'")}')">${obraPredeterminada===o?'★':'☆'}</button>
-      ${esc(o)}<button onclick="quitarObra(${i})" title="Quitar">✕</button>
-    </span>
-  `).join("") || `<span class="tiny">Sin obras cargadas.</span>`;
+  lo.innerHTML = obras.map((o,i)=>{
+    const finalizada = obrasFinalizadas.includes(o);
+    const oEsc = esc(o).replace(/'/g,"\\'");
+    return `
+    <span class="catalogo-chip ${finalizada?'chip-finalizada':(obraPredeterminada===o?'chip-default':'')}">
+      <button class="btn-star" title="Marcar como predeterminada" onclick="marcarObraPredeterminada('${oEsc}')">${obraPredeterminada===o?'★':'☆'}</button>
+      ${esc(o)}
+      <button class="btn-finalizar" title="${finalizada?'Reactivar':'Marcar como finalizada'}" onclick="toggleFinalizadaObra('${oEsc}')">${finalizada?'▶ Reactivar':'🏁 Finalizar'}</button>
+      <button onclick="quitarObra(${i})" title="Quitar">✕</button>
+    </span>`;
+  }).join("") || `<span class="tiny">Sin obras cargadas.</span>`;
   document.getElementById("obra-predet-info").textContent = obraPredeterminada
     ? `Obra predeterminada actual: ${obraPredeterminada}`
     : "No hay ninguna obra marcada como predeterminada. Tocá la estrella ☆ junto a una obra para fijarla.";
@@ -5174,10 +5235,9 @@ function renderCatalogos(){
 }
 function renderSelectsCatalogo(){
   const optsCat = categorias.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
-  const optsObra = obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
   document.getElementById("nt-categoria").innerHTML = `<option value="">— elegir —</option>`+optsCat;
-  document.getElementById("nt-obra").innerHTML = `<option value="">— elegir —</option>`+optsObra;
-  if(obraPredeterminada && obras.includes(obraPredeterminada)){
+  document.getElementById("nt-obra").innerHTML = `<option value="">— elegir —</option>`+opcionesObra();
+  if(obraPredeterminada && obrasActivas().includes(obraPredeterminada)){
     document.getElementById("nt-obra").value = obraPredeterminada;
   }
 }
@@ -5205,8 +5265,13 @@ async function agregarObra(){
   renderCatalogos();
 }
 async function quitarObra(i){
+  const o = obras[i];
   obras.splice(i,1);
   await guardarObras();
+  if(obrasFinalizadas.includes(o)){
+    obrasFinalizadas = obrasFinalizadas.filter(x=>x!==o);
+    await guardarObrasFinalizadas();
+  }
   renderCatalogos();
 }
 
@@ -5272,7 +5337,11 @@ function renderTrabajadores(){
     return;
   }
   const optsCat = categorias.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
-  const optsObra = obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+  // El select de obra es uno solo compartido por todas las filas -- se agregan las obras ya
+  // asignadas a algún trabajador aunque estén finalizadas, para no dejar en blanco la fila de
+  // alguien que sigue asociado a una obra que ya se cerró.
+  const obrasEnUso = trabajadores.map(t=>t.obra).filter(Boolean);
+  const optsObra = [...new Set([...obrasActivas(), ...obrasEnUso])].map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
   tbody.innerHTML = trabajadores.map((t,i)=>`
     <tr class="${t.estado==='Baja'?'baja':''}">
       <td>
@@ -7539,7 +7608,7 @@ async function aplicarAccionesMultiIntencion(){
   }
 }
 async function guardarRecordatorioDirecto(titulo, fecha, prioridad){
-  const obra = obraPredeterminada || (obras[0]||"");
+  const obra = obraPorDefecto();
   const nuevo = {
     id: uid(), titulo: titulo||"Recordatorio", obra,
     fecha: fecha||null, prioridad: ["alta","media","baja"].includes(prioridad)?prioridad:"baja",
@@ -7552,7 +7621,7 @@ async function guardarRecordatorioDirecto(titulo, fecha, prioridad){
   registrarActividad(`cargó el recordatorio "${esc(nuevo.titulo)}" desde el asistente unificado`);
 }
 async function guardarObservacionDirecta(titulo, prioridad){
-  const obra = obraPredeterminada || (obras[0]||"");
+  const obra = obraPorDefecto();
   const obsNueva = {
     id: uid(), titulo: titulo||"Observación", obra,
     responsable: "", descripcion: "", prioridad: ["alta","media","baja"].includes(prioridad)?prioridad:"media",
@@ -7759,7 +7828,7 @@ function prepararFormularioNuevoPedido(pedidoExistente){
   const refEl = document.getElementById("ped-ultimo-numero-ref");
   const anterior = pedidosIndex.find(p=>p.id!==pedidoEditandoId);
   refEl.textContent = anterior ? `Último pedido cargado: N° ${numeroFormateado(anterior.numero)} — ${anterior.obra}` : "";
-  renderSelectsPedido();
+  renderSelectsPedido(pedidoExistente && pedidoExistente.obra);
   if(pedidoEditandoId){
     document.getElementById("np-obra").value = pedidoExistente.obra;
     document.getElementById("np-rubro").value = pedidoExistente.rubro;
@@ -7767,12 +7836,11 @@ function prepararFormularioNuevoPedido(pedidoExistente){
   renderTablaItemsPedido();
   renderAdjuntosLista();
 }
-function renderSelectsPedido(){
-  document.getElementById("np-obra").innerHTML = `<option value="">— elegir —</option>`+
-    obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+function renderSelectsPedido(valorActualObra){
+  document.getElementById("np-obra").innerHTML = `<option value="">— elegir —</option>`+opcionesObra(valorActualObra);
   document.getElementById("np-rubro").innerHTML = `<option value="">— elegir —</option>`+
     rubros.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");
-  if(obraPredeterminada && obras.includes(obraPredeterminada)){
+  if(obraPredeterminada && obrasActivas().includes(obraPredeterminada)){
     document.getElementById("np-obra").value = obraPredeterminada;
   }
 }
@@ -8966,8 +9034,8 @@ function cambiarFiltroObraDashboard(obra){
 function renderChipsObraDash(){
   const cont = document.getElementById("chips-obra-dash");
   if(!cont) return;
-  const listaObras = (typeof obras!=="undefined" ? obras : []);
-  if(listaObras.length<=1){ cont.innerHTML = ""; return; } // con una sola obra (o ninguna), no tiene sentido filtrar
+  const listaObras = obrasActivas();
+  if(listaObras.length<=1){ cont.innerHTML = ""; return; } // con una sola obra activa (o ninguna), no tiene sentido filtrar
   cont.innerHTML = `<div class="chip-obra-dash${!dashboardObraFiltro?" sel":""}" onclick="cambiarFiltroObraDashboard(null)">Todas</div>` +
     listaObras.map(o=>`<div class="chip-obra-dash${dashboardObraFiltro===o?" sel":""}" onclick="cambiarFiltroObraDashboard('${esc(o)}')">${esc(o)}</div>`).join("");
 }
@@ -8985,13 +9053,14 @@ function renderChipsObraDash(){
 function avisosDeHoy(){
   const hoy = [];
   const filtroObra = dashboardObraFiltro;
+  const obraVisible = o => obrasActivas().includes(o) && (!filtroObra || o===filtroObra);
   const hoyStr = hoyISO();
   const detectoresOn = configAsistente.detectores || {};
   // 1) Asistencia del día sin cargar. Se mira la grilla del mes en curso: si ningún trabajador
   // tiene una jornada marcada para hoy, es que todavía no se cargó.
   const mes = mesHoyISO();
   const dia = String(new Date().getDate());
-  const activos = trabajadores.filter(t=>t.estado==="Activo" && (!filtroObra || t.obra===filtroObra));
+  const activos = trabajadores.filter(t=>t.estado==="Activo" && (obraVisible(t.obra)));
   const data = asistenciaCache[mes];
   if(activos.length>0){
     const algunoMarcado = data && activos.some(t=>{
@@ -9006,31 +9075,31 @@ function avisosDeHoy(){
   // 2-6) Los mismos 5 detectores que antes vivían en la tarjeta aparte "⚠️ Atención hoy" -- se
   // sacó esa tarjeta (duplicaba esto) y sus datos, más completos, pasaron a vivir acá. Sin esc()
   // interno acá -- el texto/detalle ya se escapan una sola vez en la plantilla de bloque().
-  const pedidosVencidos = detectoresOn.pedidosVencidos===false ? [] : pedidosIndex.filter(p=>p.ingresoFecha && p.ingresoFecha<=hoyStr && (p.estado==="Pendiente"||p.estado==="Parcial") && (!filtroObra || p.obra===filtroObra));
+  const pedidosVencidos = detectoresOn.pedidosVencidos===false ? [] : pedidosIndex.filter(p=>p.ingresoFecha && p.ingresoFecha<=hoyStr && (p.estado==="Pendiente"||p.estado==="Parcial") && (obraVisible(p.obra)));
   pedidosVencidos.slice(0,3).forEach(p=>{
     hoy.push({ico:"📦", texto:`Pedido N° ${numeroFormateado(p.numero)} — recepción vencida`,
       detalle:`${p.obra} · esperado el ${new Date(p.ingresoFecha+"T00:00:00").toLocaleDateString("es-AR")}`,
       onclick:`irA('pedidos'); cambiarVistaPedidos('lista');`});
   });
-  const obsCriticas = detectoresOn.observaciones===false ? [] : (typeof observaciones!=="undefined" ? observaciones : []).filter(o=>o.prioridad==="alta" && o.estado!=="resuelto" && (!filtroObra || o.obra===filtroObra));
+  const obsCriticas = detectoresOn.observaciones===false ? [] : (typeof observaciones!=="undefined" ? observaciones : []).filter(o=>o.prioridad==="alta" && o.estado!=="resuelto" && (obraVisible(o.obra)));
   obsCriticas.slice(0,3).forEach(o=>{
     hoy.push({ico:"📋", texto:o.titulo,
       detalle:`${o.obra}${o.responsable?" · "+o.responsable:""} · prioridad alta`,
       onclick:`irA('observaciones'); cambiarVistaPendientes('observaciones');`});
   });
-  const recUrgentes = detectoresOn.recordatorios===false ? [] : (typeof recordatorios!=="undefined" ? recordatorios : []).filter(r=>r.estado==="pendiente" && prioridadEfectivaRecordatorio(r)==="alta" && (!filtroObra || r.obra===filtroObra));
+  const recUrgentes = detectoresOn.recordatorios===false ? [] : (typeof recordatorios!=="undefined" ? recordatorios : []).filter(r=>r.estado==="pendiente" && prioridadEfectivaRecordatorio(r)==="alta" && (obraVisible(r.obra)));
   recUrgentes.slice(0,2).forEach(r=>{
     hoy.push({ico:"📌", texto:r.titulo,
       detalle:`${r.obra}${r.fecha?" · "+(diasHastaRecordatorio(r)<0?"venció el ":"vence el ")+new Date(r.fecha+"T00:00:00").toLocaleDateString("es-AR"):""} · recordatorio urgente`,
       onclick:`irA('observaciones'); cambiarVistaPendientes('recordatorios');`});
   });
-  const herrAtrasadasDash = detectoresOn.herramientas===false ? [] : herramientas.filter(h=>(!filtroObra||h.obra===filtroObra) && h.estado==="prestada" && h.prestamo && h.prestamo.fechaEntrega && h.prestamo.fechaEntrega<hoyStr && !h.prestamo.fechaRecepcion);
+  const herrAtrasadasDash = detectoresOn.herramientas===false ? [] : herramientas.filter(h=>(obraVisible(h.obra)) && h.estado==="prestada" && h.prestamo && h.prestamo.fechaEntrega && h.prestamo.fechaEntrega<hoyStr && !h.prestamo.fechaRecepcion);
   herrAtrasadasDash.slice(0,2).forEach(h=>{
     hoy.push({ico:"🔧", texto:`"${h.nombre}" — devolución atrasada`,
       detalle:`${h.obra} · prestada a ${h.prestamo.tipo==="persona"?h.prestamo.persona:h.prestamo.obraDestino}`,
       view:"herramientas"});
   });
-  const faltasSeguidasDash = detectoresOn.asistencia===false ? [] : detectarFaltasSeguidas(mesHoyISO(), 3).filter(f=>!filtroObra || f.obra===filtroObra);
+  const faltasSeguidasDash = detectoresOn.asistencia===false ? [] : detectarFaltasSeguidas(mesHoyISO(), 3).filter(f=>obraVisible(f.obra));
   faltasSeguidasDash.slice(0,2).forEach(f=>{
     hoy.push({ico:"📅", texto:`${f.nombre} — ${f.dias} días seguidos ausente`,
       detalle:`Sin justificar en la planilla del mes`, view:"asistencia"});
@@ -9041,9 +9110,10 @@ function avisosDeHoy(){
 function avisosQueVanBien(){
   const bien = [];
   const filtroObra = dashboardObraFiltro;
+  const obraVisible = o => obrasActivas().includes(o) && (!filtroObra || o===filtroObra);
   const mes = mesHoyISO();
   const dia = String(new Date().getDate());
-  const activos = trabajadores.filter(t=>t.estado==="Activo" && (!filtroObra || t.obra===filtroObra));
+  const activos = trabajadores.filter(t=>t.estado==="Activo" && (obraVisible(t.obra)));
   const data = asistenciaCache[mes];
   if(activos.length>0 && data){
     const presentes = activos.filter(t=>{
@@ -9074,7 +9144,7 @@ async function agregarAvisosDeEstaSemana(estaSemana){
   return estaSemana;
 }
 function mostrarDetalleHerramientasPrestadas(){
-  const obraActual = dashboardObraFiltro || obraPredeterminada || (obras.length>0 ? obras[0] : "");
+  const obraActual = dashboardObraFiltro || obraPorDefecto();
   const prestadas = herramientas.filter(h=>h.obra===obraActual && h.estado==="prestada");
   if(prestadas.length===0){
     showToast(`No hay ninguna herramienta prestada en ${esc(obraActual)} ahora mismo.`);
@@ -9158,8 +9228,9 @@ function renderDashboard(){
   renderChipsObraDash();
   actualizarIconosDashCards();
   const filtroObra = dashboardObraFiltro;
-  const trabActivos = trabajadores.filter(t=>t.estado==="Activo" && (!filtroObra || t.obra===filtroObra)).length;
-  const pedPendientes = pedidosIndex.filter(p=>(p.estado==="Pendiente"||p.estado==="Parcial") && (!filtroObra || p.obra===filtroObra)).length;
+  const obraVisible = o => obrasActivas().includes(o) && (!filtroObra || o===filtroObra);
+  const trabActivos = trabajadores.filter(t=>t.estado==="Activo" && (obraVisible(t.obra))).length;
+  const pedPendientes = pedidosIndex.filter(p=>(p.estado==="Pendiente"||p.estado==="Parcial") && (obraVisible(p.obra))).length;
   // Cada persona ve en el Dashboard solo SU PROPIA caja chica — misma regla que ya usa la lista
   // de Caja Chica, para que no se mezclen las rendiciones de un Capataz con las de otro (ni con
   // las del Administrador).
@@ -9167,7 +9238,7 @@ function renderDashboard(){
   const rendicionesPropias = rendicionesIndex.filter(r=>{
     if(sesionActual && !esAdminDash && r.usuario!==sesionActual.username) return false;
     if(sesionActual && esAdminDash && r.usuario && r.usuario!==sesionActual.username) return false;
-    if(filtroObra && r.obra!==filtroObra) return false;
+    if(!obraVisible(r.obra)) return false;
     return true;
   });
   // Saldo de Caja Chica = plata real disponible ahora mismo, no "lo pendiente de reclamar".
@@ -9180,7 +9251,7 @@ function renderDashboard(){
   const saldoCaja = masRecienteCaja ? (masRecienteCaja.diferencia||0) : 0;
   // Días trabajados este mes, según el Libro climático (cualquier jornada que no haya sido "no").
   const mesHoy = mesHoyISO();
-  const diasTrabajadosMes = climaRegistros.filter(r=>(r.fecha||"").startsWith(mesHoy) && r.seTrabajo!=="no" && (!filtroObra || r.obra===filtroObra)).length;
+  const diasTrabajadosMes = climaRegistros.filter(r=>(r.fecha||"").startsWith(mesHoy) && r.seTrabajo!=="no" && (obraVisible(r.obra))).length;
 
   // ---- Tendencias de los últimos 7 días, con datos que YA están cargados en memoria (no se pide
   // nada nuevo a Firestore para esto) ----
@@ -9198,7 +9269,7 @@ function renderDashboard(){
     const data = asistenciaCache[mes];
     if(!data) return 0;
     let n = 0;
-    trabajadores.filter(t=>!filtroObra || t.obra===filtroObra).forEach(t=>{
+    trabajadores.filter(t=>obraVisible(t.obra)).forEach(t=>{
       const reg = data[t.id];
       if(reg && reg.days && clasificarValorDia(reg.days[dia])==="presente") n++;
     });
@@ -9209,10 +9280,10 @@ function renderDashboard(){
   const ultimasRendiciones = [...rendicionesPropias].sort((a,b)=>a.numero-b.numero).slice(-7);
   const sparkCaja = ultimasRendiciones.map(r=>r.diferencia||0);
   // Pedidos: cuántos pedidos se cargaron cada uno de los últimos 7 días (fecha del pedido).
-  const sparkPedidos = ultimos7.map(fechaISO=> pedidosIndex.filter(p=>p.fecha===fechaISO && (!filtroObra || p.obra===filtroObra)).length);
+  const sparkPedidos = ultimos7.map(fechaISO=> pedidosIndex.filter(p=>p.fecha===fechaISO && (obraVisible(p.obra))).length);
   // Clima: 1 si se trabajó ese día, 0 si no (o si no hay registro cargado todavía).
   const sparkClima = ultimos7.map(fechaISO=>{
-    const r = climaRegistros.find(c=>c.fecha===fechaISO && (!filtroObra || c.obra===filtroObra));
+    const r = climaRegistros.find(c=>c.fecha===fechaISO && (obraVisible(c.obra)));
     return r ? (r.seTrabajo!=="no" ? 1 : 0) : 0;
   });
   const htmlSpark = (valores)=>{
@@ -9260,7 +9331,7 @@ function renderDashboard(){
     </div>
     <div class="dash-stat" onclick="mostrarDetalleHerramientasPrestadas()">
       <div class="stat-ico">🔧</div>
-      <div class="num">${herramientas.filter(h=>(!filtroObra||h.obra===filtroObra) && h.estado==="prestada").length}</div>
+      <div class="num">${herramientas.filter(h=>(obraVisible(h.obra)) && h.estado==="prestada").length}</div>
       <div class="lbl">Herramientas prestadas</div>
     </div>
   `;
@@ -9281,7 +9352,7 @@ function renderDashboard(){
   if(elContratistas){
     const contratistasActivos = contratistasIndex.filter(c=>{
       const pct = Math.round((c.pctConAnticipo||0)*1000)/10;
-      if(filtroObra && c.obra!==filtroObra) return false;
+      if(!obraVisible(c.obra)) return false;
       return pct < 100;
     });
     if(contratistasActivos.length===0){
@@ -9533,7 +9604,7 @@ async function editarRendicion(id){
 /* ---------------- Formulario de rendición ---------------- */
 let rendicionAnteriorIdParaArrastre = null;
 function prepararFormularioNuevaRendicion(rendicionExistente){
-  renderSelectObraCaja();
+  renderSelectObraCaja(rendicionExistente && rendicionExistente.obra);
   const infoSaldo = document.getElementById("rc-saldo-anterior-info");
   rendicionAnteriorIdParaArrastre = null;
   if(rendicionExistente){
@@ -9555,7 +9626,7 @@ function prepararFormularioNuevaRendicion(rendicionExistente){
     document.getElementById("rc-numero-preview").textContent = numeroFormateado(correlativoCajaSiguiente);
     document.getElementById("rc-responsable").value = "JESUS CHIMINO";
     document.getElementById("rc-semana").value = "";
-    if(obraPredeterminada && obras.includes(obraPredeterminada)) document.getElementById("rc-obra").value = obraPredeterminada;
+    if(obraPredeterminada && obrasActivas().includes(obraPredeterminada)) document.getElementById("rc-obra").value = obraPredeterminada;
     // Traemos automático la diferencia de la última rendición cargada, para ajustar la caja nueva.
     // Solo se compara contra las rendiciones de la MISMA persona (cada Capataz tiene su propia caja).
     // Si todavía no cargaste ninguna, queda en blanco para que la escribas vos la primera vez.
@@ -9582,9 +9653,8 @@ function prepararFormularioNuevaRendicion(rendicionExistente){
   renderTablaFondo();
   renderChipCajaBase();
 }
-function renderSelectObraCaja(){
-  document.getElementById("rc-obra").innerHTML = `<option value="">— elegir —</option>`+
-    obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+function renderSelectObraCaja(valorActualObra){
+  document.getElementById("rc-obra").innerHTML = `<option value="">— elegir —</option>`+opcionesObra(valorActualObra);
 }
 function formatoMoneda(n){
   const v = parseFloat(n)||0;
@@ -10277,7 +10347,7 @@ let ccPlanosDelContratista = []; // planos de este contratista -- para poder aso
   // contrato a UNO puntual, si el contratista tiene varios planos y no todos sus ítems son de la
   // misma actividad (si no, el % ponderado general mezclaría ítems de planos distintos).
 async function prepararFormularioNuevoContratista(cExistente){
-  renderSelectObraCert();
+  renderSelectObraCert(cExistente && cExistente.obra);
   ccPlanosDelContratista = [];
   if(cExistente){
     contratistaEditandoId = cExistente.id;
@@ -10303,14 +10373,13 @@ async function prepararFormularioNuevoContratista(cExistente){
     document.getElementById("cc-monto").value = "";
     document.getElementById("cc-anticipo").value = "";
     document.getElementById("cc-m2total").value = "";
-    if(obraPredeterminada && obras.includes(obraPredeterminada)) document.getElementById("cc-obra").value = obraPredeterminada;
+    if(obraPredeterminada && obrasActivas().includes(obraPredeterminada)) document.getElementById("cc-obra").value = obraPredeterminada;
   }
   document.getElementById("btn-guardar-cc").textContent = contratistaEditandoId ? "💾 Guardar cambios" : "💾 Guardar contratista";
   renderTablaItemsContratista();
 }
-function renderSelectObraCert(){
-  document.getElementById("cc-obra").innerHTML = `<option value="">— elegir —</option>`+
-    obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+function renderSelectObraCert(valorActualObra){
+  document.getElementById("cc-obra").innerHTML = `<option value="">— elegir —</option>`+opcionesObra(valorActualObra);
 }
 function renderTablaItemsContratista(){
   const tbody = document.getElementById("tbody-cc-items");
@@ -12532,7 +12601,7 @@ function abrirModalPrestamo(id){
     </div>
     <div class="field" id="modal-prest-campo-obra" style="display:${tipo==="obra"?"block":"none"};">
       <label>Obra que la pide</label>
-      <select id="modal-prest-obra">${obras.map(o=>`<option value="${esc(o)}" ${p.obraDestino===o?"selected":""}>${esc(o)}</option>`).join("")}</select>
+      <select id="modal-prest-obra">${[...new Set([...obrasActivas(), ...(p.obraDestino?[p.obraDestino]:[])])].map(o=>`<option value="${esc(o)}" ${p.obraDestino===o?"selected":""}>${esc(o)}</option>`).join("")}</select>
     </div>
     <div class="field" id="modal-prest-campo-persona" style="display:${tipo==="persona"?"block":"none"};">
       <label>Nombre de la persona</label>
@@ -12616,7 +12685,7 @@ async function guardarPrestamoHerramienta(id){
 // actual (mismo motivo que el resumen rápido de arriba: es una lista compartida entre obras).
 function herramientasPrestamoVencido(){
   const hoy = hoyISO();
-  const obraActual = obraPredeterminada || (obras.length>0 ? obras[0] : "");
+  const obraActual = obraPorDefecto();
   return herramientas.filter(h=>h.obra===obraActual && h.estado==="prestada" && h.prestamo && h.prestamo.fechaEntrega && h.prestamo.fechaEntrega<hoy && !h.prestamo.fechaRecepcion);
 }
 async function eliminarHerramienta(id){
@@ -12976,6 +13045,33 @@ function reabrirMarcadoObservacion(){
   abrirEditorMarcado(obsFotoData, (dataUrlMarcada)=>{
     obsFotoData = dataUrlMarcada;
     document.getElementById("obs-foto-img").src = dataUrlMarcada;
+  });
+}
+// Foto de "después" -- para dejar registrado cómo quedó una vez reparada. Un solo <input> oculto
+// compartido por toda la lista (no uno por ítem): el botón de cada observación guarda a cuál le
+// corresponde en obsFotoDespuesTargetId antes de abrirlo.
+let obsFotoDespuesTargetId = null;
+function elegirFotoObservacionDespues(id){
+  obsFotoDespuesTargetId = id;
+  document.getElementById("obs-foto-despues-input").click();
+}
+function handleFotoObservacionDespues(input){
+  const file = input.files[0];
+  input.value = "";
+  const id = obsFotoDespuesTargetId;
+  obsFotoDespuesTargetId = null;
+  if(!file || !id) return;
+  comprimirImagenMiniatura(file, (dataUrl)=>{
+    abrirEditorMarcado(dataUrl, async (dataUrlMarcada)=>{
+      const o = observaciones.find(x=>x.id===id);
+      if(!o) return;
+      const anterior = o.fotoDespues;
+      o.fotoDespues = dataUrlMarcada;
+      const ok = await guardarObservacionesIndex();
+      if(!ok){ o.fotoDespues = anterior; return; }
+      registrarActividad(`agregó una foto de "después" a la observación "${esc(o.titulo)}"`);
+      renderListaObservaciones();
+    });
   });
 }
 
@@ -13431,7 +13527,19 @@ function renderListaObservaciones(){
   const badgeTxt = {alta:"🔴 Alta", media:"🟡 Media", baja:"🔵 Baja"};
   document.getElementById("lista-observaciones").innerHTML = filtradas.map(o=>{
     const idxEstado = OBS_ESTADOS.indexOf(o.estado);
-    const puntos = OBS_ESTADOS.map((e,i)=>`<div class="estado-punto ${i<=idxEstado?"activo":""}"></div>`).join("");
+    // Cada paso es un botón propio (no un solo div para todo el track) -- así se puede tocar
+    // cualquiera de los 4 para ir directo a él, o volver a tocar el paso ACTUAL para deshacerlo
+    // (vuelve al anterior), sin tener que ir dando la vuelta completa si tocaste por error.
+    const pasos = OBS_ESTADOS.map((e,i)=>{
+      const activo = i<=idxEstado;
+      const esActual = i===idxEstado;
+      const titulo = esActual
+        ? `Tocá para volver a "${esc(OBS_ESTADO_TXT[OBS_ESTADOS[Math.max(0,i-1)]])}"`
+        : `Tocá para pasar a "${esc(OBS_ESTADO_TXT[e])}"`;
+      return `<button type="button" class="estado-paso ${activo?"activo":""}" title="${titulo}"${esActual?' aria-current="step"':""} onclick="tocarEstadoObservacion('${o.id}',${i})">
+        <span class="barra"></span><span class="txt">${OBS_ESTADO_TXT[e]}</span>
+      </button>`;
+    }).join("");
     return `<div class="obs-item prior-${o.prioridad}">
       ${o.foto ? `<img class="obs-foto" src="${o.foto}">` : `<div class="obs-foto"></div>`}
       <div class="obs-cuerpo">
@@ -13443,8 +13551,11 @@ function renderListaObservaciones(){
           <span class="badge-prior ${badgeClase[o.prioridad]}">${badgeTxt[o.prioridad]}</span>
         </div>
         ${o.descripcion ? `<div class="obs-desc">${esc(o.descripcion)}</div>` : ""}
-        <div class="estado-track" onclick="avanzarEstadoObservacion('${o.id}')" title="Tocá para avanzar el estado">${puntos}</div>
-        <div class="estado-lbl"><span>Detectado</span><span title="¿Ya tenés el material?">Materiales</span><span>En curso</span><span>Resuelto</span></div>
+        <div class="estado-track" role="group" aria-label="Estado de la observación">${pasos}</div>
+        <div class="obs-despues">
+          ${o.fotoDespues ? `<img class="obs-foto-despues" src="${o.fotoDespues}">` : ``}
+          <button type="button" class="btn-mini" onclick="elegirFotoObservacionDespues('${o.id}')">📷 ${o.fotoDespues?"Cambiar foto de después":"Foto de después"}</button>
+        </div>
         <div class="obs-botones">
           ${sesionActual && sesionActual.role==="admin" ? `<button type="button" class="btn-mini peligro" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarObservacion('${o.id}'))">🗑 Eliminar</button>` : ``}
         </div>
@@ -13452,14 +13563,19 @@ function renderListaObservaciones(){
     </div>`;
   }).join("") || `<p class="empty-msg">Todavía no hay observaciones cargadas.</p>`;
 }
-async function avanzarEstadoObservacion(id){
+// Tocar un paso más adelante salta directo a él; tocar el paso ACTUAL lo desactiva (vuelve al
+// anterior) -- corrige un toque por error sin tener que avanzar de a uno hasta dar la vuelta.
+async function tocarEstadoObservacion(id, i){
   const o = observaciones.find(x=>x.id===id);
   if(!o) return;
-  const idx = OBS_ESTADOS.indexOf(o.estado);
-  if(idx>=OBS_ESTADOS.length-1){ showToast("Ya está en \"Resuelto\""); return; }
-  o.estado = OBS_ESTADOS[idx+1];
+  const idxActual = OBS_ESTADOS.indexOf(o.estado);
+  const nuevoIdx = (i===idxActual) ? Math.max(0, i-1) : i;
+  const nuevoEstado = OBS_ESTADOS[nuevoIdx];
+  if(nuevoEstado===o.estado) return;
+  const estadoAnterior = o.estado;
+  o.estado = nuevoEstado;
   const ok = await guardarObservacionesIndex();
-  if(!ok) return;
+  if(!ok){ o.estado = estadoAnterior; return; }
   if(o.estado==="resuelto") registrarActividad(`marcó como resuelta la observación "${esc(o.titulo)}"`);
   renderListaObservaciones();
 }
@@ -13510,6 +13626,49 @@ function generarReporteObservacionesPDF(){
     </table>
   </div>`;
   mostrarModalPDF(html, "portrait", `Observaciones_${nombreArchivoSeguro(obraSel||"Todas")}.pdf`);
+}
+// Agrupa las mismas observaciones filtradas (obra/prioridad) por día, mostrando la foto de "antes"
+// y la de "después" una al lado de la otra -- pensado para llevar a una reunión de obra o
+// mandarlo por WhatsApp con el botón "📲 Enviar por WhatsApp" que ya trae el cuadro de vista previa.
+function generarInformeFotograficoObservacionesPDF(){
+  const filtradas = observacionesFiltradas();
+  const obraSel = document.getElementById("obs-filtro-obra").value;
+  if(filtradas.length===0){ showToast("No hay observaciones para generar el informe."); return; }
+  const badgeTxt = {alta:"🔴 Alta", media:"🟡 Media", baja:"🔵 Baja"};
+  const porDia = {};
+  filtradas.forEach(o=>{
+    const dia = o.fecha || "";
+    (porDia[dia] = porDia[dia]||[]).push(o);
+  });
+  const fotoBox = (src, etiqueta)=>`<td width="150" style="padding:4px;">
+      <div style="width:142px;height:106px;border-radius:6px;overflow:hidden;background:#E5E7EB;display:flex;align-items:center;justify-content:center;">
+        ${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:9px;color:#9CA3AF;">Sin foto</span>`}
+      </div>
+      <div style="font-size:9px;color:#6B7280;text-align:center;margin-top:2px;">${etiqueta}</div>
+    </td>`;
+  const bloquesHtml = Object.keys(porDia).sort((a,b)=>b.localeCompare(a)).map(dia=>{
+    const tituloDia = dia ? new Date(dia+"T00:00:00").toLocaleDateString("es-AR",{weekday:"long", day:"numeric", month:"long", year:"numeric"}) : "Sin fecha";
+    const itemsHtml = porDia[dia].map(o=>`<table width="700" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
+        ${fotoBox(o.foto, "Antes")}
+        ${fotoBox(o.fotoDespues, "Después")}
+        <td style="vertical-align:top;padding:4px 4px 4px 10px;">
+          <div style="font-family:Arial;font-size:12px;font-weight:bold;color:#0A2540;">${esc(o.titulo)} ${badgeTxt[o.prioridad]||""}</div>
+          <div style="font-size:10px;color:#4B5563;margin-top:2px;">${esc(o.obra)}${o.responsable?" · "+esc(o.responsable):""} · ${OBS_ESTADO_TXT[o.estado]||o.estado}</div>
+          ${o.descripcion ? `<div style="font-size:10px;color:#4B5563;margin-top:4px;">${esc(o.descripcion)}</div>` : ""}
+        </td>
+      </tr></table>`).join("");
+    return `<div style="font-family:Arial;font-size:12px;font-weight:bold;color:#fff;background:#0A2540;padding:6px 10px;border-radius:6px;margin:16px 0 10px;text-transform:capitalize;">${esc(tituloDia)}</div>${itemsHtml}`;
+  }).join("");
+  const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;box-sizing:border-box;">
+    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
+      <td class="rc-titulo-corp">INFORME FOTOGRÁFICO DE OBSERVACIONES${obraSel ? " — "+esc(obraSel) : ""}</td>
+      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
+    </tr></table>
+    <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"}</div>
+    ${bloquesHtml}
+  </div>`;
+  mostrarModalPDF(html, "portrait", `Informe_fotografico_observaciones_${nombreArchivoSeguro(obraSel||"Todas")}.pdf`);
+  registrarActividad(`generó el informe fotográfico de observaciones${obraSel?` de "${esc(obraSel)}"`:""}`);
 }
 
 /* ==================== CLIMA Y MINUTAS ==================== */
@@ -13565,9 +13724,9 @@ function irADashChip(condicion){
 /* ---------------- Clima: formulario ---------------- */
 function poblarSelectObras(select){
   const actual = select.value;
-  select.innerHTML = obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+  select.innerHTML = opcionesObra(actual);
   if(actual && obras.includes(actual)) select.value = actual;
-  else if(obraPredeterminada && obras.includes(obraPredeterminada)) select.value = obraPredeterminada;
+  else if(obraPredeterminada && obrasActivas().includes(obraPredeterminada)) select.value = obraPredeterminada;
 }
 /* ---------------- Clima real (referencia) — OpenWeatherMap ----------------
    Es SOLO informativo: nunca se guarda solo, nunca reemplaza el registro manual de siempre.
@@ -13956,7 +14115,7 @@ let presupuestoExcelOriginalBase64 = null; // copia de la hoja del Excel origina
 let presupuestoExcelOriginalHoja = null; // nombre de esa hoja
 let presupuestoMesesColsExcel = []; // en qué columna (0-index) empieza cada mes en la hoja original -- para reescribir valores en el lugar exacto
 function claveObraPresupuesto(){
-  return obraPredeterminada || (typeof obras!=="undefined" && obras.length>0 ? obras[0] : "");
+  return obraPorDefecto();
 }
 async function cargarPresupuestoObra(){
   const obra = claveObraPresupuesto();
@@ -18229,7 +18388,7 @@ let obraOverridePlanoAvance = null;
 // plano se abrió desde 🏗 Obra en general, sin un contratista puntual asociado.
 let contratistaOverridePlanoAvance = null;
 function claveObraPlanoAvance(){
-  return obraOverridePlanoAvance || obraPredeterminada || (typeof obras!=="undefined" && obras.length>0 ? obras[0] : "");
+  return obraOverridePlanoAvance || obraPorDefecto();
 }
 async function cargarPlanoAvanceDatos(){
   const obra = claveObraPlanoAvance();
