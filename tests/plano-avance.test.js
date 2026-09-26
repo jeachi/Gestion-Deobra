@@ -9,9 +9,10 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { cargarDesdeApp } = require("./extract");
 
-const { areaPoligono, calcularPorcentajesDeLista } = cargarDesdeApp([
+const { areaPoligono, calcularPorcentajesDeLista, calcularPorcentajesLineasDeLista } = cargarDesdeApp([
   { nombre: "areaPoligono" },
   { nombre: "calcularPorcentajesDeLista" },
+  { nombre: "calcularPorcentajesLineasDeLista" },
 ]);
 
 test("areaPoligono: cuadrado unitario da área 1", () => {
@@ -88,4 +89,45 @@ test("calcularPorcentajesDeLista: actividades distintas no se mezclan entre sí"
   const pintura = r.find(x=>x.nombreBase==="Pintura");
   assert.equal(durlok.pct, 25);
   assert.equal(pintura.pct, 50);
+});
+
+// calcularPorcentajesLineasDeLista: mismo criterio que calcularPorcentajesDeLista pero para
+// recorridos lineales (perímetros, fachadas, zócalos) medidos en metros en vez de área -- se
+// agregó junto con la propuesta 3 (los recorridos lineales entran al historial/reporte completo).
+test("calcularPorcentajesLineasDeLista: sin líneas, no hay actividades", () => {
+  assert.deepEqual(calcularPorcentajesLineasDeLista([]), []);
+});
+
+test("calcularPorcentajesLineasDeLista: una capa al 40% del recorrido total de su actividad", () => {
+  const lineas = [
+    { nombreBase: "Zócalo", capa: null, longitud: 100 },
+    { nombreBase: "Zócalo", capa: "Colocado", longitud: 40, capaId: "cap-z" },
+  ];
+  const r = calcularPorcentajesLineasDeLista(lineas);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].capa, "Colocado");
+  assert.equal(r[0].pct, 40);
+  assert.equal(r[0].capaId, "cap-z");
+  assert.equal(r[0].esLinea, true);
+});
+
+test("calcularPorcentajesLineasDeLista: varios tramos sueltos de la misma capa se suman", () => {
+  const lineas = [
+    { nombreBase: "Fachada", capa: null, longitud: 200 },
+    { nombreBase: "Fachada", capa: "Pintura", longitud: 30 },
+    { nombreBase: "Fachada", capa: "Pintura", longitud: 20 },
+  ];
+  const r = calcularPorcentajesLineasDeLista(lineas);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].pct, 25);
+});
+
+test("calcularPorcentajesLineasDeLista: el % nunca pasa de 100", () => {
+  const lineas = [
+    { nombreBase: "Cerco", capa: null, longitud: 50 },
+    { nombreBase: "Cerco", capa: "Colocado", longitud: 40 },
+    { nombreBase: "Cerco", capa: "Colocado", longitud: 40 },
+  ];
+  const r = calcularPorcentajesLineasDeLista(lineas);
+  assert.equal(r[0].pct, 100);
 });

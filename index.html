@@ -3748,6 +3748,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <h2>📅 Historial de avance</h2>
     <p class="helper" style="margin-bottom:10px;">Cada "foto" del avance de este plano. Se guardan de dos formas: cuando cerrás una semana a mano con el botón de abajo, y automáticamente cada vez que guardás un certificado que usó este plano.</p>
     <button type="button" class="btn btn-primary" id="btn-cerrar-semana" style="width:100%;margin-bottom:12px;" onclick="cerrarSemanaClick(this)">📸 Cerrar semana</button>
+    <input type="file" id="input-foto-evidencia-snapshot" accept="image/*" style="display:none;" onchange="handleFotoEvidenciaSnapshot(this)">
     <div id="grafico-snapshots"></div>
     <div id="lista-snapshots"></div>
   </div>
@@ -3842,11 +3843,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
 <div id="prompt-pagina-pdf-overlay" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,.55);z-index:1001;align-items:center;justify-content:center;padding:16px;">
   <div style="background:#fff;border-radius:12px;padding:16px;max-width:340px;width:100%;">
-    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--verde-oscuro);">Este PDF tiene varias hojas — ¿cuál es el plano que querés cargar?</div>
-    <select id="prompt-pagina-pdf-select" style="width:100%;padding:9px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;margin-bottom:10px;box-sizing:border-box;"></select>
+    <div style="font-size:13px;font-weight:700;margin-bottom:8px;color:var(--verde-oscuro);">Este PDF tiene varias hojas — elegí una o varias para cargar como planos</div>
+    <div id="prompt-pagina-pdf-lista" style="max-height:260px;overflow-y:auto;margin-bottom:10px;"></div>
     <div class="row-flex">
       <button class="btn btn-outline" onclick="cerrarPromptPaginaPdf()">Cancelar</button>
-      <button class="btn btn-primary" onclick="confirmarPromptPaginaPdf()">📐 Usar esta página</button>
+      <button class="btn btn-primary" onclick="confirmarPromptPaginaPdf()">📐 Cargar elegidas</button>
     </div>
   </div>
 </div>
@@ -18397,6 +18398,7 @@ async function cargarPlanoAvanceDatos(){
   planoActualId = null;
   imagenPlano = null;
   poligonos = [];
+  superposicionesVisibles = [];
   document.getElementById("card-canvas").style.display = "none";
   document.getElementById("card-actividades").style.display = "none";
   document.getElementById("pa-editor-header").style.display = "none";
@@ -18783,6 +18785,7 @@ function volverASelectorPlanos(){
   planoActualId = null;
   imagenPlano = null;
   poligonos = [];
+  superposicionesVisibles = [];
   modoPlanoMaestro = false;
   modoAgregarPin = false;
   modoLineal = false;
@@ -19212,24 +19215,43 @@ async function confirmarPromptNombrePlano(){
   await procesarNuevoPlano(file, nombre);
 }
 async function procesarNuevoPlano(file, nombre){
-  let pagina = 1;
+  let paginas = [1];
   if(file.type === "application/pdf"){
     const totalPaginas = await contarPaginasPdf(file);
     if(totalPaginas > 1){
-      pagina = await elegirPaginaPdf(totalPaginas);
-      if(pagina===null) return; // canceló el selector de página
+      paginas = await elegirPaginaPdf(totalPaginas);
+      if(!paginas) return; // canceló el selector de páginas
     }
   }
-  showToast("Cargando plano...");
-  let dataUrlCrudo;
-  try{ dataUrlCrudo = await cargarImagenDesdeArchivo(file, pagina); }
-  catch(e){ showToast("No se pudo leer ese archivo. Probá con otro PDF o imagen."); return; }
-  // Antes de guardar, pasa por el mismo editor de recortar/girar que ya usás en Herramientas y
-  // Observaciones -- pero en modo "solo recorte" (sin lápiz/círculo/flecha), para que no queden
-  // marcas accidentales en el plano por un toque de más. Si no hace falta tocar nada, "✓ Listo" tal cual.
-  abrirEditorMarcado(dataUrlCrudo, async (dataUrlEditado)=>{
-    await finalizarCargaPlano(dataUrlEditado, nombre);
-  }, true);
+  if(paginas.length===1){
+    showToast("Cargando plano...");
+    let dataUrlCrudo;
+    try{ dataUrlCrudo = await cargarImagenDesdeArchivo(file, paginas[0]); }
+    catch(e){ showToast("No se pudo leer ese archivo. Probá con otro PDF o imagen."); return; }
+    // Antes de guardar, pasa por el mismo editor de recortar/girar que ya usás en Herramientas y
+    // Observaciones -- pero en modo "solo recorte" (sin lápiz/círculo/flecha), para que no queden
+    // marcas accidentales en el plano por un toque de más. Si no hace falta tocar nada, "✓ Listo" tal cual.
+    abrirEditorMarcado(dataUrlCrudo, async (dataUrlEditado)=>{
+      await finalizarCargaPlano(dataUrlEditado, nombre);
+    }, true);
+    return;
+  }
+  // Varias hojas elegidas de una (ej: una planta por piso, todas en el mismo PDF) -- se cargan
+  // derecho, SIN pasar cada una por el editor de recorte manual: con varias hojas seguidas sería
+  // muy tedioso confirmar el recorte una por una. Si alguna necesita ajuste, se puede recortar
+  // igual después desde ese plano en particular. Cada plano queda nombrado con el número de hoja.
+  showToast(`Cargando ${paginas.length} hojas...`);
+  let cargadas = 0, fallidas = 0;
+  for(const pagina of paginas){
+    try{
+      const dataUrlCrudo = await cargarImagenDesdeArchivo(file, pagina);
+      await finalizarCargaPlano(dataUrlCrudo, `${nombre} - Hoja ${pagina}`);
+      cargadas++;
+    }catch(e){ fallidas++; }
+  }
+  showToast(fallidas===0
+    ? `✓ Se cargaron ${cargadas} planos, uno por hoja`
+    : `✓ Se cargaron ${cargadas} planos -- ${fallidas} hoja(s) no se pudieron leer`, 6000);
 }
 // Miniatura chica del plano, para la grilla de selección (no la imagen completa -- eso ya vive
 // aparte, comprimida, en su propio documento). Pesa muy poco (una imagen de ~70px), no repite el
@@ -19422,6 +19444,34 @@ function calcularPorcentajesDeLista(listaPoligonos){
 function calcularPorcentajesActuales(){
   return calcularPorcentajesDeLista(poligonos);
 }
+// Igual que calcularPorcentajesDeLista pero para recorridos lineales (metros en vez de área) --
+// mismo criterio de agrupar por nombreBase/capa y sumar los % ya redondeados de cada pieza. Se
+// marca esLinea:true para que el historial/reporte sepan dibujarla como recorrido, no como área.
+function calcularPorcentajesLineasDeLista(listaLineas){
+  const bases = {};
+  (listaLineas||[]).forEach(l=>{
+    if(!bases[l.nombreBase]) bases[l.nombreBase] = {longitudTotal:0, capas:{}};
+    if(!l.capa) bases[l.nombreBase].longitudTotal += l.longitud;
+    else{
+      if(!bases[l.nombreBase].capas[l.capa]) bases[l.nombreBase].capas[l.capa] = [];
+      bases[l.nombreBase].capas[l.capa].push(l);
+    }
+  });
+  const resultado = [];
+  Object.keys(bases).forEach(nombreBase=>{
+    const b = bases[nombreBase];
+    const longitudTotal = b.longitudTotal;
+    Object.keys(b.capas).forEach(nombreCapa=>{
+      const piezas = b.capas[nombreCapa];
+      const pct = longitudTotal>0 ? Math.min(100, piezas.reduce((s,c)=>s+Math.round((c.longitud/longitudTotal)*100),0)) : 0;
+      resultado.push({nombreCompleto: `${nombreBase} - ${nombreCapa}`, nombreBase, capa: nombreCapa, pct, capaId: piezas[0].capaId||null, esLinea:true});
+    });
+  });
+  return resultado;
+}
+function calcularPorcentajesLineasActuales(){
+  return calcularPorcentajesLineasDeLista(lineasAvance);
+}
 // Crea y guarda un snapshot -- lo usan tanto "Cerrar semana" (tipo "semanal") como, más adelante,
 // el armado de un Certificado (tipo "certificado"), reusando exactamente la misma función.
 async function crearSnapshotPlano(etiqueta, tipo){
@@ -19430,13 +19480,19 @@ async function crearSnapshotPlano(etiqueta, tipo){
     fecha: hoyISO(),
     etiqueta: etiqueta || `Semana del ${new Date().toLocaleDateString("es-AR")}`,
     tipo: tipo || "semanal",
-    porcentajes: calcularPorcentajesActuales(),
+    // Las capas lineales entran en la MISMA lista de porcentajes que las de área (con esLinea:true)
+    // -- así la lista de historial y el gráfico de evolución por capa las muestran solas, sin
+    // necesitar un camino aparte para cada una.
+    porcentajes: [...calcularPorcentajesActuales(), ...calcularPorcentajesLineasActuales()],
     // Guarda también la FORMA de los polígonos de ese momento (no solo los números) -- esto es
     // lo que permite después comparar visualmente "cómo estaba" vs "cómo está ahora" en el mismo
     // plano (ver "🔄 Comparar semanas"). Los snapshots de ANTES de este cambio no van a tener
     // esto, así que la comparación visual solo va a poder hacerse contra semanas cerradas de acá
     // en adelante -- se avisa esto donde corresponde, no se rompe nada de lo viejo.
-    poligonos: JSON.parse(JSON.stringify(poligonos))
+    poligonos: JSON.parse(JSON.stringify(poligonos)),
+    // Mismo criterio para los recorridos lineales -- forma congelada, para poder dibujarlos en la
+    // línea de tiempo y las comparaciones visuales igual que las áreas.
+    lineas: JSON.parse(JSON.stringify(lineasAvance))
   };
   snapshotsPlanoActual.push(snap);
   await guardarSnapshotsPlanoActual();
@@ -19448,6 +19504,30 @@ function cerrarSemanaClick(btn){
     await crearSnapshotPlano(`Semana del ${new Date().toLocaleDateString("es-AR")}`, "semanal");
     renderListaSnapshots();
     showToast("✓ Semana cerrada, avance guardado");
+  });
+}
+// Foto de evidencia por hito -- un <input> oculto compartido por toda la lista de hitos (no uno
+// por fila): el botón de cada hito guarda a cuál le corresponde en snapshotEvidenciaTargetId antes
+// de abrirlo, mismo patrón que la foto de "después" de Observaciones.
+let snapshotEvidenciaTargetId = null;
+function elegirFotoEvidenciaSnapshot(snapshotId){
+  snapshotEvidenciaTargetId = snapshotId;
+  document.getElementById("input-foto-evidencia-snapshot").click();
+}
+function handleFotoEvidenciaSnapshot(input){
+  const file = input.files[0];
+  input.value = "";
+  const snapshotId = snapshotEvidenciaTargetId;
+  snapshotEvidenciaTargetId = null;
+  if(!file || !snapshotId) return;
+  comprimirImagenMiniatura(file, async (dataUrl)=>{
+    const snap = snapshotsPlanoActual.find(s=>s.id===snapshotId);
+    if(!snap) return;
+    const anterior = snap.fotoEvidencia;
+    snap.fotoEvidencia = dataUrl;
+    await guardarSnapshotsPlanoActual();
+    renderListaSnapshots();
+    showToast(anterior ? "✓ Foto de evidencia actualizada" : "✓ Foto de evidencia agregada");
   });
 }
 // Gráfico de líneas con la curva de avance de cada capa a lo largo de las semanas cerradas --
@@ -19501,13 +19581,27 @@ function renderListaSnapshots(){
   // Comparación visual -- solo aparece para las semanas que YA tienen la forma de los polígonos
   // guardada (desde este cambio en adelante). Las cerradas antes no la tienen y no muestran el
   // botón -- el resto de la info (números, gráfico) sigue funcionando igual para todas.
-  const conForma = snapshotsPlanoActual.filter(s=>s.poligonos && s.poligonos.length>0);
+  const conForma = snapshotsPlanoActual.filter(s=>(s.poligonos && s.poligonos.length>0) || (s.lineas && s.lineas.length>0));
   const bloqueComparar = conForma.length===0 ? "" : `
     <div style="margin-bottom:14px;">
       ${conForma.length>=2 ? `<button class="btn btn-primary btn-sm" style="width:100%;margin-bottom:8px;" onclick="abrirLineaDeTiempoPlano()">🎬 Ver línea de tiempo del avance</button>` : ""}
       <div style="font-size:11px;font-weight:800;color:var(--tinta-suave);margin-bottom:6px;">🔄 Comparar visualmente con una semana anterior</div>
       ${conForma.map(s=>`<button class="btn btn-outline btn-sm" style="margin:0 6px 6px 0;" onclick="abrirComparacionSemanas('${s.id}')">${esc(s.etiqueta)}</button>`).join("")}
       <button class="btn btn-outline btn-sm" style="margin:0 6px 6px 0;background:var(--fondo);" onclick="abrirComparacionLadoALado()">🔀 Comparar dos meses lado a lado</button>
+    </div>`;
+  // Foto de evidencia por hito (opcional) -- no tiene nada que ver con la foto de "Foto → avance"
+  // (esa se descarta a propósito apenas la IA responde). Esta es una miniatura chica que se puede
+  // sumar a cualquier hito ya cerrado, para dejar registrado "así se veía" con una imagen real,
+  // útil para un reclamo o para acordarse en la reunión de obra sin depender de la memoria.
+  const bloqueEvidencia = `
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:800;color:var(--tinta-suave);margin-bottom:6px;">📷 Evidencia por hito (opcional)</div>
+      ${snapshotsPlanoActual.slice().reverse().map(s=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--borde);">
+          ${s.fotoEvidencia ? `<img src="${s.fotoEvidencia}" style="width:34px;height:34px;border-radius:6px;object-fit:cover;flex-shrink:0;">` : `<div style="width:34px;height:34px;border-radius:6px;background:var(--fondo);flex-shrink:0;"></div>`}
+          <div style="flex:1;min-width:0;font-size:11px;">${esc(s.etiqueta)}</div>
+          <button type="button" class="btn-mini" onclick="elegirFotoEvidenciaSnapshot('${s.id}')">📷 ${s.fotoEvidencia?"Cambiar":"Agregar"}</button>
+        </div>`).join("")}
     </div>`;
   const porCapa = {};
   snapshotsPlanoActual.forEach(snap=>{
@@ -19529,7 +19623,7 @@ function renderListaSnapshots(){
     }).join("");
     return `<div class="lista-actividad"><div class="cab"><div class="pa-nombre">${esc(nombreCompleto)}</div></div>${filas}</div>`;
   }).join("");
-  cont.innerHTML = bloqueComparar + bloqueCapas;
+  cont.innerHTML = bloqueComparar + bloqueEvidencia + bloqueCapas;
 }
 // ---------------- Comparación "lado a lado" -- dos momentos elegidos libremente, no solo antes/ahora ----------------
 function generarImagenSnapshotIndividual(snapshot){
@@ -19550,6 +19644,22 @@ function generarImagenSnapshotIndividual(snapshot){
     ctx.lineWidth = Math.max(1.5, canvas.width/500);
     ctx.stroke();
   });
+  // Recorridos lineales de ESE hito (perímetros, fachadas, etc.) -- mismo criterio visual que
+  // dibujarLineasAvance en vivo, pero sobre la forma congelada del snapshot.
+  const lins = snapshot ? (snapshot.lineas||[]) : lineasAvance;
+  const grosorLinea = Math.max(3, canvas.width/280);
+  lins.forEach(l=>{
+    if(!l.capa || !l.puntos || l.puntos.length<2) return;
+    ctx.save();
+    ctx.strokeStyle = l.color;
+    ctx.lineWidth = grosorLinea;
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath();
+    l.puntos.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    if(l.cerrado) ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  });
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 // ---------------- Línea de tiempo del avance ----------------
@@ -19561,7 +19671,7 @@ let ltSnaps = [];         // los snapshots correspondientes
 let ltReproduciendo = null;
 function abrirLineaDeTiempoPlano(){
   const conForma = snapshotsPlanoActual
-    .filter(s=>s.poligonos && s.poligonos.length>0)
+    .filter(s=>(s.poligonos && s.poligonos.length>0) || (s.lineas && s.lineas.length>0))
     .slice()
     .sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
   if(conForma.length<2){ showToast("Hacen falta al menos 2 hitos guardados para armar una línea de tiempo."); return; }
@@ -19654,7 +19764,7 @@ function cerrarLineaDeTiempo(){
   cerrarFotoAvanceOverlay();
 }
 function abrirComparacionLadoALado(){
-  const snapsConForma = snapshotsPlanoActual.filter(s=>s.poligonos && s.poligonos.length>0);
+  const snapsConForma = snapshotsPlanoActual.filter(s=>(s.poligonos && s.poligonos.length>0) || (s.lineas && s.lineas.length>0));
   if(snapsConForma.length===0){ showToast("Todavía no hay semanas con forma guardada para comparar."); return; }
   const opciones = [{id:"ahora", etiqueta:"Ahora (estado actual)"}, ...snapsConForma.map(s=>({id:s.id, etiqueta:s.etiqueta}))];
   const cont = document.getElementById("foto-avance-cuerpo");
@@ -19723,6 +19833,13 @@ function generarImagenComparacionSemanas(snapshotViejo){
     ctx.closePath();
     ctx.stroke();
   });
+  (snapshotViejo.lineas||[]).forEach(l=>{
+    if(!l.capa || !l.puntos || l.puntos.length<2) return;
+    ctx.beginPath();
+    l.puntos.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    if(l.cerrado) ctx.closePath();
+    ctx.stroke();
+  });
   ctx.setLineDash([]);
   poligonos.forEach(p=>{
     if(!p.capa || !p.puntos || p.puntos.length<3) return;
@@ -19735,11 +19852,24 @@ function generarImagenComparacionSemanas(snapshotViejo){
     ctx.lineWidth = Math.max(1.5, canvas.width/500);
     ctx.stroke();
   });
+  const grosorLineaAhora = Math.max(3, canvas.width/280);
+  lineasAvance.forEach(l=>{
+    if(!l.capa || !l.puntos || l.puntos.length<2) return;
+    ctx.save();
+    ctx.strokeStyle = l.color;
+    ctx.lineWidth = grosorLineaAhora;
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath();
+    l.puntos.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+    if(l.cerrado) ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  });
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 function abrirComparacionSemanas(snapshotId){
   const snap = snapshotsPlanoActual.find(s=>s.id===snapshotId);
-  if(!snap || !snap.poligonos){ showToast("Esta semana no tiene la forma guardada todavía."); return; }
+  if(!snap || (!(snap.poligonos&&snap.poligonos.length) && !(snap.lineas&&snap.lineas.length))){ showToast("Esta semana no tiene la forma guardada todavía."); return; }
   const dataUrl = generarImagenComparacionSemanas(snap);
   const cont = document.getElementById("foto-avance-cuerpo");
   cont.innerHTML = `
@@ -19967,6 +20097,44 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
     return filaTotal + (filasCapa || `<tr><td></td><td colspan="2" style="color:#999;">Sin capas de avance todavía</td></tr>`);
   }).join("");
 
+  // Recorridos lineales (perímetros, fachadas, zócalos, etc.) -- misma agrupación por actividad
+  // que las áreas de arriba, armada aparte porque lineasAvance vive en su propio formato (longitud
+  // en vez de área; ver el comentario donde se declara lineasAvance). Antes esto no entraba al
+  // reporte -- solo se veía en pantalla y en su lista aparte.
+  const basesLineales = {};
+  lineasAvance.forEach(l=>{
+    if(!basesLineales[l.nombreBase]) basesLineales[l.nombreBase] = {longitudTotal:0, colorTotal:null, capas:{}};
+    if(!l.capa){
+      basesLineales[l.nombreBase].longitudTotal += l.longitud;
+      if(!basesLineales[l.nombreBase].colorTotal) basesLineales[l.nombreBase].colorTotal = l.color;
+    }else{
+      if(!basesLineales[l.nombreBase].capas[l.capa]) basesLineales[l.nombreBase].capas[l.capa] = [];
+      basesLineales[l.nombreBase].capas[l.capa].push(l);
+    }
+  });
+  const filasLineales = Object.keys(basesLineales).map(nombreBase=>{
+    const b = basesLineales[nombreBase];
+    const longitudTotal = b.longitudTotal;
+    const mTotalCalibrado = metrosPorPixelPlano && longitudTotal>0 ? ` — ≈${(longitudTotal*metrosPorPixelPlano).toFixed(1)} m` : "";
+    const filaTotal = `<tr>
+      <td style="font-weight:800;">${esc(nombreBase)}</td>
+      <td>${filaSwatchNombre(b.colorTotal||"#999", "Recorrido total"+mTotalCalibrado, "solido")}</td>
+      <td>${filaBarra(b.colorTotal||"#999", longitudTotal>0?100:0, true)}</td>
+    </tr>`;
+    const filasCapa = Object.keys(b.capas).map(nombreCapa=>{
+      const piezas = b.capas[nombreCapa];
+      const pct = longitudTotal>0 ? Math.min(100, piezas.reduce((s,c)=>s+Math.round((c.longitud/longitudTotal)*100),0)) : 0;
+      const longitudCapa = piezas.reduce((s,c)=>s+c.longitud,0);
+      const mCalibrado = metrosPorPixelPlano ? ` — ≈${(longitudCapa*metrosPorPixelPlano).toFixed(1)} m` : "";
+      return `<tr>
+        <td></td>
+        <td>${filaSwatchNombre(piezas[0].color, nombreCapa+mCalibrado, "solido")}</td>
+        <td>${filaBarra(piezas[0].color, pct, false)}</td>
+      </tr>`;
+    }).join("");
+    return filaTotal + (filasCapa || `<tr><td></td><td colspan="2" style="color:#999;">Sin capas de avance todavía</td></tr>`);
+  }).join("");
+
   // Cuadro de medidas (ventanas, aberturas, etc) -- solo se agrega al reporte si hay al menos un
   // cuadro de texto tipo "número" cargado en este plano; si no hay ninguno, esta sección entera
   // no aparece (ni el título), para no dejar un cuadro vacío de adorno.
@@ -20000,7 +20168,12 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
     <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
       <thead><tr><th style="width:180px;">Actividad</th><th style="width:260px;">Detalle</th><th>Avance</th></tr></thead>
       <tbody>${filas || `<tr><td colspan="3" style="color:#999;">Todavía no hay actividades marcadas en este plano.</td></tr>`}</tbody>
-    </table>`;
+    </table>
+    ${filasLineales ? `<div style="margin:14px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Recorridos lineales (metros)</div>
+    <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
+      <thead><tr><th style="width:180px;">Actividad</th><th style="width:260px;">Detalle</th><th>Avance</th></tr></thead>
+      <tbody>${filasLineales}</tbody>
+    </table>` : ""}`;
   }else{
     cuerpoHtml = `
     <div style="text-align:center;">
@@ -20011,7 +20184,12 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
     <table class="trab" width="676" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
       <thead><tr><th style="width:130px;">Actividad</th><th style="width:190px;">Detalle</th><th>Avance</th></tr></thead>
       <tbody>${filas || `<tr><td colspan="3" style="color:#999;">Todavía no hay actividades marcadas en este plano.</td></tr>`}</tbody>
-    </table>`;
+    </table>
+    ${filasLineales ? `<div style="margin:14px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Recorridos lineales (metros)</div>
+    <table class="trab" width="676" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
+      <thead><tr><th style="width:130px;">Actividad</th><th style="width:190px;">Detalle</th><th>Avance</th></tr></thead>
+      <tbody>${filasLineales}</tbody>
+    </table>` : ""}`;
   }
 
   const html = `<div class="print-page" style="width:${anchoHoja}px !important;min-width:${anchoHoja}px !important;max-width:${anchoHoja}px !important;padding:6px 12px !important;box-sizing:border-box;">
@@ -21492,11 +21670,17 @@ async function contarPaginasPdf(file){
   }catch(e){ return 1; }
 }
 let resolverPaginaPdfElegida = null;
+// Devuelve un array de páginas elegidas (en base 1), o null si se canceló -- se puede tildar más
+// de una para cargar varias hojas de un mismo PDF de una sola vez (ej: una planta por piso).
 function elegirPaginaPdf(totalPaginas){
   return new Promise(resolve=>{
     resolverPaginaPdfElegida = resolve;
-    const sel = document.getElementById("prompt-pagina-pdf-select");
-    sel.innerHTML = Array.from({length: totalPaginas}, (_,i)=>`<option value="${i+1}">Página ${i+1} de ${totalPaginas}</option>`).join("");
+    const lista = document.getElementById("prompt-pagina-pdf-lista");
+    lista.innerHTML = Array.from({length: totalPaginas}, (_,i)=>`
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid var(--borde);font-size:12.5px;">
+        <input type="checkbox" class="prompt-pagina-pdf-check" value="${i+1}" ${i===0?"checked":""} style="width:18px;height:18px;flex-shrink:0;">
+        Página ${i+1} de ${totalPaginas}
+      </label>`).join("");
     document.getElementById("prompt-pagina-pdf-overlay").style.display = "flex";
   });
 }
@@ -21506,9 +21690,9 @@ function cerrarPromptPaginaPdf(){
   resolverPaginaPdfElegida = null;
 }
 function confirmarPromptPaginaPdf(){
-  const pagina = parseInt(document.getElementById("prompt-pagina-pdf-select").value, 10);
+  const paginas = [...document.querySelectorAll(".prompt-pagina-pdf-check:checked")].map(c=>parseInt(c.value,10));
   document.getElementById("prompt-pagina-pdf-overlay").style.display = "none";
-  if(resolverPaginaPdfElegida) resolverPaginaPdfElegida(pagina);
+  if(resolverPaginaPdfElegida) resolverPaginaPdfElegida(paginas.length>0 ? paginas : null);
   resolverPaginaPdfElegida = null;
 }
 // Convierte el archivo elegido (PDF o imagen) en un dataURL -- directo, sin pasos de más. Para un
@@ -24533,7 +24717,11 @@ function cerrarPoligono(){
   renderSelectorActividades();
   renderActividades();
   guardarPlanoAvancePoligonos();
-  if(capa) revisarSuperposicionEnCapa(nombreCompleto);
+  // Antes esto solo corría si la pieza tenía capa -- una pieza nueva de "área total" (sin capa)
+  // que se superpone con otra ya existente infla el DENOMINADOR de todas sus capas, y quedaba sin
+  // ningún aviso. revisarSuperposicionEnCapa ya soporta este caso solo (nombreCompleto es el
+  // nombreBase a secas cuando no hay capa), así que alcanza con sacar la condición.
+  revisarSuperposicionEnCapa(nombreCompleto);
 
   contadorPiezasActividadActual++;
   const areaAcumulada = poligonos
@@ -25194,22 +25382,62 @@ function poligonosSeSuperponen(a, b){
   const dentroDeA = b.filter(([x,y])=>puntoDentroDePoligono(x,y,a)).length;
   return dentroDeB>=2 || dentroDeA>=2;
 }
+// Zonas de superposición detectadas, para resaltarlas en rojo directo sobre el plano hasta que se
+// corrijan -- antes solo se avisaba con un toast que se perdía de vista enseguida y no quedaba
+// ninguna marca de POR DÓNDE era el problema. Se recalcula solo para la capa afectada cada vez
+// que revisarSuperposicionEnCapa corre (no en cada frame), así no le agrega costo al redibujado.
+let superposicionesVisibles = [];
 // Revisa TODAS las piezas de una capa entre sí y avisa (sin bloquear el guardado -- es un aviso,
 // no un impedimento, porque a veces un roce mínimo en el borde es aceptable) si encuentra alguna
 // superposición real. Se llama después de cualquier acción que pueda haber creado una: copiar
-// contorno, cerrar un área nueva, mover un vértice, terminar de editar.
+// contorno, cerrar un área nueva, mover un vértice, terminar de editar. También corre para piezas
+// de "área total" (nombreCompleto sin capa) -- si dos de esas se superponen, inflan el
+// DENOMINADOR de todas las capas de esa actividad, un bug tan real como el de las capas.
 function revisarSuperposicionEnCapa(nombreCompleto){
-  if(!nombreCompleto) return;
+  if(!nombreCompleto) return false;
   const piezas = poligonos.filter(p=>p.nombreCompleto===nombreCompleto);
+  const encontradas = [];
   for(let a=0;a<piezas.length;a++){
     for(let b=a+1;b<piezas.length;b++){
       if(poligonosSeSuperponen(piezas[a].puntos, piezas[b].puntos)){
-        showToast(`⚠️ Dos piezas de "${esc(nombreCompleto)}" se superponen -- esa zona se está contando dos veces en el %. Revisá los vértices.`, 7500);
-        return true;
+        encontradas.push({puntosA: piezas[a].puntos, puntosB: piezas[b].puntos});
       }
     }
   }
-  return false;
+  superposicionesVisibles = superposicionesVisibles.filter(s=>s.nombreCompleto!==nombreCompleto);
+  encontradas.forEach(e=>superposicionesVisibles.push({...e, nombreCompleto}));
+  if(encontradas.length>0){
+    showToast(`⚠️ "${esc(nombreCompleto)}" tiene piezas superpuestas -- esa zona se cuenta dos veces. Queda resaltada en rojo en el plano hasta que se corrija.`, 7500);
+  }
+  redibujar();
+  return encontradas.length>0;
+}
+// Pinta en rojo translúcido la zona EXACTA donde dos piezas se superponen -- se arma con
+// composición de canvas (dibujar una forma, recortarla contra la otra con "destination-in") en vez
+// de calcular la intersección geométrica a mano, para que funcione igual de bien con formas
+// cóncavas (una L, un recorte) sin escribir un clipper de polígonos general.
+function dibujarSuperposicionesEnCanvas(ctx, canvas){
+  if(superposicionesVisibles.length===0) return;
+  superposicionesVisibles.forEach(({puntosA, puntosB})=>{
+    if(!puntosA || !puntosB || puntosA.length<3 || puntosB.length<3) return;
+    const off = document.createElement("canvas");
+    off.width = canvas.width; off.height = canvas.height;
+    const octx = off.getContext("2d");
+    octx.beginPath();
+    puntosA.forEach(([x,y],i)=> i===0?octx.moveTo(x,y):octx.lineTo(x,y));
+    octx.closePath();
+    octx.fillStyle = "#DC2626";
+    octx.fill();
+    octx.globalCompositeOperation = "destination-in";
+    octx.beginPath();
+    puntosB.forEach(([x,y],i)=> i===0?octx.moveTo(x,y):octx.lineTo(x,y));
+    octx.closePath();
+    octx.fill();
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+  });
 }
 // Sobre cada etiqueta de % dibujada en el canvas hay un botón invisible en el mismo lugar --
 // pensado para ajustes chicos ("me dio 23% y necesito 25%") sin tener que volver a dibujar el
@@ -27390,6 +27618,7 @@ function redibujar(){
     }
     ctx.stroke();
   });
+  dibujarSuperposicionesEnCanvas(ctx, canvas);
   // Etiquetas de % flotando sobre cada capa -- en una pasada aparte, para que queden siempre
   // arriba de todos los rellenos/bordes, sin importar el orden en que se dibujaron las áreas.
   // Usa calcularPosicionesBadgesPct(), la misma función que arma los divs invisibles que reciben
