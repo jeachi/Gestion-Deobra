@@ -11,6 +11,7 @@ const { cargarDesdeApp } = require("./extract");
 
 const { areaPoligono, calcularPorcentajesDeLista, calcularPorcentajesLineasDeLista } = cargarDesdeApp([
   { nombre: "areaPoligono" },
+  { nombre: "calcularPorcentajesGenerico" },
   { nombre: "calcularPorcentajesDeLista" },
   { nombre: "calcularPorcentajesLineasDeLista" },
 ]);

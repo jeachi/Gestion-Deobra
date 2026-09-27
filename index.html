@@ -4946,13 +4946,20 @@ async function cargarTrabajadores(){
     }
   }
 }
+// Guarda una clave en window.storage y muestra el toast estándar de error de conexión si falla.
+// `valor` ya viene serializado (JSON.stringify) cuando corresponde a un objeto/array -- esta
+// función no asume el tipo, solo lo pasa a window.storage.set. Devuelve true/false para que quien
+// llama pueda cortar el flujo si hace falta (ej: no seguir con un paso posterior si falló).
+async function guardarClave(clave, valor, msgError){
+  try{ await window.storage.set(clave, valor, true); return true; }
+  catch(e){ showToast(msgError || "No se pudo guardar (revisá conexión)"); return false; }
+}
 async function guardarTrabajadores(){
   if(errorCargaTrabajadores){
     showToast("⚠ No se guardó — no se pudo leer bien la lista guardada (revisá conexión y volvé a entrar a Configuración).");
     return;
   }
-  try{ await window.storage.set("trabajadores", JSON.stringify(trabajadores), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("trabajadores", JSON.stringify(trabajadores));
 }
 async function cargarCatalogos(){
   try{
@@ -4969,16 +4976,13 @@ async function cargarCatalogos(){
   }catch(e){ obrasFinalizadas = []; }
 }
 async function guardarCategorias(){
-  try{ await window.storage.set("categorias", JSON.stringify(categorias), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("categorias", JSON.stringify(categorias));
 }
 async function guardarObras(){
-  try{ await window.storage.set("obras", JSON.stringify(obras), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("obras", JSON.stringify(obras));
 }
 async function guardarObrasFinalizadas(){
-  try{ await window.storage.set("obras_finalizadas", JSON.stringify(obrasFinalizadas), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("obras_finalizadas", JSON.stringify(obrasFinalizadas));
 }
 // Una obra "finalizada" sigue existiendo -- su historial en cada módulo se sigue viendo tal cual --
 // pero desaparece del Dashboard y de los selectores para cargar algo NUEVO (asistencia, pedidos,
@@ -5147,8 +5151,7 @@ async function cargarMemoriaNexo(){
 }
 async function guardarMemoriaNexo(){
   if(!sesionActual) return;
-  try{ await window.storage.set("memoria_nexo_"+sesionActual.username, JSON.stringify(memoriaNexo), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("memoria_nexo_"+sesionActual.username, JSON.stringify(memoriaNexo));
 }
 async function nexoAgregarMemoria(texto){
   memoriaNexo.push({texto, fecha: hoyISO()});
@@ -5188,8 +5191,7 @@ async function cargarConfigAsistente(){
   }
 }
 async function guardarConfigAsistente(){
-  try{ await window.storage.set("config_asistente", JSON.stringify(configAsistente), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("config_asistente", JSON.stringify(configAsistente));
 }
 async function cargarObraPredeterminada(){
   try{
@@ -5203,8 +5205,7 @@ async function cargarObraPredeterminada(){
   }
 }
 async function guardarObraPredeterminada(){
-  try{ await window.storage.set("obra_predeterminada", obraPredeterminada, true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("obra_predeterminada", obraPredeterminada);
 }
 async function marcarObraPredeterminada(obra){
   obraPredeterminada = (obraPredeterminada===obra) ? "" : obra;
@@ -6188,10 +6189,10 @@ function onDescMaterialInput(i, valor){
   }
 }
 async function guardarRubros(){
-  try{ await window.storage.set("rubros", JSON.stringify(rubros), true); }catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("rubros", JSON.stringify(rubros));
 }
 async function guardarUnidades(){
-  try{ await window.storage.set("unidades", JSON.stringify(unidades), true); }catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("unidades", JSON.stringify(unidades));
 }
 async function agregarRubro(){
   const inp = document.getElementById("nuevo-rubro");
@@ -6232,8 +6233,7 @@ async function cargarEquivalencias(){
   }catch(e){ equivalenciasMateriales = []; }
 }
 async function guardarEquivalenciasIndex(){
-  try{ await window.storage.set("equivalencias_materiales", JSON.stringify(equivalenciasMateriales), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("equivalencias_materiales", JSON.stringify(equivalenciasMateriales));
 }
 function renderEquivalencias(){
   const cont = document.getElementById("lista-equivalencias");
@@ -6282,8 +6282,7 @@ async function cargarCorrelativo(){
   }catch(e){ correlativoSiguiente = 87; }
 }
 async function guardarCorrelativo(){
-  try{ await window.storage.set("pedidos_correlativo", String(correlativoSiguiente), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("pedidos_correlativo", String(correlativoSiguiente));
 }
 async function guardarCorrelativoManual(){
   const v = parseInt(document.getElementById("config-correlativo").value, 10);
@@ -6306,8 +6305,7 @@ async function cargarPedidosIndex(){
   }catch(e){ pedidosIndex = []; }
 }
 async function guardarPedidosIndex(){
-  try{ await window.storage.set("pedidos_index", JSON.stringify(pedidosIndex), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("pedidos_index", JSON.stringify(pedidosIndex));
 }
 async function cargarPedidoDetalle(id){
   if(pedidosCache[id]) return pedidosCache[id];
@@ -6319,8 +6317,7 @@ async function cargarPedidoDetalle(id){
 }
 async function guardarPedidoDetalle(pedido){
   pedidosCache[pedido.id] = pedido;
-  try{ await window.storage.set("pedido_"+pedido.id, JSON.stringify(pedido), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("pedido_"+pedido.id, JSON.stringify(pedido));
 }
 
 /* ---------------- Sub-navegación de Pedidos ---------------- */
@@ -6466,7 +6463,7 @@ async function calcularMaterialesRecibidos(){
 async function renderMaterialesRecibidos(){
   const filtro = document.getElementById("rec-filtro-obra");
   if(!filtro.dataset.cargado){
-    filtro.innerHTML = `<option value="">Todas las obras</option>` + obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+    poblarSelectFiltroObras(filtro);
     filtro.dataset.cargado = "1";
   }
   document.getElementById("rec-barras").innerHTML = `<p class="tiny">Calculando…</p>`;
@@ -8699,8 +8696,7 @@ async function cargarAliasMateriales(){
   }catch(e){ aliasMateriales = []; }
 }
 async function guardarAliasMaterialesIndex(){
-  try{ await window.storage.set("alias_materiales_remitos", JSON.stringify(aliasMateriales), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("alias_materiales_remitos", JSON.stringify(aliasMateriales));
 }
 function buscarAlias(descRemito){
   const key = (descRemito||"").trim().toLowerCase();
@@ -9482,8 +9478,7 @@ async function cargarCatalogoTiposCosto(){
   }
 }
 async function guardarTiposCosto(){
-  try{ await window.storage.set("tipos_costo", JSON.stringify(tiposCosto), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("tipos_costo", JSON.stringify(tiposCosto));
 }
 async function agregarTipoCosto(){
   const inp = document.getElementById("nuevo-tipo-costo");
@@ -9545,8 +9540,7 @@ async function cargarCorrelativoCaja(){
   }catch(e){ correlativoCajaSiguiente = 1; }
 }
 async function guardarCorrelativoCaja(){
-  try{ await window.storage.set("rendicion_correlativo", String(correlativoCajaSiguiente), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("rendicion_correlativo", String(correlativoCajaSiguiente));
 }
 async function guardarCorrelativoCajaManual(){
   const v = parseInt(document.getElementById("config-correlativo-caja").value, 10);
@@ -9563,8 +9557,7 @@ async function cargarRendicionesIndex(){
   }catch(e){ rendicionesIndex = []; }
 }
 async function guardarRendicionesIndex(){
-  try{ await window.storage.set("rendiciones_index", JSON.stringify(rendicionesIndex), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("rendiciones_index", JSON.stringify(rendicionesIndex));
 }
 async function cargarRendicionDetalle(id){
   if(rendicionesCache[id]) return rendicionesCache[id];
@@ -9576,8 +9569,7 @@ async function cargarRendicionDetalle(id){
 }
 async function guardarRendicionDetalle(rendicion){
   rendicionesCache[rendicion.id] = rendicion;
-  try{ await window.storage.set("rendicion_"+rendicion.id, JSON.stringify(rendicion), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("rendicion_"+rendicion.id, JSON.stringify(rendicion));
 }
 
 /* ---------------- Sub-navegación de Caja Chica ---------------- */
@@ -10190,8 +10182,7 @@ async function cargarContratistasIndex(){
   }
 }
 async function guardarContratistasIndex(){
-  try{ await window.storage.set("cert_contratistas_index", JSON.stringify(contratistasIndex), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("cert_contratistas_index", JSON.stringify(contratistasIndex));
 }
 let contratistasConErrorDeCarga = {};
 async function cargarContratistaDetalle(id){
@@ -10217,8 +10208,7 @@ async function guardarContratistaDetalle(c){
     return;
   }
   contratistasCache[c.id] = c;
-  try{ await window.storage.set("cert_contratista_"+c.id, JSON.stringify(c), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("cert_contratista_"+c.id, JSON.stringify(c));
 }
 
 /* ---------------- Cálculo: recorre los certificados en orden y arma el detalle de cada uno ---------------- */
@@ -11879,13 +11869,10 @@ function cambiarBordeAnimado(tipo, valor){
   guardarPrefsNavUsuario();
 }
 async function guardarPrefsNavUsuario(){
-  try{
-    await window.storage.set(
-      "nav_temas_"+(sesionActual?sesionActual.username:"x"),
-      JSON.stringify({barra:temaBarraApp, icono:temaIconoApp, color:temaColorApp, bordeActivo:bordeAnimadoActivo, bordeVariante:bordeAnimadoVariante, bordeColor:bordeAnimadoColor}),
-      true
-    );
-  }catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave(
+    "nav_temas_"+(sesionActual?sesionActual.username:"x"),
+    JSON.stringify({barra:temaBarraApp, icono:temaIconoApp, color:temaColorApp, bordeActivo:bordeAnimadoActivo, bordeVariante:bordeAnimadoVariante, bordeColor:bordeAnimadoColor})
+  );
 }
 function renderSelectorTemaNav(){
   const cont = document.getElementById("selector-tema-nav");
@@ -12111,8 +12098,7 @@ async function cargarRemitosIndex(){
   }catch(e){ remitosIndex = []; }
 }
 async function guardarRemitosIndex(){
-  try{ await window.storage.set("remitos_index", JSON.stringify(remitosIndex), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("remitos_index", JSON.stringify(remitosIndex));
 }
 async function cargarCorrelativoRemito(){
   try{
@@ -12391,8 +12377,7 @@ async function guardarHerramientasIndex(){
     showToast("⚠ No se guardó — no se pudo leer bien el inventario (revisá conexión y volvé a entrar).");
     return false;
   }
-  try{ await window.storage.set("herramientas_index", JSON.stringify(herramientas), true); return true; }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); return false; }
+  return guardarClave("herramientas_index", JSON.stringify(herramientas));
 }
 
 function seleccionarChip(rowId, el, val){
@@ -12421,7 +12406,7 @@ function prepararVistaHerramientas(){
   poblarSelectObras(document.getElementById("herr-obra"));
   const filtro = document.getElementById("herr-filtro-obra");
   const actualFiltro = filtro.value;
-  filtro.innerHTML = `<option value="">Todas las obras</option>` + obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+  poblarSelectFiltroObras(filtro);
   filtro.value = actualFiltro;
   document.getElementById("herr-nombre").value = "";
   document.getElementById("herr-cantidad").value = "1";
@@ -13023,8 +13008,7 @@ async function guardarObservacionesIndex(){
     showToast("⚠ No se guardó — no se pudo leer bien antes (revisá conexión y volvé a entrar).");
     return false;
   }
-  try{ await window.storage.set("observaciones_index", JSON.stringify(observaciones), true); return true; }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); return false; }
+  return guardarClave("observaciones_index", JSON.stringify(observaciones));
 }
 
 function handleFotoObservacion(input){
@@ -13127,8 +13111,7 @@ async function cargarRecordatorios(){
 }
 async function guardarRecordatoriosIndex(){
   if(errorCargaRecordatorios){ showToast("⚠ No se guardó — no se pudo leer bien antes (revisá conexión y volvé a entrar)."); return false; }
-  try{ await window.storage.set("recordatorios_index", JSON.stringify(recordatorios), true); return true; }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); return false; }
+  return guardarClave("recordatorios_index", JSON.stringify(recordatorios));
 }
 // Regla de escalado: nunca baja sola, solo sube según cuántos días faltan para la fecha.
 function diasHastaRecordatorio(r){
@@ -13159,7 +13142,7 @@ function prepararVistaRecordatorios(){
   poblarSelectObras(document.getElementById("rec-obra"));
   const filtro = document.getElementById("rec-filtro-obra-lista");
   const actual = filtro.value;
-  filtro.innerHTML = `<option value="">Todas las obras</option>` + obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+  poblarSelectFiltroObras(filtro);
   filtro.value = actual;
   document.getElementById("rec-titulo").value = "";
   document.getElementById("rec-asunto").value = "";
@@ -13460,7 +13443,7 @@ function prepararVistaObservaciones(){
   poblarSelectObras(document.getElementById("obs-obra"));
   const filtro = document.getElementById("obs-filtro-obra");
   const actualFiltro = filtro.value;
-  filtro.innerHTML = `<option value="">Todas las obras</option>` + obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+  poblarSelectFiltroObras(filtro);
   filtro.value = actualFiltro;
   document.getElementById("obs-titulo").value = "";
   document.getElementById("obs-responsable").value = "";
@@ -13686,8 +13669,7 @@ async function cargarClimaRegistros(){
   }catch(e){ climaRegistros = []; }
 }
 async function guardarClimaRegistros(){
-  try{ await window.storage.set("clima_registros", JSON.stringify(climaRegistros), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("clima_registros", JSON.stringify(climaRegistros));
 }
 async function cargarMinutasIndex(){
   try{
@@ -13696,8 +13678,7 @@ async function cargarMinutasIndex(){
   }catch(e){ minutasIndex = []; }
 }
 async function guardarMinutasIndex(){
-  try{ await window.storage.set("minutas_index", JSON.stringify(minutasIndex), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("minutas_index", JSON.stringify(minutasIndex));
 }
 async function cargarCorrelativoMinuta(){
   try{
@@ -13728,6 +13709,12 @@ function poblarSelectObras(select){
   select.innerHTML = opcionesObra(actual);
   if(actual && obras.includes(actual)) select.value = actual;
   else if(obraPredeterminada && obrasActivas().includes(obraPredeterminada)) select.value = obraPredeterminada;
+}
+// Variante para selects de FILTRO (no de creación): siempre agrega "Todas las obras" arriba y
+// lista TODAS las obras (incluidas las finalizadas), a diferencia de poblarSelectObras/opcionesObra
+// que excluyen las finalizadas porque son para elegir la obra de un registro nuevo.
+function poblarSelectFiltroObras(select){
+  select.innerHTML = `<option value="">Todas las obras</option>` + obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
 }
 /* ---------------- Clima real (referencia) — OpenWeatherMap ----------------
    Es SOLO informativo: nunca se guarda solo, nunca reemplaza el registro manual de siempre.
@@ -13842,7 +13829,7 @@ function prepararVistaClima(){
   poblarSelectObras(document.getElementById("clima-obra"));
   const filtro = document.getElementById("clima-filtro-obra");
   const actualFiltro = filtro.value;
-  filtro.innerHTML = `<option value="">Todas las obras</option>` + obras.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+  poblarSelectFiltroObras(filtro);
   filtro.value = actualFiltro;
   document.getElementById("clima-fecha").value = hoyISO();
   document.getElementById("clima-observaciones").value = "";
@@ -17178,8 +17165,7 @@ async function cargarUsuarios(){
   if(huboMigracion) await guardarUsuarios();
 }
 async function guardarUsuarios(){
-  try{ await window.storage.set("usuarios", JSON.stringify(usuarios), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave("usuarios", JSON.stringify(usuarios));
 }
 
 function mostrarPantallaLogin(){
@@ -18955,8 +18941,7 @@ async function cargarLineasAvance(obra, planoId){
 async function guardarLineasAvance(){
   const obra = claveObraPlanoAvance();
   if(!obra || !planoActualId) return;
-  try{ await window.storage.set(`plano_avance_lineas_${obra}_${planoActualId}`, JSON.stringify(lineasAvance), true); }
-  catch(e){ showToast("No se pudo guardar el recorrido lineal (revisá conexión)"); }
+  await guardarClave(`plano_avance_lineas_${obra}_${planoActualId}`, JSON.stringify(lineasAvance), "No se pudo guardar el recorrido lineal (revisá conexión)");
 }
 let modoLineal = false;
 let lineaEnCurso = [];
@@ -19321,8 +19306,7 @@ async function finalizarCargaPlano(dataUrlEditado, nombre){
 async function guardarPlanosIndex(){
   const obra = claveObraPlanoAvance();
   if(!obra) return;
-  try{ await window.storage.set("planos_avance_index_"+obra, JSON.stringify(planosIndex), true); }
-  catch(e){ showToast("No se pudo guardar la lista de planos (revisá conexión)"); }
+  await guardarClave("planos_avance_index_"+obra, JSON.stringify(planosIndex), "No se pudo guardar la lista de planos (revisá conexión)");
 }
 // Se elimina siempre desde la tarjeta en el selector (papelera, doble toque) -- ya no existe un
 // botón de eliminar dentro del editor, para no confundirlo con "cerrar" (la "✕" del encabezado
@@ -19400,24 +19384,25 @@ async function cargarSnapshotsPlanoActual(){
 async function guardarSnapshotsPlanoActual(){
   const obra = claveObraPlanoAvance();
   if(!obra || !planoActualId) return;
-  try{ await window.storage.set(`plano_avance_snapshots_${obra}_${planoActualId}`, JSON.stringify(snapshotsPlanoActual), true); }
-  catch(e){ showToast("No se pudo guardar el snapshot (revisá conexión)"); }
+  await guardarClave(`plano_avance_snapshots_${obra}_${planoActualId}`, JSON.stringify(snapshotsPlanoActual), "No se pudo guardar el snapshot (revisá conexión)");
 }
 // Calcula el % actual de cada capa (misma lógica que usa la lista en pantalla) en una lista plana,
 // lista para guardar como snapshot.
 // Calcula el % de cada capa a partir de una lista de polígonos CUALQUIERA -- no depende de que
 // haya un plano abierto en pantalla, así se puede reusar desde Certificados sin tener que entrar
 // primero a la vista de Plano de avance.
-function calcularPorcentajesDeLista(listaPoligonos){
+// Motor común: agrupa una lista plana de piezas (polígonos de área O recorridos lineales) por
+// nombreBase/capa y calcula el % de avance de cada capa. `campo` es "area" o "longitud" según
+// cuál de los dos se esté totalizando; esLinea se deriva de ese mismo campo.
+// OJO: puede haber VARIAS piezas sueltas marcadas como "total" (sin capa) para la misma
+// actividad -- se SUMAN entre sí, no se pisa la última con la nueva. Lo mismo para las CAPAS: si
+// "Estructura" se marcó en varias piezas sueltas (ej: 15% + 5%), acá se agrupan por nombre para
+// que el resumen/leyenda muestre UNA sola línea con el % acumulado, no una repetida por pedazo.
+function calcularPorcentajesGenerico(lista, campo){
   const bases = {};
-  // OJO: puede haber VARIAS piezas sueltas (rectángulos/polígonos) marcadas como "área total"
-  // (sin capa) para la misma actividad -- se SUMAN entre sí, no se pisa la última con la nueva.
-  // Lo mismo para las CAPAS: si "Estructura" se marcó en varias piezas sueltas (ej: 15% + 5%),
-  // acá se agrupan por nombre para que el resumen/leyenda muestre UNA sola línea con el %
-  // acumulado, no una línea repetida por cada pedazo.
-  (listaPoligonos||[]).forEach(p=>{
-    if(!bases[p.nombreBase]) bases[p.nombreBase] = {areaTotal:0, capas:{}};
-    if(!p.capa) bases[p.nombreBase].areaTotal += p.area;
+  (lista||[]).forEach(p=>{
+    if(!bases[p.nombreBase]) bases[p.nombreBase] = {total:0, capas:{}};
+    if(!p.capa) bases[p.nombreBase].total += p[campo];
     else{
       if(!bases[p.nombreBase].capas[p.capa]) bases[p.nombreBase].capas[p.capa] = [];
       bases[p.nombreBase].capas[p.capa].push(p);
@@ -19426,48 +19411,35 @@ function calcularPorcentajesDeLista(listaPoligonos){
   const resultado = [];
   Object.keys(bases).forEach(nombreBase=>{
     const b = bases[nombreBase];
-    const areaTotal = b.areaTotal;
+    const total = b.total;
     Object.keys(b.capas).forEach(nombreCapa=>{
       const piezas = b.capas[nombreCapa];
       // Se suman los % YA REDONDEADOS de cada pieza (los mismos que se ven flotando en el plano
-      // y en la lista de Actividades) en vez de redondear la suma exacta de área -- para que el
-      // reporte siempre coincida con lo que el usuario ve en pantalla.
-      const pct = areaTotal>0 ? Math.min(100, piezas.reduce((s,c)=>s+Math.round((c.area/areaTotal)*100),0)) : 0;
+      // y en la lista de Actividades) en vez de redondear la suma exacta -- para que el reporte
+      // siempre coincida con lo que el usuario ve en pantalla.
+      const pct = total>0 ? Math.min(100, piezas.reduce((s,c)=>s+Math.round((c[campo]/total)*100),0)) : 0;
       // capaId: todas las piezas de una misma capa comparten el mismo id (asegurarCapaIds), así
       // que alcanza con el de la primera -- se usa para vincular un ítem de contrato a esta capa
       // de forma estable, sin depender de que el nombre siga siendo exactamente igual después.
-      resultado.push({nombreCompleto: `${nombreBase} - ${nombreCapa}`, nombreBase, capa: nombreCapa, pct, capaId: piezas[0].capaId||null});
+      const item = {nombreCompleto: `${nombreBase} - ${nombreCapa}`, nombreBase, capa: nombreCapa, pct, capaId: piezas[0].capaId||null};
+      if(campo==="longitud") item.esLinea = true;
+      resultado.push(item);
     });
   });
   return resultado;
+}
+// Calcula el % de cada capa a partir de una lista de polígonos CUALQUIERA -- no depende de que
+// haya un plano abierto en pantalla, así se puede reusar desde Certificados sin tener que entrar
+// primero a la vista de Plano de avance.
+function calcularPorcentajesDeLista(listaPoligonos){
+  return calcularPorcentajesGenerico(listaPoligonos, "area");
 }
 function calcularPorcentajesActuales(){
   return calcularPorcentajesDeLista(poligonos);
 }
-// Igual que calcularPorcentajesDeLista pero para recorridos lineales (metros en vez de área) --
-// mismo criterio de agrupar por nombreBase/capa y sumar los % ya redondeados de cada pieza. Se
-// marca esLinea:true para que el historial/reporte sepan dibujarla como recorrido, no como área.
+// Igual que calcularPorcentajesDeLista pero para recorridos lineales (metros en vez de área).
 function calcularPorcentajesLineasDeLista(listaLineas){
-  const bases = {};
-  (listaLineas||[]).forEach(l=>{
-    if(!bases[l.nombreBase]) bases[l.nombreBase] = {longitudTotal:0, capas:{}};
-    if(!l.capa) bases[l.nombreBase].longitudTotal += l.longitud;
-    else{
-      if(!bases[l.nombreBase].capas[l.capa]) bases[l.nombreBase].capas[l.capa] = [];
-      bases[l.nombreBase].capas[l.capa].push(l);
-    }
-  });
-  const resultado = [];
-  Object.keys(bases).forEach(nombreBase=>{
-    const b = bases[nombreBase];
-    const longitudTotal = b.longitudTotal;
-    Object.keys(b.capas).forEach(nombreCapa=>{
-      const piezas = b.capas[nombreCapa];
-      const pct = longitudTotal>0 ? Math.min(100, piezas.reduce((s,c)=>s+Math.round((c.longitud/longitudTotal)*100),0)) : 0;
-      resultado.push({nombreCompleto: `${nombreBase} - ${nombreCapa}`, nombreBase, capa: nombreCapa, pct, capaId: piezas[0].capaId||null, esLinea:true});
-    });
-  });
-  return resultado;
+  return calcularPorcentajesGenerico(listaLineas, "longitud");
 }
 function calcularPorcentajesLineasActuales(){
   return calcularPorcentajesLineasDeLista(lineasAvance);
@@ -20351,8 +20323,7 @@ async function cargarPinesMaestro(){
 async function guardarPinesMaestro(){
   const obra = claveObraPlanoAvance();
   if(!obra) return;
-  try{ await window.storage.set(`plano_maestro_pines_${obra}_${planoActualId}`, JSON.stringify(pinesMaestro), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave(`plano_maestro_pines_${obra}_${planoActualId}`, JSON.stringify(pinesMaestro));
 }
 function colorEstadoPinMaestro(pin){
   const pendientes = (pin.checklist||[]).filter(t=>!t.hecho);
@@ -20810,8 +20781,7 @@ async function cargarPlantillasChecklistPin(obra){
 async function guardarPlantillasChecklistPin(){
   const obra = claveObraPlanoAvance();
   if(!obra) return;
-  try{ await window.storage.set(`plano_maestro_plantillas_checklist_${obra}`, JSON.stringify(plantillasChecklistPin), true); }
-  catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+  await guardarClave(`plano_maestro_plantillas_checklist_${obra}`, JSON.stringify(plantillasChecklistPin));
 }
 function renderChecklistPin(pin){
   const cont = document.getElementById("pin-maestro-checklist");
