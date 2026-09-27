@@ -68,6 +68,12 @@
   --amarillo-borde:#E9D98A;
   --rojo-baja:#FBD5D5;
   --rojo-borde:#E58A8A;
+  --azul-claro:#E3F0FF;
+  /* Texto de las cajitas de estado (badges) sobre cada uno de los 4 fondos de arriba -- ver el
+     comentario de --texto-en-verde-claro más arriba sobre por qué el texto va aparte del fondo. */
+  --texto-en-rojo-claro:#B42318;
+  --texto-en-amarillo-claro:#7A5B00;
+  --texto-en-azul-claro:#0A4A8A;
   --feriado:#FBE3D3;
   --vacaciones:#DCEBFB;
   --enfermo:#FBD5D5;
@@ -608,7 +614,15 @@ table.trab input,table.trab select{
   font-family:inherit;width:100%;background:#fff;
 }
 .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;}
-.badge.activo{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
+/* Paleta de 4 colores de "badge" de estado (ok/error/alerta/info) compartida por todos los
+   módulos -- antes cada uno reimplementaba los mismos 4 pares fondo/texto bajo su propio prefijo
+   de clase (badge-, be-, bp-, estado-badge., badge-contrato.), acá se agrupan por color para que
+   cambiar un color se haga en un solo lugar. Los nombres de clase de cada módulo se mantienen tal
+   cual (no hace falta tocar el HTML que ya los usa), solo se comparte la declaración de color. */
+.badge.activo, .badge-si, .be-bien, .badge-presente, .estado-badge.Completo{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
+.badge-no, .be-danada, .bp-alta, .badge-ausente, .estado-badge.Pendiente, .badge-contrato.ec-porcontratar{background:var(--rojo-baja);color:var(--texto-en-rojo-claro);}
+.badge-parcial, .be-reparacion, .bp-media{background:var(--amarillo);color:var(--texto-en-amarillo-claro);}
+.be-prestada, .bp-baja, .badge-enfermo{background:var(--azul-claro);color:var(--texto-en-azul-claro);}
 .badge.baja{background:var(--rojo-baja);color:var(--texto-alerta);}
 .tiny{font-size:11px;color:var(--tinta-suave);margin-top:4px;}
 .catalogo-lista{display:flex;flex-wrap:wrap;gap:6px;}
@@ -675,9 +689,6 @@ table.trab input,table.trab select{
 .dia-entry-clima .obs{font-size:11.5px;color:var(--tinta-suave);margin-top:2px;}
 .dia-entry-clima .obra-tag{font-size:10.5px;color:var(--tinta-suave);}
 .badge-trabajo{font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;margin-top:5px;display:inline-block;}
-.badge-si{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
-.badge-no{background:#FBD5D5;color:#B42318;}
-.badge-parcial{background:#FFF6D8;color:#7A5B00;}
 .dia-quitar{margin-left:auto;border:none;background:none;color:var(--tinta-suave);font-size:14px;cursor:pointer;flex-shrink:0;}
 
 /* ---- Minutas ---- */
@@ -703,10 +714,6 @@ table.trab input,table.trab select{
 .herr-nombre{font-weight:800;font-size:13px;color:var(--verde-oscuro);}
 .herr-meta{font-size:10.5px;color:var(--tinta-suave);margin-top:2px;}
 .badge-estado-herr{font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:999px;margin-top:5px;display:inline-block;}
-.be-bien{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
-.be-danada{background:#FBD5D5;color:#B42318;}
-.be-reparacion{background:#FFF6D8;color:#7A5B00;}
-.be-prestada{background:#E3F0FF;color:#0A4A8A;}
 .botones-fila-herr{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
 .btn-mini{border:1px solid var(--borde);border-radius:7px;padding:5px 9px;font-size:10.5px;font-weight:700;background:#fff;color:var(--tinta);cursor:pointer;}
 .btn-mini.peligro{border-color:#B42318;color:var(--texto-alerta);}
@@ -761,9 +768,6 @@ table.trab input,table.trab select{
 .obs-meta{font-size:10.5px;color:var(--tinta-suave);margin-top:2px;}
 .obs-desc{font-size:11px;color:var(--tinta-suave);margin-top:6px;}
 .badge-prior{font-size:9px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap;}
-.bp-alta{background:#FBD5D5;color:#B42318;}
-.bp-media{background:#FFF6D8;color:#7A5B00;}
-.bp-baja{background:#E3F0FF;color:#0A4A8A;}
 .estado-track{display:flex;align-items:flex-start;gap:4px;margin-top:10px;}
 
 /* ---- Informes de Asistencia ---- */
@@ -810,9 +814,6 @@ table.tabla-asist td{padding:8px 4px;border-bottom:1px solid var(--fondo);}
 .fila-preview-asist{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--fondo);font-size:12px;}
 .fila-preview-asist:last-child{border-bottom:none;}
 .badge-p{font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap;}
-.badge-presente{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
-.badge-ausente{background:#FBD5D5;color:#B42318;}
-.badge-enfermo{background:#E3F0FF;color:#0A4A8A;}
 .botones-preview-asist{display:flex;gap:8px;margin-top:10px;}
 .botones-preview-asist button{flex:1;padding:10px;border-radius:8px;font-weight:700;font-size:12.5px;border:none;cursor:pointer;}
 .btn-cancelar-asist{background:var(--fondo);color:var(--tinta);}
@@ -1172,9 +1173,7 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
 .adjunto-chip button{border:none;background:rgba(0,0,0,.08);width:18px;height:18px;border-radius:50%;font-size:10px;cursor:pointer;}
 
 .estado-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;}
-.estado-badge.Pendiente{background:#FBD5D5;color:#B42318;}
 .estado-badge.Parcial{background:#FFF3CD;color:#7A5A00;}
-.estado-badge.Completo{background:var(--verde-claro);color:var(--texto-en-verde-claro);}
 
 .pedido-card{
   background:#fff;border:1px solid var(--borde);border-left:5px solid var(--tinta-suave);border-radius:16px;padding:14px 16px;margin-bottom:12px;
@@ -1204,7 +1203,6 @@ body.nav-abajo.barra-dock .ico-3d-png{width:24px;height:24px;}
 .ped-step-linea{position:absolute;top:9px;left:50%;width:100%;height:2px;background:var(--borde);z-index:0;}
 .ped-step-linea.ok{background:var(--verde);}
 .badge-contrato{font-size:9.5px;font-weight:800;padding:3px 9px;border-radius:999px;display:inline-block;margin-top:6px;}
-.badge-contrato.ec-porcontratar{background:#FBD5D5;color:#B42318;}
 .badge-contrato.ec-contratado{background:#DCE4F7;color:#1D6FE0;}
 .badge-contrato.ec-ejecucion{background:#FBE3D3;color:#B45309;}
 .pedido-card .ped-faltantes{margin-top:7px;padding-top:6px;border-top:1px dashed var(--borde);}
@@ -5177,7 +5175,7 @@ function renderMemoriaNexoConfig(){
   }
   cont.innerHTML = memoriaNexo.map((m,i)=>`
     <div class="entrega-fila">
-      <div class="ef-info"><div class="ef-desc">${esc(m.texto)}</div><div class="ef-meta">Guardado el ${new Date(m.fecha+"T00:00:00").toLocaleDateString("es-AR")}</div></div>
+      <div class="ef-info"><div class="ef-desc">${esc(m.texto)}</div><div class="ef-meta">Guardado el ${fechaAR(m.fecha)}</div></div>
       <button class="btn btn-outline btn-sm" onclick="nexoBorrarMemoria(${i})">🗑</button>
     </div>
   `).join("") + `<button class="btn btn-outline btn-sm" style="width:100%;margin-top:10px;color:#B42318;border-color:#FBD5D5;" onclick="nexoBorrarTodaMemoria()">Borrar toda la memoria</button>`;
@@ -5476,7 +5474,7 @@ function claseCodigo(val){
 function esBajaVigente(t){ return t.estado==="Baja"; }
 function notaBaja(t){
   if(!esBajaVigente(t)) return "";
-  let f = t.fechaBaja ? new Date(t.fechaBaja+"T00:00:00").toLocaleDateString("es-AR") : "";
+  let f = t.fechaBaja ? fechaAR(t.fechaBaja) : "";
   return "BAJA"+(f?" - "+f:"")+(t.obs?" - "+t.obs:"");
 }
 function totalHorasRango(dias, desde, hasta){
@@ -5715,6 +5713,10 @@ function cambiarQuincena(q){
 /* ---------------- Vista por día ---------------- */
 function pad2(n){ return String(n).padStart(2,"0"); }
 function hoyISO(){ const d=new Date(); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); }
+// Convierte una fecha ISO (YYYY-MM-DD) a formato es-AR (DD/MM/YYYY) para mostrar en pantalla/PDF.
+// El "T00:00:00" es a propósito: sin hora, el navegador interpreta la fecha en UTC y puede mostrar
+// el día anterior según la zona horaria local -- forzando medianoche LOCAL se evita ese corrimiento.
+function fechaAR(iso){ return iso ? new Date(iso+"T00:00:00").toLocaleDateString("es-AR") : ""; }
 
 async function onCambioDia(){
   const val = document.getElementById("sel-dia").value;
@@ -6058,6 +6060,21 @@ async function renderInformesAsistencia(){
     </tr>`;
   }).join("") || `<tr><td colspan="3" class="empty-msg">No hay datos cargados este mes todavía.</td></tr>`;
 }
+// Encabezado corporativo compartido por todos los reportes en PDF: logo + título, en una tabla
+// de ancho fijo (reportes verticales, "700") o 100% (reportes horizontales tipo A1/Presupuesto).
+function construirEncabezadoReportePDF(titulo, ancho){
+  return `<table class="rc-header-tabla" width="${ancho||"700"}" cellspacing="0" cellpadding="0"><tr>
+      <td class="rc-titulo-corp">${titulo}</td>
+      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
+    </tr></table>`;
+}
+// Fila de "cajitas" de resumen numérico (N total, N abiertas, etc.) que encabeza casi todos los
+// reportes en PDF. `stats` es un array de {num, label, estilo?} -- uno por cajita.
+function construirFilaStatsReporte(stats, ancho, margin){
+  const estiloMargin = margin ? ` style="margin:${margin};"` : "";
+  const celdas = stats.map(s=>`<td class="rgp-stat-box"><div class="rgp-stat-num"${s.estilo?` style="${s.estilo}"`:""}>${s.num}</div><div class="rgp-stat-label">${s.label}</div></td>`).join("");
+  return `<table class="rgp-stats" width="${ancho||"700"}" cellspacing="0" cellpadding="0"${estiloMargin}><tr>${celdas}</tr></table>`;
+}
 function generarReporteAsistenciaPDF(){
   const mes = mesActual;
   const stats = calcularStatsAsistenciaMes(mes);
@@ -6070,19 +6087,16 @@ function generarReporteAsistenciaPDF(){
     <td>${f.pct===null?"—":f.pct+"%"}</td>
   </tr>`).join("");
   const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;min-height:990px;box-sizing:border-box;">
-    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">INFORME DE ASISTENCIA — ${esc(nombreMes.toUpperCase())}</td>
-      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
-    </tr></table>
+    ${construirEncabezadoReportePDF(`INFORME DE ASISTENCIA — ${esc(nombreMes.toUpperCase())}`)}
     <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${stats.diasTrabajados} días trabajados en la obra</div>
 
-    <table class="rgp-stats" width="700" cellspacing="0" cellpadding="0" style="margin:16px 0;"><tr>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${stats.pctGeneral}%</div><div class="rgp-stat-label">Asistencia general</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${stats.totalAusente}</div><div class="rgp-stat-label">Ausencias reales</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${stats.totalEnfermo}</div><div class="rgp-stat-label">Enfermos</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${stats.totalJustificado}</div><div class="rgp-stat-label">Justificadas</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${stats.totalOtraObra}</div><div class="rgp-stat-label">Otra obra</div></td>
-    </tr></table>
+    ${construirFilaStatsReporte([
+      {num:`${stats.pctGeneral}%`, label:"Asistencia general"},
+      {num:stats.totalAusente, label:"Ausencias reales"},
+      {num:stats.totalEnfermo, label:"Enfermos"},
+      {num:stats.totalJustificado, label:"Justificadas"},
+      {num:stats.totalOtraObra, label:"Otra obra"},
+    ])}
 
     <div style="margin:20px 0 8px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Por trabajador</div>
     <table class="trab" width="700" cellspacing="0" cellpadding="0" style="font-size:11.5px;">
@@ -6389,7 +6403,7 @@ async function renderVistaPendientesObra(){
             <span class="estado-badge ${p.estado}">${p.estado}</span>
           </div>
           ${badgeContratacionHtml(p)}
-          <div class="ped-meta">${esc(p.rubro)} · ${p.fecha ? new Date(p.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}</div>
+          <div class="ped-meta">${esc(p.rubro)} · ${p.fecha ? fechaAR(p.fecha) : ""}</div>
           <div class="ped-faltantes" id="faltantes-obra-${p.id}"><span class="tiny">Calculando materiales faltantes…</span></div>
         </div>
       `).join("")}
@@ -6501,10 +6515,7 @@ async function generarReporteRecibidosPDF(){
     <td>N° ${[...m.pedidos].sort((a,b)=>a-b).map(n=>numeroFormateado(n)).join(", ")}</td>
   </tr>`).join("");
   const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;min-height:990px;box-sizing:border-box;">
-    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">MATERIALES RECIBIDOS${obraSel ? " — "+esc(obraSel) : ""}</td>
-      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
-    </tr></table>
+    ${construirEncabezadoReportePDF(`MATERIALES RECIBIDOS${obraSel ? " — "+esc(obraSel) : ""}`)}
     <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${periodo==="mes"?"Este mes":"Todo el histórico"} &nbsp;&nbsp;&nbsp; ${obraSel?esc(obraSel):"Todas las obras"}</div>
     <div style="margin:20px 0 8px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Detalle por material</div>
     <table class="trab" width="700" cellspacing="0" cellpadding="0" style="font-size:11.5px;">
@@ -7949,46 +7960,53 @@ function handleAdjuntos(input){
   });
   input.value = "";
 }
+// Motor común de las 4 funciones de compresión de imágenes de la app (miniaturas de lista, fotos
+// de remitos/observaciones, planos de avance) -- todas hacían el mismo cálculo de aspect-ratio y
+// dibujo en canvas a mano, solo cambiaba si el origen era un File/dataUrl/Image ya cargada, si
+// devolvían por callback o por Promise, y el maxDim/calidad por defecto de cada una.
+// Redimensiona una imagen ya cargada a un canvas, sin superar maxDim de lado más largo.
+function escalarImagenACanvas(img, maxDim){
+  let w = img.width, h = img.height;
+  if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
+  else if(h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+  return canvas;
+}
+// Carga un File o un dataUrl como un <img> ya listo para dibujar en un canvas.
+function cargarComoImagen(fileODataUrl){
+  return new Promise((resolve, reject)=>{
+    const cargar = (src)=>{
+      const img = new Image();
+      img.onload = ()=>resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    };
+    if(typeof fileODataUrl === "string") cargar(fileODataUrl);
+    else{
+      const reader = new FileReader();
+      reader.onload = (e)=>cargar(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(fileODataUrl);
+    }
+  });
+}
 // Para miniaturas de lista (Herramientas, Observaciones) -- se ven a 50-60px en pantalla, no hace
 // falta guardarlas a 1000px como una foto de remito. Comprimirlas mucho más chico es la diferencia
 // entre que 17 herramientas con foto quepan cómodas en un documento de Firestore, o que se pase
 // del límite de 1MB por documento (que es justo lo que pasó).
 function comprimirImagenMiniatura(file, callback){
-  const reader = new FileReader();
-  reader.onload = (e)=>{
-    const img = new Image();
-    img.onload = ()=>{
-      const maxDim = 220;
-      let w = img.width, h = img.height;
-      if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
-      else if(h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d").drawImage(img,0,0,w,h);
-      callback(canvas.toDataURL("image/jpeg", 0.55));
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
+  cargarComoImagen(file).then(img=>{
+    callback(escalarImagenACanvas(img, 220).toDataURL("image/jpeg", 0.55));
+  });
 }
 function comprimirImagen(file, callback, maxDim, calidad){
   maxDim = maxDim || 1000;
   calidad = calidad || 0.72;
-  const reader = new FileReader();
-  reader.onload = (e)=>{
-    const img = new Image();
-    img.onload = ()=>{
-      let w = img.width, h = img.height;
-      if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
-      else if(h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d").drawImage(img,0,0,w,h);
-      callback(canvas.toDataURL("image/jpeg", calidad));
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
+  cargarComoImagen(file).then(img=>{
+    callback(escalarImagenACanvas(img, maxDim).toDataURL("image/jpeg", calidad));
+  });
 }
 function renderAdjuntosLista(){
   document.getElementById("np-adjuntos-lista").innerHTML = npAdjuntos.map((a,i)=>`
@@ -8190,7 +8208,7 @@ async function renderListaPedidos(){
         <span class="estado-badge ${p.estado}">${p.estado}</span>
       </div>
       ${badgeContratacionHtml(p)}
-      <div class="ped-meta">${esc(p.obra)} · ${esc(p.rubro)} · ${p.fecha ? new Date(p.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}</div>
+      <div class="ped-meta">${esc(p.obra)} · ${esc(p.rubro)} · ${p.fecha ? fechaAR(p.fecha) : ""}</div>
       ${stepperPedidoHtml(p.estado)}
       <div class="ped-faltantes" id="faltantes-${p.id}">${p.estado==="Completo" ? "" : `<span class="tiny">Calculando faltantes…</span>`}</div>
     </div>
@@ -8327,7 +8345,7 @@ function construirHtmlReporteGeneralPendientes(secciones, contrataciones){
         <td class="rgp-material">${esc(f.desc)}</td>
         <td class="rgp-falta">${f.falta}</td>
         <td class="rgp-un">${esc(f.un||"")}</td>
-        <td class="rgp-fecha">${esPrimera && pedido.ingreso.fecha ? new Date(pedido.ingreso.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}</td>
+        <td class="rgp-fecha">${esPrimera && pedido.ingreso.fecha ? fechaAR(pedido.ingreso.fecha) : ""}</td>
       </tr>`).join("");
 
     const encabezado = esPrimeraHoja ? `
@@ -8337,20 +8355,11 @@ function construirHtmlReporteGeneralPendientes(secciones, contrataciones){
           <div class="rgp-sub">Generado el ${new Date().toLocaleDateString("es-AR")} · Gestión de Obra${totalPaginas>1?` · Hoja 1 de ${totalPaginas}`:""}</div>
         </td>
       </tr></table>
-      <table class="rgp-stats" width="${anchoTabla}" cellspacing="0" cellpadding="0"><tr>
-        <td class="rgp-stat-box">
-          <div class="rgp-stat-num">${secciones.length}</div>
-          <div class="rgp-stat-label">Pedido${secciones.length>1?"s":""} con faltantes</div>
-        </td>
-        <td class="rgp-stat-box">
-          <div class="rgp-stat-num">${totalItems}</div>
-          <div class="rgp-stat-label">Material${totalItems>1?"es":""} pendiente${totalItems>1?"s":""}</div>
-        </td>
-        <td class="rgp-stat-box">
-          <div class="rgp-stat-num">${obrasAfectadas.length}</div>
-          <div class="rgp-stat-label">Obra${obrasAfectadas.length>1?"s":""} afectada${obrasAfectadas.length>1?"s":""}</div>
-        </td>
-      </tr></table>
+      ${construirFilaStatsReporte([
+        {num:secciones.length, label:`Pedido${secciones.length>1?"s":""} con faltantes`},
+        {num:totalItems, label:`Material${totalItems>1?"es":""} pendiente${totalItems>1?"s":""}`},
+        {num:obrasAfectadas.length, label:`Obra${obrasAfectadas.length>1?"s":""} afectada${obrasAfectadas.length>1?"s":""}`},
+      ], anchoTabla)}
     ` : `
       <table class="rgp-header" width="${anchoTabla}" cellspacing="0" cellpadding="0"><tr>
         <td>
@@ -8387,7 +8396,7 @@ function construirHtmlContratacionesPendientes(contrataciones, anchoTabla, esUni
       <td class="rgp-obra">${esc(pedido.obra)}</td>
       <td class="rgp-material">${esc(pedido.rubro)}</td>
       <td class="rgp-un" style="text-align:left;">${esc(info.txt)}</td>
-      <td class="rgp-fecha">${pedido.ingreso && pedido.ingreso.fecha ? new Date(pedido.ingreso.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}</td>
+      <td class="rgp-fecha">${pedido.ingreso && pedido.ingreso.fecha ? fechaAR(pedido.ingreso.fecha) : ""}</td>
     </tr>`;
   }).join("");
   return `<div class="print-page rgp-page" style="width:${anchoTabla}px;">
@@ -8539,11 +8548,11 @@ function renderDetallePedido(pedido){
     <div class="row-flex" style="justify-content:space-between;align-items:center;margin-bottom:10px;">
       <div>
         <div style="font-weight:800;font-size:16px;color:var(--verde-oscuro);">Pedido N° ${numeroFormateado(pedido.numero)}</div>
-        <div class="tiny">${esc(pedido.obra)} · ${esc(pedido.rubro)} · ${pedido.fecha ? new Date(pedido.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}</div>
+        <div class="tiny">${esc(pedido.obra)} · ${esc(pedido.rubro)} · ${pedido.fecha ? fechaAR(pedido.fecha) : ""}</div>
       </div>
       <span class="estado-badge ${calcularEstadoPedido(pedido)}">${calcularEstadoPedido(pedido)}</span>
     </div>
-    <p class="tiny">Resp. recepción: <b>${esc(pedido.respRecepcion||"—")}</b> · Ingreso a obra: <b>${abcTexto}</b>${pedido.ingreso.fecha ? " ("+new Date(pedido.ingreso.fecha+"T00:00:00").toLocaleDateString("es-AR")+")" : ""}</p>
+    <p class="tiny">Resp. recepción: <b>${esc(pedido.respRecepcion||"—")}</b> · Ingreso a obra: <b>${abcTexto}</b>${pedido.ingreso.fecha ? " ("+fechaAR(pedido.ingreso.fecha)+")" : ""}</p>
     ${pedido.proveedor ? `<p class="tiny">Proveedor sugerido: <b>${esc(pedido.proveedor)}</b></p>` : ""}
     ${pedido.observaciones ? `<p class="tiny">Observaciones: ${esc(pedido.observaciones)}</p>` : ""}
     ${pedido.adjuntos && pedido.adjuntos.length ? `<div class="catalogo-lista" style="margin:8px 0;">${pedido.adjuntos.map(a=>
@@ -8863,7 +8872,7 @@ async function eliminarPedido(){
 
 /* ---------------- PDF de la orden de pedido (formato oficial) ---------------- */
 function construirHtmlPedido(pedido){
-  const fechaFmt = pedido.fecha ? new Date(pedido.fecha+"T00:00:00").toLocaleDateString("es-AR") : "";
+  const fechaFmt = pedido.fecha ? fechaAR(pedido.fecha) : "";
   const fechaIngFmt = pedido.ingreso.fecha ? new Date(pedido.ingreso.fecha+"T00:00:00") : null;
   const fechaIngTexto = fechaIngFmt
     ? (DIAS_ES[fechaIngFmt.getDay()]+", "+pad2(fechaIngFmt.getDate())+"-"+["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"][fechaIngFmt.getMonth()]+"-"+String(fechaIngFmt.getFullYear()).slice(2))
@@ -8980,7 +8989,7 @@ function construirHtmlPendientes(pedido){
     </tr>
   `).join("");
   const anchoTabla = 24+320+60+70+70+50;
-  const fechaFmt = pedido.fecha ? new Date(pedido.fecha+"T00:00:00").toLocaleDateString("es-AR") : "";
+  const fechaFmt = pedido.fecha ? fechaAR(pedido.fecha) : "";
   return `<div class="print-page op-page" style="width:${anchoTabla}px;">
     <table class="op-form" width="${anchoTabla}" style="width:${anchoTabla}px;" cellspacing="0" cellpadding="0">
       <tr>
@@ -9075,7 +9084,7 @@ function avisosDeHoy(){
   const pedidosVencidos = detectoresOn.pedidosVencidos===false ? [] : pedidosIndex.filter(p=>p.ingresoFecha && p.ingresoFecha<=hoyStr && (p.estado==="Pendiente"||p.estado==="Parcial") && (obraVisible(p.obra)));
   pedidosVencidos.slice(0,3).forEach(p=>{
     hoy.push({ico:"📦", texto:`Pedido N° ${numeroFormateado(p.numero)} — recepción vencida`,
-      detalle:`${p.obra} · esperado el ${new Date(p.ingresoFecha+"T00:00:00").toLocaleDateString("es-AR")}`,
+      detalle:`${p.obra} · esperado el ${fechaAR(p.ingresoFecha)}`,
       onclick:`irA('pedidos'); cambiarVistaPedidos('lista');`});
   });
   const obsCriticas = detectoresOn.observaciones===false ? [] : (typeof observaciones!=="undefined" ? observaciones : []).filter(o=>o.prioridad==="alta" && o.estado!=="resuelto" && (obraVisible(o.obra)));
@@ -9087,7 +9096,7 @@ function avisosDeHoy(){
   const recUrgentes = detectoresOn.recordatorios===false ? [] : (typeof recordatorios!=="undefined" ? recordatorios : []).filter(r=>r.estado==="pendiente" && prioridadEfectivaRecordatorio(r)==="alta" && (obraVisible(r.obra)));
   recUrgentes.slice(0,2).forEach(r=>{
     hoy.push({ico:"📌", texto:r.titulo,
-      detalle:`${r.obra}${r.fecha?" · "+(diasHastaRecordatorio(r)<0?"venció el ":"vence el ")+new Date(r.fecha+"T00:00:00").toLocaleDateString("es-AR"):""} · recordatorio urgente`,
+      detalle:`${r.obra}${r.fecha?" · "+(diasHastaRecordatorio(r)<0?"venció el ":"vence el ")+fechaAR(r.fecha):""} · recordatorio urgente`,
       onclick:`irA('observaciones'); cambiarVistaPendientes('recordatorios');`});
   });
   const herrAtrasadasDash = detectoresOn.herramientas===false ? [] : herramientas.filter(h=>(obraVisible(h.obra)) && h.estado==="prestada" && h.prestamo && h.prestamo.fechaEntrega && h.prestamo.fechaEntrega<hoyStr && !h.prestamo.fechaRecepcion);
@@ -9155,7 +9164,7 @@ function mostrarDetalleHerramientasPrestadas(){
       return `<div class="entrega-fila">
         <div class="ef-info">
           <div class="ef-desc">${esc(h.nombre)}</div>
-          <div class="ef-meta">${p.tipo==="persona"?"🧑":"🏗️"} ${esc(destino||"(sin destino)")} · desde ${p.fechaEnvio?new Date(p.fechaEnvio+"T00:00:00").toLocaleDateString("es-AR"):"-"}</div>
+          <div class="ef-meta">${p.tipo==="persona"?"🧑":"🏗️"} ${esc(destino||"(sin destino)")} · desde ${p.fechaEnvio?fechaAR(p.fechaEnvio):"-"}</div>
         </div>
       </div>`;
     }).join("")}
@@ -9941,7 +9950,7 @@ function renderDetalleRendicion(rendicion){
     <div class="entrega-fila">
       <div class="ef-info">
         <div class="ef-desc">${esc(g.tipoCosto||"(sin tipo)")} — ${esc(g.observaciones||"")}</div>
-        <div class="ef-meta">${g.fecha?new Date(g.fecha+"T00:00:00").toLocaleDateString("es-AR"):""} · Ticket ${esc(g.ticket||"-")} · ${esc(g.centroCosto||"")}</div>
+        <div class="ef-meta">${g.fecha?fechaAR(g.fecha):""} · Ticket ${esc(g.ticket||"-")} · ${esc(g.centroCosto||"")}</div>
       </div>
       <div style="font-weight:800;">${formatoMoneda(g.monto)}</div>
     </div>
@@ -10022,7 +10031,7 @@ function construirHtmlRendicion(rendicion){
     const g = rendicion.gastos[i];
     if(g){
       filasLedger += `<tr>
-        <td class="dato-fecha">${g.fecha?new Date(g.fecha+"T00:00:00").toLocaleDateString("es-AR"):""}</td>
+        <td class="dato-fecha">${g.fecha?fechaAR(g.fecha):""}</td>
         <td class="dato-txt">${esc(g.ticket||"")}</td>
         <td class="dato-txt">${esc(g.tipoCosto||"")}</td>
         <td class="dato-txt">${esc(g.observaciones||"")}</td>
@@ -10061,10 +10070,7 @@ function construirHtmlRendicion(rendicion){
     `<tr><td>${esc(k)}</td><td class="monto">${formatoMoneda(desglose[k])}</td></tr>`
   ).join("");
   return `<div class="print-page rc-page">
-    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">RENDICION DE CAJA CHICA Y GASTOS</td>
-      <td width="140" align="right"><img src="data:image/png;base64,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"></td>
-    </tr></table>
+    ${construirEncabezadoReportePDF(`RENDICION DE CAJA CHICA Y GASTOS`)}
     <div class="rc-semana-row">Semana: ${esc(rendicion.semana||"")} &nbsp;&nbsp;&nbsp; obra &nbsp;&nbsp; ${esc(rendicion.obra)} &nbsp;&nbsp;&nbsp; N° ${numeroFormateado(rendicion.numero)}</div>
     <table class="rc-form" width="700" cellspacing="0" cellpadding="0">
       <tr>
@@ -10525,7 +10531,7 @@ function renderDetalleContratista(c){
     <div class="entrega-fila">
       <div class="ef-info">
         <div class="ef-desc">${esc(cert.nombre || ("CERTIFICADO "+cert.numero))}</div>
-        <div class="ef-meta">${cert.fecha ? new Date(cert.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""} · Período: ${formatoMoneda(cert.totalPeriodo)} · Acumulado: ${formatoMoneda(cert.totalAcumulado)}</div>
+        <div class="ef-meta">${cert.fecha ? fechaAR(cert.fecha) : ""} · Período: ${formatoMoneda(cert.totalPeriodo)} · Acumulado: ${formatoMoneda(cert.totalAcumulado)}</div>
         ${cert.anotacion ? `<div class="ef-anotacion">📝 "${esc(cert.anotacion)}"</div>` : ""}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;justify-content:flex-end;">
@@ -11243,7 +11249,7 @@ function construirHtmlCertificado(c, certIndex){
     <table class="cert-header" width="${anchoTabla}" cellspacing="0" cellpadding="0"><tr>
       <td>
         <div class="cert-titulo">${esc(cert.nombre || ("CERTIFICADO "+cert.numero))} — ${esc(c.nombre)}</div>
-        <div class="cert-sub">${esc(c.obra)} · ${cert.fecha ? new Date(cert.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""} · Hoja de certificado</div>
+        <div class="cert-sub">${esc(c.obra)} · ${cert.fecha ? fechaAR(cert.fecha) : ""} · Hoja de certificado</div>
       </td>
     </tr></table>
 
@@ -11288,7 +11294,7 @@ function construirHtmlResumenContratista(c){
   const filasResumen = r.certs.map(cert=>`
     <tr>
       <td width="${CWR[0]}">${esc(cert.nombre || ("CERTIFICADO "+cert.numero))}</td>
-      <td width="${CWR[1]}">${cert.fecha ? new Date(cert.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}</td>
+      <td width="${CWR[1]}">${cert.fecha ? fechaAR(cert.fecha) : ""}</td>
       <td width="${CWR[2]}">${pctTexto(c.montoContrato>0 ? (cert.totalAcumulado+(c.anticipoMonto||0))/c.montoContrato : 0)}</td>
       <td width="${CWR[3]}">${formatoMoneda(cert.totalAcumulado)}</td>
       <td width="${CWR[4]}">${formatoMoneda(cert.totalPeriodo)}</td>
@@ -12287,7 +12293,7 @@ function renderListaRemitos(){
     <div class="minuta-item">
       <div class="info">
         <div class="num">Remito N° ${r.numero}</div>
-        <div class="sub">${esc(r.obra)} · ${r.fecha ? new Date(r.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}</div>
+        <div class="sub">${esc(r.obra)} · ${r.fecha ? fechaAR(r.fecha) : ""}</div>
       </div>
       <div class="botones">
         <button type="button" class="btn btn-outline btn-sm" onclick="verRemitoPDF('${r.id}')">🖨 Ver PDF</button>
@@ -12336,21 +12342,7 @@ async function cargarHerramientas(){
 }
 // Recomprime una foto ya guardada (grande, de antes de este arreglo) a tamaño de miniatura.
 function recomprimirDataUrlAMiniatura(dataUrl){
-  return new Promise((resolve, reject)=>{
-    const img = new Image();
-    img.onload = ()=>{
-      const maxDim = 220;
-      let w = img.width, h = img.height;
-      if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
-      else if(h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
-      const canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d").drawImage(img,0,0,w,h);
-      resolve(canvas.toDataURL("image/jpeg", 0.55));
-    };
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
+  return cargarComoImagen(dataUrl).then(img=>escalarImagenACanvas(img, 220).toDataURL("image/jpeg", 0.55));
 }
 // Se corre una sola vez por sesión, al entrar a Herramientas -- si encuentra fotos viejas y
 // pesadas (de antes de que existiera comprimirImagenMiniatura), las achica y regraba el índice.
@@ -12484,10 +12476,10 @@ function renderInventarioHerramientas(){
   document.getElementById("lista-herramientas").innerHTML = filtradas.map(h=>{
     const info = HERR_ESTADOS_INFO[h.estado] || HERR_ESTADOS_INFO.bien;
     let metaExtra = "";
-    if(h.estado==="reparacion" && h.reparacion) metaExtra = ` — enviada ${h.reparacion.fechaEnvio?new Date(h.reparacion.fechaEnvio+"T00:00:00").toLocaleDateString("es-AR"):""}`;
+    if(h.estado==="reparacion" && h.reparacion) metaExtra = ` — enviada ${h.reparacion.fechaEnvio?fechaAR(h.reparacion.fechaEnvio):""}`;
     if(h.estado==="prestada" && h.prestamo){
       const destino = h.prestamo.tipo==="persona" ? esc(h.prestamo.persona||"(sin nombre)") : esc(h.prestamo.obraDestino);
-      metaExtra = ` — a ${destino}${h.prestamo.fechaEnvio?" desde "+new Date(h.prestamo.fechaEnvio+"T00:00:00").toLocaleDateString("es-AR"):""}`;
+      metaExtra = ` — a ${destino}${h.prestamo.fechaEnvio?" desde "+fechaAR(h.prestamo.fechaEnvio):""}`;
       const vencido = h.prestamo.fechaEntrega && h.prestamo.fechaEntrega<hoyISO();
       if(vencido){
         const diasAtraso = Math.floor((new Date(hoyISO())-new Date(h.prestamo.fechaEntrega+"T00:00:00"))/86400000);
@@ -12499,7 +12491,7 @@ function renderInventarioHerramientas(){
       ${h.foto ? `<img class="herr-foto" src="${h.foto}">` : `<div class="herr-foto"></div>`}
       <div class="herr-info">
         <div class="herr-nombre">${esc(h.nombre)} ${h.cantidad>1?`(x${h.cantidad})`:""}</div>
-        <div class="herr-meta">${esc(h.obra)} · ${h.condicionInicial==="nueva"?"Nueva":"Usada"} · Compra: ${h.fechaCompra?new Date(h.fechaCompra+"T00:00:00").toLocaleDateString("es-AR"):"—"}</div>
+        <div class="herr-meta">${esc(h.obra)} · ${h.condicionInicial==="nueva"?"Nueva":"Usada"} · Compra: ${h.fechaCompra?fechaAR(h.fechaCompra):"—"}</div>
         <span class="badge-estado-herr ${info.clase}">${info.txt}${metaExtra}</span>
         ${obsHtml}
         <div class="botones-fila-herr">
@@ -12629,7 +12621,7 @@ function abrirHistorialHerramienta(id){
       return `<div class="entrega-fila">
         <div class="ef-info">
           <div class="ef-desc">${p.tipo==="persona"?"🧑":"🏗️"} ${esc(p.tipo==="persona"?p.persona:p.obraDestino)}</div>
-          <div class="ef-meta">Enviada ${p.fechaEnvio?new Date(p.fechaEnvio+"T00:00:00").toLocaleDateString("es-AR"):"-"} · Devuelta ${p.fechaRecepcion?new Date(p.fechaRecepcion+"T00:00:00").toLocaleDateString("es-AR"):"-"}${tarde?` <span style="color:var(--texto-alerta);font-weight:800;">⏰ tarde</span>`:""}</div>
+          <div class="ef-meta">Enviada ${p.fechaEnvio?fechaAR(p.fechaEnvio):"-"} · Devuelta ${p.fechaRecepcion?fechaAR(p.fechaRecepcion):"-"}${tarde?` <span style="color:var(--texto-alerta);font-weight:800;">⏰ tarde</span>`:""}</div>
         </div>
       </div>`;
     }).join("")}
@@ -12697,31 +12689,28 @@ function generarReporteHerramientasPDF(){
     const filaPrincipal = `<tr>
       <td>${esc(h.nombre)}</td><td>${h.cantidad}</td><td>${esc(h.obra)}</td>
       <td>${info.txt.replace(/^\S+\s/,"")}</td>
-      <td>${h.fechaCompra?new Date(h.fechaCompra+"T00:00:00").toLocaleDateString("es-AR"):""}</td>
-      <td>${h.fechaIngresoObra?new Date(h.fechaIngresoObra+"T00:00:00").toLocaleDateString("es-AR"):""}</td>
+      <td>${h.fechaCompra?fechaAR(h.fechaCompra):""}</td>
+      <td>${h.fechaIngresoObra?fechaAR(h.fechaIngresoObra):""}</td>
     </tr>`;
     // Si tiene observaciones cargadas, van en una fila aparte debajo -- para no forzar una 7ma
     // columna angosta en una tabla que ya tiene 6, más fácil de leer así.
     const obs = h.observaciones || [];
     const filaObs = obs.length>0 ? `<tr><td colspan="6" style="padding:2px 8px 10px 16px;font-size:10px;color:#4B5563;background:#F9FAFB;border-bottom:1px solid #E5E7EB;">
-      ${obs.map(o=>`💬 ${esc(o.texto)} <span style="color:#9CA3AF;">(${o.fecha?new Date(o.fecha+"T00:00:00").toLocaleDateString("es-AR"):""}${o.usuario?" · "+esc(o.usuario):""})</span>`).join("<br>")}
+      ${obs.map(o=>`💬 ${esc(o.texto)} <span style="color:#9CA3AF;">(${o.fecha?fechaAR(o.fecha):""}${o.usuario?" · "+esc(o.usuario):""})</span>`).join("<br>")}
     </td></tr>` : "";
     return filaPrincipal + filaObs;
   }).join("");
   const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;min-height:990px;box-sizing:border-box;">
-    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">INVENTARIO DE HERRAMIENTAS${obraSel ? " — "+esc(obraSel) : ""}</td>
-      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
-    </tr></table>
+    ${construirEncabezadoReportePDF(`INVENTARIO DE HERRAMIENTAS${obraSel ? " — "+esc(obraSel) : ""}`)}
     <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"}</div>
 
-    <table class="rgp-stats" width="700" cellspacing="0" cellpadding="0" style="margin:16px 0;"><tr>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${filtradas.length}</div><div class="rgp-stat-label">Total</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${enUso}</div><div class="rgp-stat-label">En uso</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${danadas}</div><div class="rgp-stat-label">Dañadas</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${enReparacion}</div><div class="rgp-stat-label">En reparación</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${prestadas}</div><div class="rgp-stat-label">Prestadas</div></td>
-    </tr></table>
+    ${construirFilaStatsReporte([
+      {num:filtradas.length, label:"Total"},
+      {num:enUso, label:"En uso"},
+      {num:danadas, label:"Dañadas"},
+      {num:enReparacion, label:"En reparación"},
+      {num:prestadas, label:"Prestadas"},
+    ])}
 
     <div style="margin:20px 0 8px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Detalle</div>
     <table class="trab" width="700" cellspacing="0" cellpadding="0" style="font-size:11.5px;">
@@ -13238,7 +13227,7 @@ function renderListaRecordatorios(){
     let fechaTxt = "";
     if(r.fecha && r.estado!=="hecho"){
       const dias = diasHastaRecordatorio(r);
-      fechaTxt = (dias<0?"venció el ":"vence el ") + new Date(r.fecha+"T00:00:00").toLocaleDateString("es-AR");
+      fechaTxt = (dias<0?"venció el ":"vence el ") + fechaAR(r.fecha);
     }
     return `<div class="rec-item ${efectiva}">
       <div class="rec-top">
@@ -13587,21 +13576,18 @@ function generarReporteObservacionesPDF(){
   const filas = filtradas.map(o=>`<tr>
       <td>${esc(o.titulo)}</td><td>${esc(o.obra)}</td><td>${esc(o.responsable||"")}</td>
       <td>${badgeTxt[o.prioridad]||""}</td><td>${OBS_ESTADO_TXT[o.estado]||o.estado}</td>
-      <td>${o.fecha?new Date(o.fecha+"T00:00:00").toLocaleDateString("es-AR"):""}</td>
+      <td>${o.fecha?fechaAR(o.fecha):""}</td>
     </tr>${o.descripcion ? `<tr><td colspan="6" style="padding:2px 8px 10px 16px;font-size:10px;color:#4B5563;background:#F9FAFB;border-bottom:1px solid #E5E7EB;">${esc(o.descripcion)}</td></tr>` : ""}`).join("");
   const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;min-height:990px;box-sizing:border-box;">
-    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">OBSERVACIONES DE OBRA${obraSel ? " — "+esc(obraSel) : ""}</td>
-      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
-    </tr></table>
+    ${construirEncabezadoReportePDF(`OBSERVACIONES DE OBRA${obraSel ? " — "+esc(obraSel) : ""}`)}
     <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"}</div>
 
-    <table class="rgp-stats" width="700" cellspacing="0" cellpadding="0" style="margin:16px 0;"><tr>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${filtradas.length}</div><div class="rgp-stat-label">Total</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${abiertas}</div><div class="rgp-stat-label">Abiertas</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${enCurso}</div><div class="rgp-stat-label">En curso</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${resueltas}</div><div class="rgp-stat-label">Resueltas</div></td>
-    </tr></table>
+    ${construirFilaStatsReporte([
+      {num:filtradas.length, label:"Total"},
+      {num:abiertas, label:"Abiertas"},
+      {num:enCurso, label:"En curso"},
+      {num:resueltas, label:"Resueltas"},
+    ])}
 
     <div style="margin:20px 0 8px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Detalle</div>
     <table class="trab" width="700" cellspacing="0" cellpadding="0" style="font-size:11.5px;">
@@ -13644,10 +13630,7 @@ function generarInformeFotograficoObservacionesPDF(){
     return `<div style="font-family:Arial;font-size:12px;font-weight:bold;color:#fff;background:#0A2540;padding:6px 10px;border-radius:6px;margin:16px 0 10px;text-transform:capitalize;">${esc(tituloDia)}</div>${itemsHtml}`;
   }).join("");
   const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;box-sizing:border-box;">
-    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">INFORME FOTOGRÁFICO DE OBSERVACIONES${obraSel ? " — "+esc(obraSel) : ""}</td>
-      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
-    </tr></table>
+    ${construirEncabezadoReportePDF(`INFORME FOTOGRÁFICO DE OBSERVACIONES${obraSel ? " — "+esc(obraSel) : ""}`)}
     <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"}</div>
     ${bloquesHtml}
   </div>`;
@@ -13934,7 +13917,7 @@ function generarReporteClimaPDF(){
   const filasTabla = filtrados.slice().sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||"")).map(r=>{
     const badgeTxt = r.seTrabajo==="si" ? "Sí" : r.seTrabajo==="no" ? "No" : "Parcial";
     return `<tr>
-      <td>${r.fecha ? new Date(r.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}</td>
+      <td>${r.fecha ? fechaAR(r.fecha) : ""}</td>
       <td>${esc(r.obra)}</td>
       <td>${CLIMA_ICONOS[r.condicion]||""} ${esc(r.condicion)}</td>
       <td>${badgeTxt}</td>
@@ -13943,18 +13926,15 @@ function generarReporteClimaPDF(){
   }).join("");
 
   const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;min-height:990px;box-sizing:border-box;">
-    <table class="rc-header-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">REPORTE CLIMÁTICO${obraSel ? " — "+esc(obraSel) : ""}</td>
-      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
-    </tr></table>
+    ${construirEncabezadoReportePDF(`REPORTE CLIMÁTICO${obraSel ? " — "+esc(obraSel) : ""}`)}
     <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"} &nbsp;&nbsp;&nbsp; ${filtrados.length} registro${filtrados.length===1?"":"s"}</div>
 
-    <table class="rgp-stats" width="700" cellspacing="0" cellpadding="0" style="margin:16px 0;"><tr>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${trabajados}</div><div class="rgp-stat-label">Días trabajados</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${lluvia}</div><div class="rgp-stat-label">Días de lluvia</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${parciales}</div><div class="rgp-stat-label">Parciales</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${noTrabajados}</div><div class="rgp-stat-label">No trabajados</div></td>
-    </tr></table>
+    ${construirFilaStatsReporte([
+      {num:trabajados, label:"Días trabajados"},
+      {num:lluvia, label:"Días de lluvia"},
+      {num:parciales, label:"Parciales"},
+      {num:noTrabajados, label:"No trabajados"},
+    ])}
 
     <div style="margin:20px 0;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Días por condición climática</div>
     <svg width="700" height="${altoSvg}" viewBox="0 0 700 ${altoSvg}">${barrasSvg}</svg>
@@ -14601,7 +14581,7 @@ function abrirCoeficientePresupuesto(){
   const cont = document.getElementById("foto-avance-cuerpo") || null;
   const html = `
     <h2 style="margin-top:0;">⚙️ Coeficiente de redeterminación</h2>
-    <p class="helper">Vigente desde ${presupuestoCoeficiente.fecha ? new Date(presupuestoCoeficiente.fecha+"T00:00:00").toLocaleDateString("es-AR") : "—"}. Cuando redeterminen precios de nuevo, cambialo acá -- los certificados YA emitidos no se tocan, solo afecta los nuevos meses que cargues de acá en adelante.</p>
+    <p class="helper">Vigente desde ${presupuestoCoeficiente.fecha ? fechaAR(presupuestoCoeficiente.fecha) : "—"}. Cuando redeterminen precios de nuevo, cambialo acá -- los certificados YA emitidos no se tocan, solo afecta los nuevos meses que cargues de acá en adelante.</p>
     <input type="number" id="pg-coef-input" step="0.001" value="${presupuestoCoeficiente.valor}" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:18px;font-weight:800;text-align:center;box-sizing:border-box;margin-bottom:10px;">
     <div class="row-flex">
       <button class="btn btn-outline" onclick="cerrarPromptGenerico()">Cancelar</button>
@@ -15746,16 +15726,13 @@ function generarPdfMesActualPresupuesto(){
   });
   const montoTotal = presupuestoItems.reduce((s,it)=>s+it.precioConCoef,0);
   const html = `<div class="print-page" style="width:100% !important;min-width:0 !important;box-sizing:border-box;padding:6px 10px !important;">
-    <table class="rc-header-tabla" width="100%" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">CERTIFICADO DE OBRA — MES ${n}</td>
-      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
-    </tr></table>
+    ${construirEncabezadoReportePDF(`CERTIFICADO DE OBRA — MES ${n}`, "100%")}
     <div class="rc-semana-row">${esc(obra)} · Generado el ${new Date().toLocaleDateString("es-AR")}</div>
-    <table class="rgp-stats" width="100%" cellspacing="0" cellpadding="0" style="margin:10px 0;"><tr>
-      <td class="rgp-stat-box"><div class="rgp-stat-num">${montoTotal>0?(totalGeneralAcum/montoTotal*100).toFixed(2):0}%</div><div class="rgp-stat-label">Avance acumulado</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num" style="font-size:15px;">${formatoMoneda(totalGeneralMonto)}</div><div class="rgp-stat-label">Certificado este mes</div></td>
-      <td class="rgp-stat-box"><div class="rgp-stat-num" style="font-size:15px;">${formatoMoneda(totalGeneralAcum)}</div><div class="rgp-stat-label">Certificado acumulado</div></td>
-    </tr></table>
+    ${construirFilaStatsReporte([
+      {num:`${montoTotal>0?(totalGeneralAcum/montoTotal*100).toFixed(2):0}%`, label:"Avance acumulado"},
+      {num:formatoMoneda(totalGeneralMonto), label:"Certificado este mes", estilo:"font-size:15px;"},
+      {num:formatoMoneda(totalGeneralAcum), label:"Certificado acumulado", estilo:"font-size:15px;"},
+    ], "100%", "10px 0")}
     <table class="trab" width="100%" cellspacing="0" cellpadding="0" style="font-size:9.5px;">
       <thead><tr><th>Descripción</th>${defCols.map(c=>`<th>${c.th}</th>`).join("")}</tr></thead>
       <tbody>${filasHtml}</tbody>
@@ -16144,10 +16121,7 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
   const obra = claveObraPresupuesto();
   const tituloRango = desde===hasta ? `MES ${desde}` : `MES ${desde} A ${hasta}`;
   const armarHtml = (fontSize)=>`<div class="print-page" style="width:100% !important;min-width:0 !important;box-sizing:border-box;padding:6px 10px !important;">
-    <table class="rc-header-tabla" width="100%" cellspacing="0" cellpadding="0"><tr>
-      <td class="rc-titulo-corp">PRESUPUESTO GENERAL — ${tituloRango}${soloPendientes?" (solo pendientes)":""}</td>
-      <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}"></td>
-    </tr></table>
+    ${construirEncabezadoReportePDF(`PRESUPUESTO GENERAL — ${tituloRango}${soloPendientes?" (solo pendientes)":""}`, "100%")}
     <div class="rc-semana-row">${esc(obra)} · Generado el ${new Date().toLocaleDateString("es-AR")}</div>
     <table class="trab" width="100%" cellspacing="0" cellpadding="0" style="font-size:${fontSize}px;">
       <thead>
@@ -16288,7 +16262,7 @@ function construirHtmlMinuta(minuta){
     <div style="text-align:center;font-size:22px;font-weight:700;text-decoration:underline;letter-spacing:.05em;margin:10px 0 4px;">MINUTA</div>
     <div style="text-align:center;font-family:Arial;font-size:12px;color:#444;margin-bottom:24px;">${fechaTxt}</div>
     <div style="font-family:Arial;font-size:12.5px;margin-bottom:20px;line-height:1.8;">
-      <b style="color:#0A2540;">Obra:</b> ${esc(minuta.obra)} &nbsp;&nbsp;&nbsp; <b style="color:#0A2540;">Fecha:</b> ${minuta.fecha ? new Date(minuta.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}
+      <b style="color:#0A2540;">Obra:</b> ${esc(minuta.obra)} &nbsp;&nbsp;&nbsp; <b style="color:#0A2540;">Fecha:</b> ${minuta.fecha ? fechaAR(minuta.fecha) : ""}
     </div>
     <div style="font-size:14.5px;line-height:1.7;color:#222;text-align:justify;margin-bottom:60px;white-space:pre-line;">${esc(minuta.contenido)}</div>
     <table width="700" cellspacing="0" cellpadding="0" style="margin-top:70px;"><tr>${firmasHtml}</tr></table>
@@ -16302,7 +16276,7 @@ function renderListaMinutas(){
     <div class="minuta-item">
       <div class="info">
         <div class="num">Minuta N° ${m.numero}</div>
-        <div class="sub">${esc(m.obra)} · ${m.fecha ? new Date(m.fecha+"T00:00:00").toLocaleDateString("es-AR") : ""}</div>
+        <div class="sub">${esc(m.obra)} · ${m.fecha ? fechaAR(m.fecha) : ""}</div>
       </div>
       <div class="botones">
         <button type="button" class="btn btn-outline btn-sm" onclick="verMinutaPDF('${m.id}')">🖨 Ver PDF</button>
@@ -17457,7 +17431,7 @@ const NEXO_TOOLS = {
   },
   crearRecordatorio: {
     tipo:"escritura",
-    descripcionConfirmacion: (params)=> `Crear un recordatorio: "${params.titulo}"${params.fecha?` para el ${new Date(params.fecha+"T00:00:00").toLocaleDateString("es-AR")}`:""}.`,
+    descripcionConfirmacion: (params)=> `Crear un recordatorio: "${params.titulo}"${params.fecha?` para el ${fechaAR(params.fecha)}`:""}.`,
     ejecutar: async ({titulo, fecha})=>{
       await guardarRecordatorioDirecto(titulo, fecha||null, "media");
       return `Listo, creé el recordatorio "${titulo}".`;
@@ -21697,18 +21671,8 @@ function cargarImagenDesdeArchivo(file, pagina){
 function comprimirImagenPlano(imgOriginal, maxDim, calidad){
   maxDim = maxDim || 1600;
   calidad = calidad || 0.78;
-  return new Promise((resolve)=>{
-    let w = imgOriginal.width, h = imgOriginal.height;
-    if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
-    else if(h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
-    const canvas = document.createElement("canvas");
-    canvas.width = w; canvas.height = h;
-    canvas.getContext("2d").drawImage(imgOriginal, 0, 0, w, h);
-    const dataUrl = canvas.toDataURL("image/jpeg", calidad);
-    const imgComprimida = new Image();
-    imgComprimida.onload = ()=>resolve({img: imgComprimida, dataUrl});
-    imgComprimida.src = dataUrl;
-  });
+  const dataUrl = escalarImagenACanvas(imgOriginal, maxDim).toDataURL("image/jpeg", calidad);
+  return cargarComoImagen(dataUrl).then(imgComprimida=>({img: imgComprimida, dataUrl}));
 }
 // Punto de entrada real del <input type="file"> -- ya no procesa directo, primero pide nombre
 // (así podés tener "Solados PB", "Durlock 1er piso", etc. sin pisarse entre sí).
