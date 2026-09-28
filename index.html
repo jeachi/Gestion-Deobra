@@ -9757,13 +9757,35 @@ function actualizarTotalesForm(){
 }
 
 /* ---------------- Guardar rendición ---------------- */
+// Rendición inmediatamente siguiente (mismo dueño de caja, el N° más chico por encima del suyo) --
+// o null si "r" es la más reciente. Se usa tanto para saber si ya no es la que tiene el saldo vivo
+// como para el texto "Trasladada a la N° X" en la lista.
+function siguienteRendicionDe(r){
+  const clave = r.usuario || "__admin__";
+  return rendicionesIndex
+    .filter(x=>(x.usuario||"__admin__")===clave && x.numero>r.numero)
+    .reduce((min,x)=> (!min || x.numero<min.numero) ? x : min, null);
+}
+// "Genuinamente saldada": cerrada por su propia cuenta (a mano, o diferencia no negativa) o porque
+// una posterior ya la cubrió y quedó marcado. A propósito NO mira si hay una rendición más nueva
+// sin más -- eso es "trasladada" (ver estaRendicionCerrada), no "saldada" de verdad. La usa
+// propagarCierreCajaChica para decidir cuándo de verdad hay algo que propagar hacia atrás.
+function estaRendicionSaldada(r){
+  return !!r.cerradaManual || !!r.saldadaPor || (r.diferencia||0) > -1;
+}
 function estaRendicionCerrada(r){
   // Se cierra sola cuando la diferencia queda en $0 o A FAVOR (positiva) — esa plata de más no
   // hace falta perseguirla. Si queda EN CONTRA (negativa), se deja abierta a propósito hasta que
   // llegue la próxima reposición, porque ahí sí hay plata real pendiente de recibir.
-  // "saldadaPor" cubre el otro caso: esta rendición quedó en contra, pero la SIGUIENTE ya arrastró
-  // ese saldo y cerró bien — entonces esta ya no tiene sentido seguir mostrándola como pendiente.
-  return !!r.cerradaManual || !!r.saldadaPor || (r.diferencia||0) > -1;
+  // "saldadaPor" cubre el otro caso: esta rendición quedó en contra, pero la cadena de siguientes
+  // ya arrastró y cerró bien ese saldo -- entonces esta ya no tiene sentido seguir mostrándola
+  // como pendiente.
+  if(estaRendicionSaldada(r)) return true;
+  // Aunque nadie haya "saldado" todavía el saldo negativo (la reposición no alcanzó o ni llegó),
+  // si YA EXISTE una rendición más nueva de la misma caja, el saldo pendiente real vive ahí -- esta
+  // vieja ya no es "la" pendiente por separado (si no, se contaría la misma deuda dos veces: acá
+  // Y en la última). Solo la más reciente de cada caja se muestra como abierta/pendiente.
+  return !!siguienteRendicionDe(r);
 }
 async function guardarRendicion(){
   const obra = document.getElementById("rc-obra").value;
@@ -9870,11 +9892,11 @@ async function propagarCierreCajaChica(usuariosAProcesar){
       for(let i=0;i<lista.length-1;i++){
         const actual = lista[i];
         const siguiente = lista[i+1];
-        if(estaRendicionCerrada(actual)) continue;
-        if(!estaRendicionCerrada(siguiente)) continue;
+        if(estaRendicionSaldada(actual)) continue;
+        if(!estaRendicionSaldada(siguiente)) continue;
         try{
           const detalle = await cargarRendicionDetalle(actual.id);
-          if(!detalle || estaRendicionCerrada(detalle)) continue;
+          if(!detalle || estaRendicionSaldada(detalle)) continue;
           detalle.saldadaPor = siguiente.numero;
           await guardarRendicionDetalle(detalle);
           actual.saldadaPor = siguiente.numero;
@@ -9952,6 +9974,18 @@ function renderListaRendiciones(){
   }
   cont.innerHTML = lista.map(r=>{
     const cerrada = estaRendicionCerrada(r);
+    let textoCerrada = "Rendida";
+    if(cerrada){
+      if(r.saldadaPor) textoCerrada = "Saldada (cubierta por N° "+numeroFormateado(r.saldadaPor)+")";
+      else if(r.cerradaManual && Math.abs(r.diferencia||0)>=1) textoCerrada = "Cerrada (a mano)";
+      else if((r.diferencia||0) <= -1){
+        // No la saldó nadie todavía (la reposición no alcanzó o no llegó) -- se muestra igual como
+        // no-pendiente PORQUE ya no es la última de su caja: el saldo vivo real está en la más
+        // nueva, no tiene sentido contar la misma deuda acá Y ahí.
+        const siguiente = siguienteRendicionDe(r);
+        textoCerrada = siguiente ? "Trasladada a la N° "+numeroFormateado(siguiente.numero) : "Rendida";
+      }
+    }
     return `<div class="rendicion-card ${cerrada?"":"abierta"}" onclick="abrirRendicion('${r.id}')">
       <div class="rc-ico">${cerrada?"✅":"⏳"}</div>
       <div class="rc-cont">
@@ -9960,7 +9994,7 @@ function renderListaRendiciones(){
           <span class="rc-monto">${formatoMoneda(r.totalGastos)}</span>
         </div>
         <div class="rc-meta">${esc(r.obra)} · ${esc(r.responsable)} · ${esc(r.mes||"")} ${esc(r.quincena||"")}
-          ${!cerrada ? `· <span style="color:${r.diferencia>0?'#1D4ED8':'#B42318'};font-weight:700;">Diferencia ${formatoMoneda(r.diferencia)}</span>` : `· <span style="color:var(--verde-oscuro);font-weight:700;">${r.saldadaPor ? "Saldada (cubierta por N° "+numeroFormateado(r.saldadaPor)+")" : r.cerradaManual && Math.abs(r.diferencia||0)>=1 ? "Cerrada (a mano)" : "Rendida"}</span>`}
+          ${!cerrada ? `· <span style="color:${r.diferencia>0?'#1D4ED8':'#B42318'};font-weight:700;">Diferencia ${formatoMoneda(r.diferencia)}</span>` : `· <span style="color:var(--verde-oscuro);font-weight:700;">${textoCerrada}</span>`}
         </div>
       </div>
     </div>`;
