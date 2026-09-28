@@ -13701,6 +13701,13 @@ function generarInformeFotograficoObservacionesPDF(){
   // de una, y la cortaba en varias hojas sin respetar dónde. El 5to parámetro (usarA4Real) hace
   // que fluya en tantas hojas A4 reales como haga falta, sin cortar ninguna fila de foto+texto a
   // la mitad (mismo mecanismo que ya usan el Certificado de obra y el Presupuesto A1).
+  // El ancho va al 100% para ocupar toda la hoja A4 al imprimir/guardar como PDF (ver usarA4Real
+  // arriba). OJO: esto por sí solo rompía "Enviar por WhatsApp" (ver enviarPorWhatsapp) porque esa
+  // función arma el PDF adentro de un iframe de 3000px de ancho para medir el tamaño "natural" del
+  // contenido -- con width:100% no hay tamaño natural que medir, el contenido pasaba a ocupar esos
+  // 3000px enteros, la captura se volvía carísima y el navegador terminaba negando el share() por
+  // vencerse el permiso mientras tanto. enviarPorWhatsapp ya sabe detectar los reportes con
+  // usarA4Real (misma bandera) y les da directo el ancho real de la hoja en vez de medir "natural".
   const html = `<div class="print-page" style="width:100% !important;min-width:0 !important;box-sizing:border-box;">
     ${construirEncabezadoReportePDF(`INFORME FOTOGRÁFICO DE OBSERVACIONES${obraSel ? " — "+esc(obraSel) : ""}`, "100%")}
     <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"}</div>
@@ -16918,11 +16925,25 @@ async function enviarPorWhatsapp(){
   // mucho menos que la hoja (700 a 1400px). Por eso salían cortadas o "cuadradas".
   // Solución: armamos la hoja dentro de un marco aislado (iframe) al que le damos exactamente el
   // ancho que necesita. Como ese marco tiene su propia "ventana", no hay contra qué recortar.
+  // ---- Reportes con usarA4Real (ancho en %, como el informe fotográfico de Observaciones) ----
+  // Estos no tienen un ancho "natural" que medir (100% de lo que sea que se le dé) -- si se los
+  // deja arrancar en el marco de 3000px de siempre, terminan ocupando esos 3000px enteros: la
+  // captura se vuelve carísima y el navegador termina negando el share() por vencerse el permiso
+  // mientras tanto. En vez de medir, se les da directo el ancho real que tendría la hoja A4/A1 al
+  // imprimirse (mismo cálculo que fijarOrientacionImpresion), y no se los vuelve a redimensionar.
+  const PX_A_MM = 96/25.4;
+  const MARGEN_A4_MM = 5;
+  let anchoInicial = 3000;
+  if(forzarA4EstandarPdf){
+    const tam = (forzarA4EstandarPdf===true) ? {w:210,h:297} : forzarA4EstandarPdf;
+    const anchoHojaMm = orientacionPdfActual==="portrait" ? tam.w : tam.h;
+    anchoInicial = Math.round((anchoHojaMm - MARGEN_A4_MM*2) * PX_A_MM);
+  }
   let iframe = null;
   try{
     iframe = document.createElement("iframe");
     iframe.setAttribute("style",
-      "position:fixed;left:0;top:0;border:0;opacity:0.01;pointer-events:none;z-index:-1;width:3000px;height:3000px;");
+      `position:fixed;left:0;top:0;border:0;opacity:0.01;pointer-events:none;z-index:-1;width:${anchoInicial}px;height:3000px;`);
     document.body.appendChild(iframe);
 
     const estilosApp = [...document.querySelectorAll("style")].map(s=>s.textContent).join("\n");
@@ -16946,9 +16967,14 @@ async function enviarPorWhatsapp(){
     let paginas = [...doc.querySelectorAll(".print-page")];
     if(paginas.length===0){ estado.textContent = ""; return; }
 
-    // Ajustamos el ancho del marco al de la hoja más ancha, para que nada quede recortado.
-    const anchoNecesario = Math.max(...paginas.map(p=>p.scrollWidth)) + 40;
-    iframe.style.width = anchoNecesario+"px";
+    // Ajustamos el ancho del marco al de la hoja más ancha, para que nada quede recortado. En los
+    // reportes con usarA4Real el ancho ya se fijó arriba al tamaño real de la hoja -- si acá se lo
+    // volviera a "ajustar" midiendo scrollWidth, como el contenido está en % simplemente daría el
+    // mismo ancho del marco (no un tamaño natural), así que no hace falta tocarlo de nuevo.
+    if(!forzarA4EstandarPdf){
+      const anchoNecesario = Math.max(...paginas.map(p=>p.scrollWidth)) + 40;
+      iframe.style.width = anchoNecesario+"px";
+    }
     const altoNecesario = paginas.reduce((s,p)=>s+p.scrollHeight,0) + 100;
     iframe.style.height = altoNecesario+"px";
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
