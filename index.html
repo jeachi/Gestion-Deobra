@@ -13566,8 +13566,13 @@ function renderListaObservaciones(){
         <span class="barra"></span><span class="txt">${OBS_ESTADO_TXT[e]}</span>
       </button>`;
     }).join("");
+    // Si todavía no hay foto de "antes" pero ya se cargó la de "después" (caso típico: se detectó
+    // y resolvió algo chico sin llegar a sacarle foto antes), esa es la única foto que existe --
+    // se muestra arriba, en el lugar grande, en vez de dejarlo vacío y mostrarla solo chiquita
+    // abajo. Si YA hay foto de "antes", el lugar de arriba sigue siendo siempre la de "antes".
+    const fotoArriba = o.foto || o.fotoDespues || null;
     return `<div class="obs-item prior-${o.prioridad}">
-      ${o.foto ? `<img class="obs-foto" src="${o.foto}">` : `<div class="obs-foto"></div>`}
+      ${fotoArriba ? `<img class="obs-foto" src="${fotoArriba}">` : `<div class="obs-foto"></div>`}
       <div class="obs-cuerpo">
         <div class="obs-top">
           <div>
@@ -13579,7 +13584,7 @@ function renderListaObservaciones(){
         ${o.descripcion ? `<div class="obs-desc">${esc(o.descripcion)}</div>` : ""}
         <div class="estado-track" role="group" aria-label="Estado de la observación">${pasos}</div>
         <div class="obs-despues">
-          ${o.fotoDespues ? `<img class="obs-foto-despues" src="${o.fotoDespues}">` : ``}
+          ${(o.fotoDespues && o.foto) ? `<img class="obs-foto-despues" src="${o.fotoDespues}">` : ``}
           <button type="button" class="btn-mini" onclick="elegirFotoObservacionDespues('${o.id}')">📷 ${o.fotoDespues?"Cambiar foto de después":"Foto de después"}</button>
         </div>
         <div class="obs-botones">
@@ -13672,15 +13677,19 @@ function generarInformeFotograficoObservacionesPDF(){
     </td>`;
   const bloquesHtml = Object.keys(porDia).sort((a,b)=>b.localeCompare(a)).map(dia=>{
     const tituloDia = dia ? new Date(dia+"T00:00:00").toLocaleDateString("es-AR",{weekday:"long", day:"numeric", month:"long", year:"numeric"}) : "Sin fecha";
-    const itemsHtml = porDia[dia].map(o=>`<table width="700" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
-        ${fotoBox(o.foto, "Antes")}
-        ${fotoBox(o.fotoDespues, "Después")}
+    const itemsHtml = porDia[dia].map(o=>{
+      // Si todavía no hay foto de "antes" pero ya se cargó la de "después", mostrar un solo
+      // cuadro (el de "después") en vez de dos, para no dejar un "Sin foto" al lado sin sentido.
+      const fotosHtml = (!o.foto && o.fotoDespues) ? fotoBox(o.fotoDespues, "Después") : fotoBox(o.foto, "Antes") + fotoBox(o.fotoDespues, "Después");
+      return `<table width="700" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
+        ${fotosHtml}
         <td style="vertical-align:top;padding:4px 4px 4px 10px;">
           <div style="font-family:Arial;font-size:12px;font-weight:bold;color:#0A2540;">${esc(o.titulo)} ${badgeTxt[o.prioridad]||""}</div>
           <div style="font-size:10px;color:#4B5563;margin-top:2px;">${esc(o.obra)}${o.responsable?" · "+esc(o.responsable):""} · ${OBS_ESTADO_TXT[o.estado]||o.estado}</div>
           ${o.descripcion ? `<div style="font-size:10px;color:#4B5563;margin-top:4px;">${esc(o.descripcion)}</div>` : ""}
         </td>
-      </tr></table>`).join("");
+      </tr></table>`;
+    }).join("");
     return `<div style="font-family:Arial;font-size:12px;font-weight:bold;color:#fff;background:#0A2540;padding:6px 10px;border-radius:6px;margin:16px 0 10px;text-transform:capitalize;">${esc(tituloDia)}</div>${itemsHtml}`;
   }).join("");
   const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;box-sizing:border-box;">
