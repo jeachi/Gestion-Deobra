@@ -13681,7 +13681,7 @@ function generarInformeFotograficoObservacionesPDF(){
       // Si todavía no hay foto de "antes" pero ya se cargó la de "después", mostrar un solo
       // cuadro (el de "después") en vez de dos, para no dejar un "Sin foto" al lado sin sentido.
       const fotosHtml = (!o.foto && o.fotoDespues) ? fotoBox(o.fotoDespues, "Después") : fotoBox(o.foto, "Antes") + fotoBox(o.fotoDespues, "Después");
-      return `<table width="700" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
+      return `<table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
         ${fotosHtml}
         <td style="vertical-align:top;padding:4px 4px 4px 10px;">
           <div style="font-family:Arial;font-size:12px;font-weight:bold;color:#0A2540;">${esc(o.titulo)} ${badgeTxt[o.prioridad]||""}</div>
@@ -13690,14 +13690,23 @@ function generarInformeFotograficoObservacionesPDF(){
         </td>
       </tr></table>`;
     }).join("");
-    return `<div style="font-family:Arial;font-size:12px;font-weight:bold;color:#fff;background:#0A2540;padding:6px 10px;border-radius:6px;margin:16px 0 10px;text-transform:capitalize;">${esc(tituloDia)}</div>${itemsHtml}`;
+    // page-break-after:avoid -- para que el título del día no quede solo al final de una hoja
+    // con sus fotos recién empezando en la siguiente (ver usarA4Real más abajo).
+    return `<div style="font-family:Arial;font-size:12px;font-weight:bold;color:#fff;background:#0A2540;padding:6px 10px;border-radius:6px;margin:16px 0 10px;text-transform:capitalize;page-break-after:avoid;">${esc(tituloDia)}</div>${itemsHtml}`;
   }).join("");
-  const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;box-sizing:border-box;">
-    ${construirEncabezadoReportePDF(`INFORME FOTOGRÁFICO DE OBSERVACIONES${obraSel ? " — "+esc(obraSel) : ""}`)}
+  // A diferencia de la mayoría de los reportes (que arman UNA sola hoja a medida, con el tamaño
+  // exacto de su contenido), este puede tener cualquier cantidad de días y observaciones -- con
+  // pocas entra bien en una hoja, pero con varias semanas de fotos terminaba siendo una sola hoja
+  // gigante (todo se veía diminuto en la vista previa) que además el navegador no podía imprimir
+  // de una, y la cortaba en varias hojas sin respetar dónde. El 5to parámetro (usarA4Real) hace
+  // que fluya en tantas hojas A4 reales como haga falta, sin cortar ninguna fila de foto+texto a
+  // la mitad (mismo mecanismo que ya usan el Certificado de obra y el Presupuesto A1).
+  const html = `<div class="print-page" style="width:100% !important;min-width:0 !important;box-sizing:border-box;">
+    ${construirEncabezadoReportePDF(`INFORME FOTOGRÁFICO DE OBSERVACIONES${obraSel ? " — "+esc(obraSel) : ""}`, "100%")}
     <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"}</div>
     ${bloquesHtml}
   </div>`;
-  mostrarModalPDF(html, "portrait", `Informe_fotografico_observaciones_${nombreArchivoSeguro(obraSel||"Todas")}.pdf`);
+  mostrarModalPDF(html, "portrait", `Informe_fotografico_observaciones_${nombreArchivoSeguro(obraSel||"Todas")}.pdf`, null, true);
   registrarActividad(`generó el informe fotográfico de observaciones${obraSel?` de "${esc(obraSel)}"`:""}`);
 }
 
