@@ -3148,7 +3148,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <h2>Rendición N° <span id="rc-numero-preview"></span></h2>
       <div class="field" id="rc-numero-editar-cont" style="display:none;max-width:160px;margin-bottom:10px;">
         <label>Corregir N° (si quedó mal numerada)</label>
-        <input type="number" id="rc-numero-editar" min="1" step="1">
+        <input type="number" id="rc-numero-editar" min="1" step="1" oninput="actualizarSugerenciaSaldoAnteriorEditar()">
       </div>
       <div id="chip-caja-base-cont"></div>
 
@@ -3184,21 +3184,6 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
       </div>
 
-      <h2 style="margin-top:18px;">💰 Movimientos de la caja</h2>
-      <p class="helper">Cargá acá el dinero que te dieron para la caja (una o varias entregas).</p>
-      <div class="field" style="max-width:260px;margin-bottom:10px;">
-        <label>Saldo anterior (de la caja rendida antes)</label>
-        <input type="number" step="any" id="rc-saldo-anterior" oninput="actualizarTotalesForm(); renderChipCajaBase();">
-        <p class="tiny" id="rc-saldo-anterior-info"></p>
-      </div>
-      <div class="table-wrap">
-        <table class="trab" id="tabla-fondo-caja">
-          <thead><tr><th>Detalle</th><th style="width:110px;">Monto</th><th></th></tr></thead>
-          <tbody id="tbody-fondo-caja"></tbody>
-        </table>
-      </div>
-      <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="agregarFilaFondo()">+ Agregar movimiento</button>
-
       <h2 style="margin-top:18px;">Gastos</h2>
       <div id="asistente-avisos-box-gasto" style="display:none;"></div>
       <button class="btn btn-outline btn-sm" style="margin-bottom:10px;" onclick="agregarFilaGasto()">+ Agregar gasto</button>
@@ -3212,6 +3197,21 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </table>
       </div>
       <div class="rc-total-linea">Total gastos: <b id="rc-total-gastos">$0</b></div>
+
+      <h2 style="margin-top:18px;">💰 Movimientos de la caja</h2>
+      <p class="helper">Cargá acá el dinero que te dieron para la caja (una o varias entregas).</p>
+      <div class="field" style="max-width:260px;margin-bottom:10px;">
+        <label>Saldo anterior (de la caja rendida antes)</label>
+        <input type="number" step="any" id="rc-saldo-anterior" oninput="actualizarTotalesForm(); renderChipCajaBase(); actualizarSugerenciaSaldoAnteriorEditar();">
+        <p class="tiny" id="rc-saldo-anterior-info"></p>
+      </div>
+      <div class="table-wrap">
+        <table class="trab" id="tabla-fondo-caja">
+          <thead><tr><th>Detalle</th><th style="width:110px;">Monto</th><th></th></tr></thead>
+          <tbody id="tbody-fondo-caja"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="agregarFilaFondo()">+ Agregar movimiento</button>
 
       <div class="rc-resumen">
         <div>Total caja recibida: <b id="rc-total-caja">$0</b></div>
@@ -9630,7 +9630,7 @@ function prepararFormularioNuevaRendicion(rendicionExistente){
     document.getElementById("rc-quincena").value = rendicionExistente.quincena||"1ra Quincena";
     document.getElementById("rc-semana").value = rendicionExistente.semana||"";
     document.getElementById("rc-saldo-anterior").value = rendicionExistente.saldoAnterior || "";
-    infoSaldo.textContent = "";
+    actualizarSugerenciaSaldoAnteriorEditar();
   }else{
     rendicionEditandoId = null;
     rcGastos = [{fecha:hoyISO(),ticket:"",tipoCosto:"",observaciones:"",centroCosto:"",monto:""}];
@@ -9667,6 +9667,27 @@ function prepararFormularioNuevaRendicion(rendicionExistente){
 }
 function renderSelectObraCaja(valorActualObra){
   document.getElementById("rc-obra").innerHTML = `<option value="">— elegir —</option>`+opcionesObra(valorActualObra);
+}
+// Al editar una rendición, si se corrige el N° a mano (o de entrada, si quedó mal numerada), avisa
+// si el "saldo anterior" cargado no coincide con la diferencia real de la que ahora queda como
+// predecesora -- para que se pueda corregir el monto ahí mismo en vez de tener que ir a buscarlo.
+function actualizarSugerenciaSaldoAnteriorEditar(){
+  const infoSaldo = document.getElementById("rc-saldo-anterior-info");
+  if(!rendicionEditandoId || !rendicionesCache[rendicionEditandoId]) return;
+  const numeroTecleado = parseInt(document.getElementById("rc-numero-editar").value, 10);
+  const numeroActual = numeroTecleado>0 ? numeroTecleado : rendicionesCache[rendicionEditandoId].numero;
+  const anterior = anteriorRendicionDe({usuario: rendicionesCache[rendicionEditandoId].usuario, numero: numeroActual});
+  if(!anterior){
+    infoSaldo.textContent = "Es la primera rendición de la caja: no hay una anterior de la que arrastrar saldo.";
+    return;
+  }
+  const saldoSugerido = anterior.diferencia||0;
+  const saldoCargado = parseFloat(document.getElementById("rc-saldo-anterior").value)||0;
+  if(Math.abs(saldoSugerido-saldoCargado)<1){
+    infoSaldo.textContent = `Coincide con la diferencia de la Rendición N° ${numeroFormateado(anterior.numero)} (${formatoMoneda(saldoSugerido)}).`;
+  }else{
+    infoSaldo.innerHTML = `⚠ Según la Rendición N° ${numeroFormateado(anterior.numero)}, el saldo anterior debería ser ${formatoMoneda(saldoSugerido)} (tenés cargado ${formatoMoneda(saldoCargado)}). <button type="button" class="btn btn-outline btn-sm" style="margin-left:6px;padding:2px 8px;" onclick="document.getElementById('rc-saldo-anterior').value=${saldoSugerido}; actualizarTotalesForm(); actualizarSugerenciaSaldoAnteriorEditar();">Usar ${formatoMoneda(saldoSugerido)}</button>`;
+  }
 }
 function formatoMoneda(n){
   const v = parseFloat(n)||0;
@@ -9757,14 +9778,33 @@ function actualizarTotalesForm(){
 }
 
 /* ---------------- Guardar rendición ---------------- */
+// Clave de agrupación por "dueño de caja": rendiciones viejas (de antes de que existiera el campo
+// "usuario") quedaron con ese campo vacío, pero son del mismo Administrador que las cargó después
+// ya CON el campo seteado -- sin esto, quedaban en "buckets" distintos ("" vs "admin") y nunca se
+// comparaban entre sí, así que el cierre en cadena nunca las vinculaba aunque fueran la misma caja.
+function claveDuenoCaja(usuario){
+  if(!usuario) return "__admin__";
+  const cuentaAdmin = usuarios.find(u=>u.role==="admin");
+  if(cuentaAdmin && usuario===cuentaAdmin.username) return "__admin__";
+  return usuario;
+}
 // Rendición inmediatamente siguiente (mismo dueño de caja, el N° más chico por encima del suyo) --
 // o null si "r" es la más reciente. Se usa tanto para saber si ya no es la que tiene el saldo vivo
 // como para el texto "Trasladada a la N° X" en la lista.
 function siguienteRendicionDe(r){
-  const clave = r.usuario || "__admin__";
+  const clave = claveDuenoCaja(r.usuario);
   return rendicionesIndex
-    .filter(x=>(x.usuario||"__admin__")===clave && x.numero>r.numero)
+    .filter(x=>claveDuenoCaja(x.usuario)===clave && x.numero>r.numero)
     .reduce((min,x)=> (!min || x.numero<min.numero) ? x : min, null);
+}
+// Rendición inmediatamente anterior (mismo dueño de caja, el N° más grande por debajo del suyo) --
+// se usa para sugerir el "saldo anterior" correcto al corregir un N° a mano (si se reordenó la
+// numeración, la rendición que ahora queda justo antes puede no ser la misma que cuando se cargó).
+function anteriorRendicionDe(r){
+  const clave = claveDuenoCaja(r.usuario);
+  return rendicionesIndex
+    .filter(x=>claveDuenoCaja(x.usuario)===clave && x.numero<r.numero)
+    .reduce((max,x)=> (!max || x.numero>max.numero) ? x : max, null);
 }
 // "Genuinamente saldada": cerrada por su propia cuenta (a mano, o diferencia no negativa) o porque
 // una posterior ya la cubrió y quedó marcado. A propósito NO mira si hay una rendición más nueva
@@ -9805,8 +9845,9 @@ async function guardarRendicion(){
   // El N° normalmente es fijo (autoasignado al crear), pero se puede corregir a mano al editar
   // una rendición que quedó mal numerada (ej: se borró una intermedia y el correlativo saltó).
   let numeroFinal;
+  let numeroOriginal = null;
   if(esEdicion){
-    const numeroOriginal = rendicionesCache[rendicionEditandoId].numero;
+    numeroOriginal = rendicionesCache[rendicionEditandoId].numero;
     const numeroTecleado = parseInt(document.getElementById("rc-numero-editar").value, 10);
     numeroFinal = (numeroTecleado>0) ? numeroTecleado : numeroOriginal;
     if(numeroFinal!==numeroOriginal && rendicionesIndex.some(r=>r.id!==rendicionEditandoId && r.numero===numeroFinal)){
@@ -9839,6 +9880,21 @@ async function guardarRendicion(){
     const idx = rendicionesIndex.findIndex(r=>r.id===rendicion.id);
     if(idx>-1) rendicionesIndex[idx] = entradaIndice;
     await guardarRendicionesIndex();
+    // Si se corrigió el N° a mano, cualquier OTRA rendición que decía "saldada por [el N° viejo]"
+    // tiene que pasar a apuntar al N° nuevo -- si no, esa referencia queda huérfana (apunta a un
+    // número que ya no es esta rendición) y esa otra vuelve a aparecer mal, o peor, apunta sin
+    // querer a la rendición que ahora tenga ese N° viejo.
+    if(numeroFinal!==numeroOriginal){
+      const clave = claveDuenoCaja(rendicion.usuario);
+      for(const r of rendicionesIndex){
+        if(r.id!==rendicion.id && claveDuenoCaja(r.usuario)===clave && r.saldadaPor===numeroOriginal){
+          r.saldadaPor = numeroFinal;
+          const detalle = await cargarRendicionDetalle(r.id);
+          if(detalle){ detalle.saldadaPor = numeroFinal; await guardarRendicionDetalle(detalle); }
+        }
+      }
+      await guardarRendicionesIndex();
+    }
     // Si se corrigió el N° a mano a un valor que pisaría al próximo correlativo automático,
     // lo corremos para adelante para que la próxima rendición nueva no choque con este número.
     if(numeroFinal>=correlativoCajaSiguiente){ correlativoCajaSiguiente = numeroFinal+1; await guardarCorrelativoCaja(); }
@@ -9879,10 +9935,10 @@ async function guardarRendicion(){
 async function propagarCierreCajaChica(usuariosAProcesar){
   const porUsuario = {};
   rendicionesIndex.forEach(r=>{
-    const clave = r.usuario || "__admin__";
+    const clave = claveDuenoCaja(r.usuario);
     (porUsuario[clave] = porUsuario[clave]||[]).push(r);
   });
-  const claves = usuariosAProcesar ? usuariosAProcesar.map(u=>u||"__admin__") : Object.keys(porUsuario);
+  const claves = usuariosAProcesar ? usuariosAProcesar.map(claveDuenoCaja) : Object.keys(porUsuario);
   let arregladas = 0;
   let siguioArreglando = true;
   while(siguioArreglando){
@@ -10089,10 +10145,10 @@ async function eliminarRendicion(){
     // de verdad -- se reabre y se intenta cerrar de nuevo por si alguna otra rendición posterior
     // (o la reparación en cadena) también la cubre, en vez de dejarla marcada como saldada por
     // un número que ya no existe.
-    const clave = eliminada.usuario || "__admin__";
+    const clave = claveDuenoCaja(eliminada.usuario);
     let huboReapertura = false;
     for(const r of rendicionesIndex){
-      if((r.usuario||"__admin__")===clave && r.saldadaPor===eliminada.numero){
+      if(claveDuenoCaja(r.usuario)===clave && r.saldadaPor===eliminada.numero){
         r.saldadaPor = null;
         const detalle = await cargarRendicionDetalle(r.id);
         if(detalle){ detalle.saldadaPor = null; await guardarRendicionDetalle(detalle); }
