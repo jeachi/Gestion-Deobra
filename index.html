@@ -4222,7 +4222,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <option value="">Todas las obras</option>
       </select>
       <button class="btn btn-outline" style="width:100%;margin:8px 0 0;" onclick="generarReporteObservacionesPDF()">📄 Generar reporte PDF</button>
-      <button class="btn btn-outline" style="width:100%;margin:8px 0;" onclick="generarInformeFotograficoObservacionesPDF()">🖼️ Informe fotográfico (por día)</button>
+      <button class="btn btn-outline" style="width:100%;margin:8px 0;" onclick="generarInformeFotograficoObservacionesPDF()">🖼️ Informe fotográfico</button>
+      <label class="chip-opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:10px;">
+        <input type="checkbox" id="obs-informe-agrupar-dia" checked style="margin:0;"> Agrupar por día en el informe fotográfico
+      </label>
       <input type="file" id="obs-foto-despues-input" accept="image/*" style="display:none;" onchange="handleFotoObservacionDespues(this)">
       <div class="resumen-mes" id="obs-resumen"></div>
       <div class="chip-row" id="obs-filtro-prioridad" style="margin-bottom:14px;">
@@ -13663,25 +13666,23 @@ function generarInformeFotograficoObservacionesPDF(){
   const filtradas = observacionesFiltradas();
   const obraSel = document.getElementById("obs-filtro-obra").value;
   if(filtradas.length===0){ showToast("No hay observaciones para generar el informe."); return; }
+  // Agrupar por día muestra la fecha en que se hizo cada trabajo (banner "Lunes, 28 de..." arriba
+  // de cada tanda). Desagrupado, el informe es solo la lista de observaciones filtradas, sin
+  // separadores de fecha -- la única fecha que queda a la vista es la de "Generado el..." de más
+  // arriba (cuándo se imprimió el informe), no cuándo se hizo cada trabajo.
+  const agruparPorDia = document.getElementById("obs-informe-agrupar-dia").checked;
   const badgeTxt = {alta:"🔴 Alta", media:"🟡 Media", baja:"🔵 Baja"};
-  const porDia = {};
-  filtradas.forEach(o=>{
-    const dia = o.fecha || "";
-    (porDia[dia] = porDia[dia]||[]).push(o);
-  });
   const fotoBox = (src, etiqueta)=>`<td width="150" style="padding:4px;">
       <div style="width:142px;height:106px;border-radius:6px;overflow:hidden;background:#E5E7EB;display:flex;align-items:center;justify-content:center;">
         ${src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;">` : `<span style="font-size:9px;color:#9CA3AF;">Sin foto</span>`}
       </div>
       <div style="font-size:9px;color:#6B7280;text-align:center;margin-top:2px;">${etiqueta}</div>
     </td>`;
-  const bloquesHtml = Object.keys(porDia).sort((a,b)=>b.localeCompare(a)).map(dia=>{
-    const tituloDia = dia ? new Date(dia+"T00:00:00").toLocaleDateString("es-AR",{weekday:"long", day:"numeric", month:"long", year:"numeric"}) : "Sin fecha";
-    const itemsHtml = porDia[dia].map(o=>{
-      // Si todavía no hay foto de "antes" pero ya se cargó la de "después", mostrar un solo
-      // cuadro (el de "después") en vez de dos, para no dejar un "Sin foto" al lado sin sentido.
-      const fotosHtml = (!o.foto && o.fotoDespues) ? fotoBox(o.fotoDespues, "Después") : fotoBox(o.foto, "Antes") + fotoBox(o.fotoDespues, "Después");
-      return `<table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
+  const itemHtml = (o)=>{
+    // Si todavía no hay foto de "antes" pero ya se cargó la de "después", mostrar un solo
+    // cuadro (el de "después") en vez de dos, para no dejar un "Sin foto" al lado sin sentido.
+    const fotosHtml = (!o.foto && o.fotoDespues) ? fotoBox(o.fotoDespues, "Después") : fotoBox(o.foto, "Antes") + fotoBox(o.fotoDespues, "Después");
+    return `<table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
         ${fotosHtml}
         <td style="vertical-align:top;padding:4px 4px 4px 10px;">
           <div style="font-family:Arial;font-size:12px;font-weight:bold;color:#0A2540;">${esc(o.titulo)} ${badgeTxt[o.prioridad]||""}</div>
@@ -13689,11 +13690,24 @@ function generarInformeFotograficoObservacionesPDF(){
           ${o.descripcion ? `<div style="font-size:10px;color:#4B5563;margin-top:4px;">${esc(o.descripcion)}</div>` : ""}
         </td>
       </tr></table>`;
+  };
+  let bloquesHtml;
+  if(agruparPorDia){
+    const porDia = {};
+    filtradas.forEach(o=>{
+      const dia = o.fecha || "";
+      (porDia[dia] = porDia[dia]||[]).push(o);
+    });
+    bloquesHtml = Object.keys(porDia).sort((a,b)=>b.localeCompare(a)).map(dia=>{
+      const tituloDia = dia ? new Date(dia+"T00:00:00").toLocaleDateString("es-AR",{weekday:"long", day:"numeric", month:"long", year:"numeric"}) : "Sin fecha";
+      const itemsHtml = porDia[dia].map(itemHtml).join("");
+      // page-break-after:avoid -- para que el título del día no quede solo al final de una hoja
+      // con sus fotos recién empezando en la siguiente (ver usarA4Real más abajo).
+      return `<div style="font-family:Arial;font-size:12px;font-weight:bold;color:#fff;background:#0A2540;padding:6px 10px;border-radius:6px;margin:16px 0 10px;text-transform:capitalize;page-break-after:avoid;">${esc(tituloDia)}</div>${itemsHtml}`;
     }).join("");
-    // page-break-after:avoid -- para que el título del día no quede solo al final de una hoja
-    // con sus fotos recién empezando en la siguiente (ver usarA4Real más abajo).
-    return `<div style="font-family:Arial;font-size:12px;font-weight:bold;color:#fff;background:#0A2540;padding:6px 10px;border-radius:6px;margin:16px 0 10px;text-transform:capitalize;page-break-after:avoid;">${esc(tituloDia)}</div>${itemsHtml}`;
-  }).join("");
+  }else{
+    bloquesHtml = filtradas.map(itemHtml).join("");
+  }
   // A diferencia de la mayoría de los reportes (que arman UNA sola hoja a medida, con el tamaño
   // exacto de su contenido), este puede tener cualquier cantidad de días y observaciones -- con
   // pocas entra bien en una hoja, pero con varias semanas de fotos terminaba siendo una sola hoja
@@ -16988,6 +17002,51 @@ async function enviarPorWhatsapp(){
       const pagina = paginas[i];
       const anchoEsperado = pagina.scrollWidth;
       const altoEsperado = pagina.scrollHeight;
+      // Reportes con usarA4Real (el informe fotográfico de Observaciones, Certificado de obra,
+      // Presupuesto A1): al imprimirlos de verdad fluyen en tantas hojas A4 reales como haga
+      // falta, pero acá adentro siguen siendo UN SOLO <div class="print-page"> con todo junto
+      // (sin importar cuánto mida) -- si se lo capturara entero como más abajo y se lo metiera en
+      // una sola hoja de PDF, quedaría todo achicado en una hoja gigante otra vez (mismo problema
+      // de siempre, ahora del lado de WhatsApp en vez del de imprimir). Para evitarlo, se captura
+      // cada bloque de primer nivel por separado (el encabezado, el título de cada día, cada
+      // observación) -- son chicos y rápidos de capturar -- y se van acomodando de a uno en hojas
+      // A4 reales, sin cortar ninguno a la mitad entre una hoja y la siguiente.
+      if(forzarA4EstandarPdf){
+        const tamBloque = (forzarA4EstandarPdf===true) ? {w:210,h:297} : forzarA4EstandarPdf;
+        const anchoHojaMmB = orientacionPdfActual==="portrait" ? tamBloque.w : tamBloque.h;
+        const altoHojaMmB = orientacionPdfActual==="portrait" ? tamBloque.h : tamBloque.w;
+        const MM_A_PT = 72/25.4;
+        const MARGEN_A4 = 5*MM_A_PT; // mismo margen (5mm) que usa fijarOrientacionImpresion
+        const utilWA4 = anchoHojaMmB*MM_A_PT - MARGEN_A4*2;
+        const utilHA4 = altoHojaMmB*MM_A_PT - MARGEN_A4*2;
+        const bloques = [...pagina.children];
+        const ESCALA_BLOQUE = 2;
+        estado.textContent = `Armando el informe: capturando ${bloques.length} bloques…`;
+        const canvasBloques = await Promise.all(bloques.map(b=>
+          html2canvas(b, {scale:ESCALA_BLOQUE, backgroundColor:"#ffffff", useCORS:true, logging:false})
+        ));
+        if(i===0){ pdf = new jsPDF({orientation: orientacionPdfActual, unit:"pt", format:"a4"}); }
+        else{ pdf.addPage("a4", orientacionPdfActual); }
+        let y = MARGEN_A4;
+        let huboContenidoEnHoja = false;
+        canvasBloques.forEach(canvasBloque=>{
+          const wPtB = (canvasBloque.width/ESCALA_BLOQUE)*PX_A_PT;
+          const hPtB = (canvasBloque.height/ESCALA_BLOQUE)*PX_A_PT;
+          // Por las dudas -- no debería pasar nunca, ya el contenedor está al ancho real de hoja.
+          const factorB = wPtB > utilWA4 ? utilWA4/wPtB : 1;
+          const wFinalB = wPtB*factorB, hFinalB = hPtB*factorB;
+          if(huboContenidoEnHoja && (y + hFinalB) > (MARGEN_A4 + utilHA4)){
+            pdf.addPage("a4", orientacionPdfActual);
+            y = MARGEN_A4;
+            huboContenidoEnHoja = false;
+          }
+          pdf.addImage(canvasBloque.toDataURL("image/png"), "PNG", MARGEN_A4, y, wFinalB, hFinalB);
+          y += hFinalB;
+          huboContenidoEnHoja = true;
+        });
+        estado.textContent = `Informe armado en ${pdf.internal.getNumberOfPages()} hoja${pdf.internal.getNumberOfPages()===1?"":"s"} A4…`;
+        continue;
+      }
       // Nómina (la grilla de días) y los reportes de Pedido/Pendientes van por el camino
       // vectorial: dibujamos el PDF a mano leyendo la vista previa, SIN sacarle ninguna foto.
       // A la grilla de Nómina la obligaba el ancho; a estos dos los pasamos acá directamente
