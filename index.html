@@ -13637,7 +13637,7 @@ function generarReporteObservacionesPDF(){
   const badgeTxt = {alta:"🔴 Alta", media:"🟡 Media", baja:"🔵 Baja"};
   const filas = filtradas.map(o=>`<tr>
       <td>${esc(o.titulo)}</td><td>${esc(o.obra)}</td><td>${esc(o.responsable||"")}</td>
-      <td>${badgeTxt[o.prioridad]||""}</td><td>${OBS_ESTADO_TXT[o.estado]||o.estado}</td>
+      <td>${o.estado==="resuelto" ? "" : (badgeTxt[o.prioridad]||"")}</td><td>${OBS_ESTADO_TXT[o.estado]||o.estado}</td>
       <td>${o.fecha?fechaAR(o.fecha):""}</td>
     </tr>${o.descripcion ? `<tr><td colspan="6" style="padding:2px 8px 10px 16px;font-size:10px;color:#4B5563;background:#F9FAFB;border-bottom:1px solid #E5E7EB;">${esc(o.descripcion)}</td></tr>` : ""}`).join("");
   const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;min-height:990px;box-sizing:border-box;">
@@ -13689,7 +13689,7 @@ function generarInformeFotograficoObservacionesPDF(){
     return `<table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:6px;border-bottom:1px solid #E5E7EB;padding-bottom:5px;"><tr>
         ${fotosHtml}
         <td style="vertical-align:top;padding:2px 2px 2px 8px;">
-          <div style="font-family:Arial;font-size:11px;font-weight:bold;color:#0A2540;">${esc(o.titulo)} ${badgeTxt[o.prioridad]||""}</div>
+          <div style="font-family:Arial;font-size:11px;font-weight:bold;color:#0A2540;">${esc(o.titulo)}${o.estado==="resuelto" ? "" : " "+(badgeTxt[o.prioridad]||"")}</div>
           <div style="font-size:9px;color:#4B5563;margin-top:2px;">${esc(o.obra)}${o.responsable?" · "+esc(o.responsable):""} · ${OBS_ESTADO_TXT[o.estado]||o.estado}</div>
           ${o.descripcion ? `<div style="font-size:9px;color:#4B5563;margin-top:3px;">${esc(o.descripcion)}</div>` : ""}
         </td>
