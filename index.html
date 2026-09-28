@@ -3146,6 +3146,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <!-- ---- Nueva rendición ---- -->
     <div class="card" id="card-caja-nueva" style="display:none;">
       <h2>Rendición N° <span id="rc-numero-preview"></span></h2>
+      <div class="field" id="rc-numero-editar-cont" style="display:none;max-width:160px;margin-bottom:10px;">
+        <label>Corregir N° (si quedó mal numerada)</label>
+        <input type="number" id="rc-numero-editar" min="1" step="1">
+      </div>
       <div id="chip-caja-base-cont"></div>
 
       <div class="rc-datos-box">
@@ -9610,16 +9614,16 @@ async function editarRendicion(id){
 }
 
 /* ---------------- Formulario de rendición ---------------- */
-let rendicionAnteriorIdParaArrastre = null;
 function prepararFormularioNuevaRendicion(rendicionExistente){
   renderSelectObraCaja(rendicionExistente && rendicionExistente.obra);
   const infoSaldo = document.getElementById("rc-saldo-anterior-info");
-  rendicionAnteriorIdParaArrastre = null;
   if(rendicionExistente){
     rendicionEditandoId = rendicionExistente.id;
     rcGastos = rendicionExistente.gastos.map(g=>({...g}));
     rcFondo = rendicionExistente.fondo.map(f=>({...f}));
     document.getElementById("rc-numero-preview").textContent = numeroFormateado(rendicionExistente.numero)+" (editando)";
+    document.getElementById("rc-numero-editar-cont").style.display = "";
+    document.getElementById("rc-numero-editar").value = rendicionExistente.numero;
     document.getElementById("rc-obra").value = rendicionExistente.obra;
     document.getElementById("rc-responsable").value = rendicionExistente.responsable||"";
     document.getElementById("rc-mes").value = rendicionExistente.mes||"Enero";
@@ -9632,6 +9636,7 @@ function prepararFormularioNuevaRendicion(rendicionExistente){
     rcGastos = [{fecha:hoyISO(),ticket:"",tipoCosto:"",observaciones:"",centroCosto:"",monto:""}];
     rcFondo = [{detalle:"",monto:""}];
     document.getElementById("rc-numero-preview").textContent = numeroFormateado(correlativoCajaSiguiente);
+    document.getElementById("rc-numero-editar-cont").style.display = "none";
     document.getElementById("rc-responsable").value = "JESUS CHIMINO";
     document.getElementById("rc-semana").value = "";
     if(obraPredeterminada && obrasActivas().includes(obraPredeterminada)) document.getElementById("rc-obra").value = obraPredeterminada;
@@ -9649,7 +9654,6 @@ function prepararFormularioNuevaRendicion(rendicionExistente){
       const ultima = anteriores[0];
       document.getElementById("rc-saldo-anterior").value = ultima.diferencia || 0;
       infoSaldo.textContent = `Tomado de la Rendición N° ${numeroFormateado(ultima.numero)} (podés corregirlo si hace falta).`;
-      rendicionAnteriorIdParaArrastre = !estaRendicionCerrada(ultima) ? ultima.id : null;
     }else{
       document.getElementById("rc-saldo-anterior").value = "";
       infoSaldo.textContent = "Es la primera rendición cargada: escribí acá el saldo con el que arrancás (puede ser 0).";
@@ -9776,9 +9780,23 @@ async function guardarRendicion(){
   // Igual que el cierre manual: si esta rendición ya estaba saldada por una posterior, eso no se
   // pierde solo por editar un detalle menor.
   const saldadaPor = esEdicion ? (rendicionesCache[rendicionEditandoId] && rendicionesCache[rendicionEditandoId].saldadaPor) || null : null;
+  // El N° normalmente es fijo (autoasignado al crear), pero se puede corregir a mano al editar
+  // una rendición que quedó mal numerada (ej: se borró una intermedia y el correlativo saltó).
+  let numeroFinal;
+  if(esEdicion){
+    const numeroOriginal = rendicionesCache[rendicionEditandoId].numero;
+    const numeroTecleado = parseInt(document.getElementById("rc-numero-editar").value, 10);
+    numeroFinal = (numeroTecleado>0) ? numeroTecleado : numeroOriginal;
+    if(numeroFinal!==numeroOriginal && rendicionesIndex.some(r=>r.id!==rendicionEditandoId && r.numero===numeroFinal)){
+      showToast(`Ya existe la Rendición N° ${numeroFormateado(numeroFinal)} — elegí otro número`);
+      return;
+    }
+  }else{
+    numeroFinal = correlativoCajaSiguiente;
+  }
   const rendicion = {
     id: esEdicion ? rendicionEditandoId : uid(),
-    numero: esEdicion ? rendicionesCache[rendicionEditandoId].numero : correlativoCajaSiguiente,
+    numero: numeroFinal,
     usuario: usuarioDueno, // dueño de esta caja chica — cada Capataz solo ve/gestiona la suya
     obra, responsable,
     mes: document.getElementById("rc-mes").value,
@@ -9799,11 +9817,15 @@ async function guardarRendicion(){
     const idx = rendicionesIndex.findIndex(r=>r.id===rendicion.id);
     if(idx>-1) rendicionesIndex[idx] = entradaIndice;
     await guardarRendicionesIndex();
+    // Si se corrigió el N° a mano a un valor que pisaría al próximo correlativo automático,
+    // lo corremos para adelante para que la próxima rendición nueva no choque con este número.
+    if(numeroFinal>=correlativoCajaSiguiente){ correlativoCajaSiguiente = numeroFinal+1; await guardarCorrelativoCaja(); }
+    await propagarCierreCajaChica([rendicion.usuario]);
     rendicionEditandoId = null;
     nexoAvisoFlotante("guardado", "Rendición N° "+numeroFormateado(rendicion.numero)+" actualizada ✓");
     rendicionAbiertoId = rendicion.id;
     cambiarVistaCaja("detalle");
-    renderDetalleRendicion(rendicion);
+    renderDetalleRendicion(rendicionesCache[rendicion.id]);
     renderDashboard();
     return;
   }
@@ -9814,64 +9836,66 @@ async function guardarRendicion(){
   nexoAvisoFlotante("guardado", "Rendición N° "+numeroFormateado(rendicion.numero)+" guardada ✓");
   registrarActividad(`cargó la Rendición N° ${numeroFormateado(rendicion.numero)} de Caja Chica (${obra})`);
 
-  // Si esta rendición cerró bien arrastrando el saldo de una anterior que había quedado con
-  // diferencia negativa, esa anterior ya está cubierta por esta reposición — la marcamos saldada
-  // para que deje de aparecer como "pendiente" para siempre con una plata que ya se repuso.
-  if(rendicionAnteriorIdParaArrastre && estaRendicionCerrada(rendicion)){
-    try{
-      const anterior = await cargarRendicionDetalle(rendicionAnteriorIdParaArrastre);
-      if(anterior && !estaRendicionCerrada(anterior)){
-        anterior.saldadaPor = rendicion.numero;
-        await guardarRendicionDetalle(anterior);
-        const idxAnt = rendicionesIndex.findIndex(r=>r.id===rendicionAnteriorIdParaArrastre);
-        if(idxAnt>-1) rendicionesIndex[idxAnt].saldadaPor = rendicion.numero;
-        await guardarRendicionesIndex();
-        registrarActividad(`la Rendición N° ${numeroFormateado(anterior.numero)} quedó saldada por la N° ${numeroFormateado(rendicion.numero)}`);
-      }
-    }catch(e){ console.error("No se pudo marcar la rendición anterior como saldada:", e); }
-  }
-  rendicionAnteriorIdParaArrastre = null;
+  // Si esta rendición cerró bien, puede estar cubriendo (arrastrando) el saldo negativo de una o
+  // varias rendiciones anteriores sin cerrar -- las marcamos saldadas para que dejen de aparecer
+  // como pendientes con una plata que ya se repuso.
+  const cantidadSaldadas = await propagarCierreCajaChica([rendicion.usuario]);
+  if(cantidadSaldadas>0) registrarActividad(`la Rendición N° ${numeroFormateado(rendicion.numero)} saldó ${cantidadSaldadas} rendición(es) anterior(es) de Caja Chica`);
 
   cambiarVistaCaja("lista");
   renderDashboard();
 }
 
-/* ---------------- Reparación puntual: cajas viejas que quedaron con diferencia negativa
-   aunque ya fueron cubiertas por una rendición posterior (el arrastre automático solo corre
-   para rendiciones NUEVAS de acá en adelante, no revisa retroactivamente el historial viejo) ---------------- */
-async function repararCajasAntiguas(){
-  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
-  // Agrupamos por dueño de caja (cada Capataz tiene la suya, separada) y ordenamos por número.
+/* ---------------- Cierre en cadena de Caja Chica ----------------
+   Si una rendición sigue con diferencia negativa (sin cerradaManual ni saldadaPor) pero la
+   INMEDIATA SIGUIENTE (mismo dueño de caja, ordenadas por número) ya quedó cerrada, esa anterior
+   ya está cubierta por esa reposición -- se marca saldada. Corre en varias pasadas hasta que
+   ninguna cambie más, porque una cadena de varias rendiciones abiertas seguidas (ej: la 12 y la 13
+   sin cerrar, recién la 14 las cubre) necesita propagarse hacia atrás más de un eslabón para que
+   las dos anteriores queden saldadas de una sola vez.
+   "usuariosAProcesar" limita el barrido a esos dueños de caja (undefined/null = todos). */
+async function propagarCierreCajaChica(usuariosAProcesar){
   const porUsuario = {};
   rendicionesIndex.forEach(r=>{
     const clave = r.usuario || "__admin__";
     (porUsuario[clave] = porUsuario[clave]||[]).push(r);
   });
+  const claves = usuariosAProcesar ? usuariosAProcesar.map(u=>u||"__admin__") : Object.keys(porUsuario);
   let arregladas = 0;
-  for(const clave in porUsuario){
-    const lista = porUsuario[clave].slice().sort((a,b)=>a.numero-b.numero);
-    for(let i=0;i<lista.length-1;i++){
-      const actual = lista[i];
-      const siguiente = lista[i+1];
-      // Si esta ya está cerrada de alguna forma, no hay nada que reparar.
-      if(estaRendicionCerrada(actual)) continue;
-      // Si la SIGUIENTE (en número) ya quedó cerrada, significa que su reposición cubrió el
-      // saldo negativo de esta — la marcamos saldada, igual que hace el arrastre automático.
-      if(!estaRendicionCerrada(siguiente)) continue;
-      try{
-        const detalle = await cargarRendicionDetalle(actual.id);
-        if(!detalle || estaRendicionCerrada(detalle)) continue;
-        detalle.saldadaPor = siguiente.numero;
-        await guardarRendicionDetalle(detalle);
-        actual.saldadaPor = siguiente.numero;
-        arregladas++;
-      }catch(e){ console.error("No se pudo reparar la rendición "+actual.numero, e); }
+  let siguioArreglando = true;
+  while(siguioArreglando){
+    siguioArreglando = false;
+    for(const clave of claves){
+      const lista = (porUsuario[clave]||[]).slice().sort((a,b)=>a.numero-b.numero);
+      for(let i=0;i<lista.length-1;i++){
+        const actual = lista[i];
+        const siguiente = lista[i+1];
+        if(estaRendicionCerrada(actual)) continue;
+        if(!estaRendicionCerrada(siguiente)) continue;
+        try{
+          const detalle = await cargarRendicionDetalle(actual.id);
+          if(!detalle || estaRendicionCerrada(detalle)) continue;
+          detalle.saldadaPor = siguiente.numero;
+          await guardarRendicionDetalle(detalle);
+          actual.saldadaPor = siguiente.numero;
+          const idx = rendicionesIndex.findIndex(r=>r.id===actual.id);
+          if(idx>-1) rendicionesIndex[idx].saldadaPor = siguiente.numero;
+          arregladas++;
+          siguioArreglando = true;
+        }catch(e){ console.error("No se pudo saldar la rendición "+actual.numero, e); }
+      }
     }
   }
-  if(arregladas>0){
-    await guardarRendicionesIndex();
-    registrarActividad(`reparó ${arregladas} rendición(es) vieja(s) de Caja Chica que ya estaban saldadas`);
-  }
+  if(arregladas>0) await guardarRendicionesIndex();
+  return arregladas;
+}
+/* ---------------- Reparación manual: repasa TODAS las cajas de TODOS los usuarios (el cierre en
+   cadena de arriba ya corre solo después de cada guardado, pero esto sirve para revisar de una
+   vieja todo el historial de una) ---------------- */
+async function repararCajasAntiguas(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const arregladas = await propagarCierreCajaChica(null);
+  if(arregladas>0) registrarActividad(`reparó ${arregladas} rendición(es) vieja(s) de Caja Chica que ya estaban saldadas`);
   showToast(arregladas>0 ? `✓ Se repararon ${arregladas} rendición(es).` : "No había nada para reparar — todo estaba bien.");
   renderListaRendiciones();
   renderDashboard();
@@ -10020,10 +10044,37 @@ function graficoGastoPorCategoria(gastos){
   return `<div class="card" style="margin-bottom:14px;background:var(--fondo);"><h2 style="margin-bottom:10px;">📊 Gasto por categoría</h2>${barras}</div>`;
 }
 async function eliminarRendicion(){
+  const eliminada = rendicionesCache[rendicionAbiertoId];
   rendicionesIndex = rendicionesIndex.filter(r=>r.id!==rendicionAbiertoId);
   await guardarRendicionesIndex();
   delete rendicionesCache[rendicionAbiertoId];
   try{ await window.storage.delete("rendicion_"+rendicionAbiertoId, true); }catch(e){}
+
+  if(eliminada){
+    // Si esta rendición era la que "saldaba" a una anterior, esa anterior deja de estar cubierta
+    // de verdad -- se reabre y se intenta cerrar de nuevo por si alguna otra rendición posterior
+    // (o la reparación en cadena) también la cubre, en vez de dejarla marcada como saldada por
+    // un número que ya no existe.
+    const clave = eliminada.usuario || "__admin__";
+    let huboReapertura = false;
+    for(const r of rendicionesIndex){
+      if((r.usuario||"__admin__")===clave && r.saldadaPor===eliminada.numero){
+        r.saldadaPor = null;
+        const detalle = await cargarRendicionDetalle(r.id);
+        if(detalle){ detalle.saldadaPor = null; await guardarRendicionDetalle(detalle); }
+        huboReapertura = true;
+      }
+    }
+    if(huboReapertura) await guardarRendicionesIndex();
+    // Si era la última rendición numerada en toda la app (nadie más usa ese número ni uno mayor),
+    // liberamos el correlativo para que la próxima rendición no deje un hueco en la numeración.
+    if(eliminada.numero===correlativoCajaSiguiente-1 && !rendicionesIndex.some(r=>r.numero>=eliminada.numero)){
+      correlativoCajaSiguiente = eliminada.numero;
+      await guardarCorrelativoCaja();
+    }
+    await propagarCierreCajaChica([eliminada.usuario]);
+  }
+
   showToast("Rendición eliminada");
   cambiarVistaCaja("lista");
   renderDashboard();
