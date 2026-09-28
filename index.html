@@ -4186,8 +4186,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     </div>
 
     <div id="card-pend-observaciones" style="display:none;">
-    <div class="card">
-      <h2>📋 Nueva observación</h2>
+    <div class="card" id="obs-form-card">
+      <div class="row-flex" style="justify-content:space-between;align-items:center;">
+        <h2 id="obs-form-titulo" style="margin:0;">📋 Nueva observación</h2>
+        <button type="button" class="btn btn-outline btn-sm" id="obs-btn-cancelar-edicion" style="display:none;" onclick="cancelarEdicionObservacion()">✕ Cancelar edición</button>
+      </div>
       <div class="field">
         <label>Foto</label>
         <div id="obs-foto-preview" class="foto-drop" onclick="document.getElementById('obs-foto-input').click()">
@@ -12376,6 +12379,7 @@ function seleccionarChip(rowId, el, val){
   document.querySelectorAll("#"+rowId+" .chip-opt").forEach(c=>c.classList.toggle("sel", c===el));
   if(rowId==="herr-condicion-row") herrCondicionSel = val;
   if(rowId==="herr-estado-row") herrEstadoSel = val;
+  if(rowId==="obs-prioridad-row") obsPrioridadSel = val;
   if(rowId==="np-tipo-row"){
     npTipoSel = val;
     document.getElementById("campo-estado-contrato").style.display = val==="contratacion" ? "flex" : "none";
@@ -12953,6 +12957,7 @@ function confirmarEditorMarcado(){
 let observaciones = [];
 let errorCargaObservaciones = false;
 let obsPrioridadSel = "media";
+let obsEditandoId = null; // id de la observación que se está editando en el formulario (null = nueva)
 let obsFotoData = null;
 let obsFiltroPrioridad = "";
 const OBS_ESTADOS = ["detectado","asignado","en_curso","resuelto"];
@@ -13434,6 +13439,9 @@ function prepararVistaObservaciones(){
   const actualFiltro = filtro.value;
   poblarSelectFiltroObras(filtro);
   filtro.value = actualFiltro;
+  obsEditandoId = null;
+  document.getElementById("obs-form-titulo").textContent = "📋 Nueva observación";
+  document.getElementById("obs-btn-cancelar-edicion").style.display = "none";
   document.getElementById("obs-titulo").value = "";
   document.getElementById("obs-responsable").value = "";
   document.getElementById("obs-descripcion").value = "";
@@ -13447,16 +13455,61 @@ function prepararVistaObservaciones(){
   mostrarBotonFlotanteGuardar("Guardar observación", guardarObservacion, "📋");
   migrarFotosObservacionesSiHaceFalta();
 }
+// Carga una observación existente en el mismo formulario de "Nueva observación" de arriba --
+// mismo patrón que editarPedido/editarContratista (un solo formulario, un id "editandoId" que
+// decide si guardarObservacion() crea una nueva o actualiza la existente). No se toca el estado
+// del seguimiento (detectado/materiales/en curso/resuelto) ni la foto de "después": esas tienen
+// sus propios controles en la tarjeta y no tiene sentido pisarlas desde acá.
+function editarObservacion(id){
+  const o = observaciones.find(x=>x.id===id);
+  if(!o) return;
+  obsEditandoId = id;
+  document.getElementById("obs-form-titulo").textContent = "✏️ Editar observación";
+  document.getElementById("obs-btn-cancelar-edicion").style.display = "";
+  document.getElementById("obs-titulo").value = o.titulo || "";
+  poblarSelectObras(document.getElementById("obs-obra"));
+  document.getElementById("obs-obra").value = o.obra;
+  document.getElementById("obs-responsable").value = o.responsable || "";
+  document.getElementById("obs-descripcion").value = o.descripcion || "";
+  obsFotoData = o.foto || null;
+  document.getElementById("obs-foto-txt").style.display = obsFotoData ? "none" : "";
+  const img = document.getElementById("obs-foto-img");
+  img.src = obsFotoData || ""; img.style.display = obsFotoData ? "" : "none";
+  document.getElementById("obs-btn-remarcar").style.display = obsFotoData ? "" : "none";
+  obsPrioridadSel = o.prioridad || "media";
+  document.querySelectorAll("#obs-prioridad-row .chip-opt").forEach(c=>c.classList.toggle("sel", c.dataset.val===obsPrioridadSel));
+  mostrarBotonFlotanteGuardar("Guardar cambios", guardarObservacion, "📋");
+  document.getElementById("obs-form-card").scrollIntoView({behavior:"smooth", block:"start"});
+}
+function cancelarEdicionObservacion(){
+  prepararVistaObservaciones();
+}
 async function guardarObservacion(){
   const titulo = document.getElementById("obs-titulo").value.trim();
   const obra = document.getElementById("obs-obra").value;
   if(!titulo){ showToast("Escribí un título corto"); return; }
   if(!obra){ showToast("Elegí una obra"); return; }
-  const obsNueva = {
-    id: uid(), titulo, obra,
+  const datos = {
+    titulo, obra,
     responsable: document.getElementById("obs-responsable").value.trim(),
     descripcion: document.getElementById("obs-descripcion").value.trim(),
-    prioridad: obsPrioridadSel, foto: obsFotoData, estado: "detectado",
+    prioridad: obsPrioridadSel, foto: obsFotoData,
+  };
+  if(obsEditandoId){
+    const o = observaciones.find(x=>x.id===obsEditandoId);
+    if(!o){ showToast("Esa observación ya no existe"); prepararVistaObservaciones(); return; }
+    const anterior = {...o};
+    Object.assign(o, datos);
+    nexoAvisoFlotante("guardando");
+    const ok = await guardarObservacionesIndex();
+    if(!ok){ Object.assign(o, anterior); nexoAvisoFlotante("error", "No se pudo guardar los cambios ⚠"); return; }
+    registrarActividad(`editó la observación "${esc(titulo)}"`);
+    nexoAvisoFlotante("guardado", "Cambios guardados ✓");
+    prepararVistaObservaciones();
+    return;
+  }
+  const obsNueva = {
+    id: uid(), ...datos, estado: "detectado",
     fecha: hoyISO(), creadoPor: sesionActual?sesionActual.username:"", timestamp: new Date().toISOString()
   };
   observaciones.unshift(obsNueva);
@@ -13530,6 +13583,7 @@ function renderListaObservaciones(){
           <button type="button" class="btn-mini" onclick="elegirFotoObservacionDespues('${o.id}')">📷 ${o.fotoDespues?"Cambiar foto de después":"Foto de después"}</button>
         </div>
         <div class="obs-botones">
+          <button type="button" class="btn-mini" onclick="editarObservacion('${o.id}')">✏️ Editar</button>
           ${sesionActual && sesionActual.role==="admin" ? `<button type="button" class="btn-mini peligro" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarObservacion('${o.id}'))">🗑 Eliminar</button>` : ``}
         </div>
       </div>
