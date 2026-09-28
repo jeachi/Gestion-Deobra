@@ -15695,6 +15695,13 @@ function parsearMontoAR(txt){
 function obtenerEntradaMes(item, n){
   const existente = (item.historialMeses||[]).find(m=>m.n===n);
   if(existente) return existente;
+  // Si el ítem YA LLEGÓ al 100% en un mes anterior, se queda en 100% para siempre (la app deja de
+  // pedirle % una vez completo -- ver renderFormNuevoMes) -- cualquier mes posterior sin entrada
+  // propia debe seguir reflejando ese 100%, nunca "retroceder" a 0 solo porque no se lo volvió a
+  // tocar. Un ítem TODAVÍA EN CURSO, en cambio, sigue arrancando en blanco en un mes sin cargar --
+  // a propósito, para certificar ese mes puntual sin un valor previo ya precargado (ver
+  // test-mes-siguiente.js: abrir un mes nuevo debe ofrecer un campo en blanco para tipear).
+  if(entradaHastaMes(item, n-1).acumulado >= 1) return {n, anterior:1, enElMes:0, acumulado:1, monto:0};
   return {n, anterior:0, enElMes:0, acumulado:0, monto:0};
 }
 function maxMesCargado(){
@@ -15831,12 +15838,24 @@ async function guardarAjustesMesPresupuesto(n){
     it.historialMeses = it.historialMeses || [];
     let entrada = it.historialMeses.find(m=>m.n===n);
     if(!entrada){ entrada = {n, anterior:0, enElMes:0, acumulado:0, monto:0}; it.historialMeses.push(entrada); it.historialMeses.sort((a,b)=>a.n-b.n); }
-    const entradaAnterior = it.historialMeses.find(m=>m.n===n-1);
-    const anterior = entradaAnterior ? entradaAnterior.acumulado : 0;
+    // "Anterior" se arrastra del último mes CON DATOS antes de este (igual que entradaHastaMes/
+    // obtenerEntradaMes) -- no alcanza con mirar exactamente n-1, porque un ítem terminado hace
+    // rato puede no tener ninguna entrada en los últimos meses.
+    const anterior = entradaHastaMes(it, n-1).acumulado;
     entrada.anterior = anterior;
     entrada.acumulado = nuevoAcum;
     entrada.enElMes = Math.max(0, nuevoAcum-anterior);
     entrada.monto = entrada.enElMes*it.precioConCoef;
+    // Si este ítem ya tenía meses POSTERIORES cargados, hay que reencadenar su "anterior"/
+    // "acumulado" a partir de este cambio -- si no, quedan con el "anterior" viejo (antes de la
+    // corrección) para siempre, igual que ya resuelve confirmarInspeccionPresupuesto.
+    let encadenado = nuevoAcum;
+    it.historialMeses.filter(m=>m.n>n).sort((a,b)=>a.n-b.n).forEach(m=>{
+      m.anterior = encadenado;
+      m.acumulado = Math.min(1, m.anterior + m.enElMes);
+      m.monto = m.enElMes*it.precioConCoef;
+      encadenado = m.acumulado;
+    });
   });
   await guardarPresupuestoObra();
   actualizarResumenPresupuesto();
