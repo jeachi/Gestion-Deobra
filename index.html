@@ -8121,8 +8121,17 @@ async function guardarPedido(){
       if(yaExiste){ showToast("Ya existe otro pedido con el N° "+numeroFormateado(nuevoNumero)+" — elegí otro"); return; }
       numeroFinal = nuevoNumero;
     }
+  }else if(pedidosIndex.some(p=>p.numero===numeroFinal)){
+    // El correlativo automático no debería poder chocar con un pedido ya existente (ej: si alguien
+    // corrigió el "Próximo número" a mano a un valor ya usado) -- mismo chequeo que ya se hace al
+    // corregir el N° de un pedido existente, ahora también al asignarlo por primera vez.
+    showToast("Ya existe un pedido con el N° "+numeroFormateado(numeroFinal)+" — corregí el próximo número en Configuración");
+    return;
   }
-  const itemsFinales = npItems.map(it=>({desc:it.desc||"", cant:it.cant||"", un:it.un||"", imagen:it.imagen||null, entregado:it.entregado||0}));
+  // OJO: preservar it.cerrado -- si no, cualquier edición de un pedido (aunque sea un campo sin
+  // relación) reabre silenciosamente los ítems que se habían cerrado a mano como "no llega el
+  // resto" (toggleCierreItem), revirtiendo el estado del pedido de Completo a Parcial.
+  const itemsFinales = npItems.map(it=>({desc:it.desc||"", cant:it.cant||"", un:it.un||"", imagen:it.imagen||null, entregado:it.entregado||0, cerrado:it.cerrado||false}));
   actualizarCatalogoMateriales(itemsFinales);
   // Completamos a 25 filas siempre al guardar — esto también corrige, con solo volver a
   // guardarlos, los pedidos viejos que se cargaron antes de este arreglo con menos filas.
