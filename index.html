@@ -12639,7 +12639,9 @@ function renderInventarioHerramientas(){
         <div class="botones-fila-herr">
           <button type="button" class="btn-mini" onclick="abrirModalObservacion('${h.id}')">💬 Observación</button>
           ${esAdmin ? `
-            <button type="button" class="btn-mini admin" onclick="abrirModalReparacion('${h.id}')">🔧 Enviar a reparar</button>
+            ${h.estado==="reparacion"
+              ? `<button type="button" class="btn-mini admin" onclick="finalizarReparacionHerramienta('${h.id}')">✅ Volvió de reparación</button>`
+              : `<button type="button" class="btn-mini admin" onclick="abrirModalReparacion('${h.id}')">🔧 Enviar a reparar</button>`}
             <button type="button" class="btn-mini admin" onclick="abrirModalPrestamo('${h.id}')">🔁 Prestar a otra obra</button>
             <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${h.historialPrestamos&&h.historialPrestamos.length?` (${h.historialPrestamos.length})`:""}</button>
             <button type="button" class="btn-mini peligro" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarHerramienta('${h.id}'))">🗑 Eliminar</button>
@@ -12704,11 +12706,35 @@ async function guardarReparacionHerramienta(id){
   cerrarModalHerramienta();
   renderInventarioHerramientas();
 }
+// Antes no existía ningún camino para volver una herramienta de "reparación" a servicio -- quedaba
+// marcada "🔧 En reparación" para siempre. Se archiva la reparación en su propio historial (mismo
+// criterio que ya usa el préstamo) y vuelve a "bien".
+async function finalizarReparacionHerramienta(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const h = herramientas.find(x=>x.id===id);
+  if(!h) return;
+  if(h.reparacion){
+    if(!h.historialReparaciones) h.historialReparaciones = [];
+    h.historialReparaciones.push({...h.reparacion, fechaVuelta: hoyISO()});
+  }
+  h.reparacion = null;
+  h.estado = "bien";
+  const ok = await guardarHerramientasIndex();
+  if(!ok) return;
+  registrarActividad(`marcó "${esc(h.nombre)}" como reparada -- de vuelta en servicio`);
+  showToast("De vuelta en servicio ✓");
+  renderInventarioHerramientas();
+}
 function abrirModalPrestamo(id){
   if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const h = herramientas.find(x=>x.id===id);
   if(!h) return;
-  const p = h.prestamo || {};
+  // Solo se precarga el préstamo anterior si la herramienta SIGUE prestada (se está corrigiendo un
+  // dato del préstamo en curso) -- si no, sería un préstamo NUEVO, y precargar la fecha de
+  // recepción del último préstamo ya cerrado podía dejarla puesta sin que se note, haciendo que
+  // guardarPrestamoHerramienta la de por devuelta de entrada aunque en realidad recién se está
+  // yendo.
+  const p = h.estado==="prestada" ? (h.prestamo || {}) : {};
   const tipo = p.tipo || "obra";
   document.getElementById("herr-modal-panel").innerHTML = `
     <h3>🔁 Préstamo — ${esc(h.nombre)}</h3>
@@ -12787,7 +12813,9 @@ async function guardarPrestamoHerramienta(id){
   // Si ya se completó la fecha de recepción, la herramienta volvió — pasa a "bien" de nuevo, y
   // esta vuelta del préstamo se archiva en el historial (para poder ver más adelante cuántas
   // veces se prestó esta herramienta, a quién, y si suele volver tarde).
-  h.estado = fechaRecepcion ? "bien" : "prestada";
+  // OJO: si mientras tanto la mandaron a reparar (h.estado ya es "reparacion"), registrar la
+  // devolución del préstamo no debe hacerla figurar "bien" de nuevo -- sigue en el taller.
+  h.estado = fechaRecepcion ? (h.estado==="reparacion" ? "reparacion" : "bien") : "prestada";
   if(fechaRecepcion){
     if(!h.historialPrestamos) h.historialPrestamos = [];
     h.historialPrestamos.push({...h.prestamo});
