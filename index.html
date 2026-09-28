@@ -13681,7 +13681,7 @@ function generarInformeFotograficoObservacionesPDF(){
       // Si todavía no hay foto de "antes" pero ya se cargó la de "después", mostrar un solo
       // cuadro (el de "después") en vez de dos, para no dejar un "Sin foto" al lado sin sentido.
       const fotosHtml = (!o.foto && o.fotoDespues) ? fotoBox(o.fotoDespues, "Después") : fotoBox(o.foto, "Antes") + fotoBox(o.fotoDespues, "Después");
-      return `<table width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
+      return `<table width="700" cellspacing="0" cellpadding="0" style="margin-bottom:14px;border-bottom:1px solid #E5E7EB;padding-bottom:10px;"><tr>
         ${fotosHtml}
         <td style="vertical-align:top;padding:4px 4px 4px 10px;">
           <div style="font-family:Arial;font-size:12px;font-weight:bold;color:#0A2540;">${esc(o.titulo)} ${badgeTxt[o.prioridad]||""}</div>
@@ -13701,8 +13701,15 @@ function generarInformeFotograficoObservacionesPDF(){
   // de una, y la cortaba en varias hojas sin respetar dónde. El 5to parámetro (usarA4Real) hace
   // que fluya en tantas hojas A4 reales como haga falta, sin cortar ninguna fila de foto+texto a
   // la mitad (mismo mecanismo que ya usan el Certificado de obra y el Presupuesto A1).
-  const html = `<div class="print-page" style="width:100% !important;min-width:0 !important;box-sizing:border-box;">
-    ${construirEncabezadoReportePDF(`INFORME FOTOGRÁFICO DE OBSERVACIONES${obraSel ? " — "+esc(obraSel) : ""}`, "100%")}
+  // OJO: el ancho se deja fijo en 700px (no 100%) a propósito -- "Enviar por WhatsApp" arma el PDF
+  // adentro de un iframe de 3000px de ancho para poder medir el tamaño natural del contenido; con
+  // 100% el contenido pasaba a ocupar esos 3000px enteros, la captura se volvía mucho más pesada
+  // y lenta, y para cuando terminaba, el navegador ya había vencido el permiso para compartir
+  // (Failed to execute 'share' on 'Navigator': Permission denied). Con un ancho fijo, imprimir en
+  // A4 real sigue funcionando igual (el contenido fluye en varias hojas, solo que no se estira
+  // para ocupar el ancho completo de cada una) y "Enviar por WhatsApp" vuelve a andar.
+  const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;box-sizing:border-box;">
+    ${construirEncabezadoReportePDF(`INFORME FOTOGRÁFICO DE OBSERVACIONES${obraSel ? " — "+esc(obraSel) : ""}`)}
     <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")} &nbsp;&nbsp;&nbsp; ${obraSel ? "Obra: "+esc(obraSel) : "Todas las obras"}</div>
     ${bloquesHtml}
   </div>`;
