@@ -10779,18 +10779,61 @@ async function eliminarContratista(){
 async function eliminarCertificado(contratistaId, certIndex){
   const c = contratistasCache[contratistaId];
   if(!c || !c.certificados) return;
-  const numeroTxt = c.certificados[certIndex] ? c.certificados[certIndex].numero : "";
+  const borrado = c.certificados[certIndex];
+  const numeroTxt = borrado ? borrado.numero : "";
   c.certificados.splice(certIndex, 1);
   // Renumeramos para que la secuencia quede prolija (Certificado 1,2,3...) — el % anterior de
   // los que quedan se recalcula solo al recorrer la lista en orden, así que no hay que tocar nada más.
-  c.certificados.forEach((ct,i)=>{ ct.numero = i+1; ct.nombre = "CERTIFICADO "+(i+1); });
+  // OJO: cada certificado con plano dejó un hito en el Plano de avance guardado con una clave que
+  // incluye su NÚMERO (ver agregarSnapshotAPlano/guardarCertificadoConfirmado, "cert_<id>_<numero>")
+  // -- si no re-clavamos ese hito al renumerar, queda huérfano (etiquetado con un N° que ya no
+  // corresponde a ningún certificado real) y encima se duplica la próxima vez que ese certificado
+  // se reedite (la clave vieja se queda para siempre, la nueva crea un hito aparte).
+  const renumeraciones = [];
+  c.certificados.forEach((ct,i)=>{
+    const numeroNuevo = i+1;
+    if(ct.planoId && ct.numero!==numeroNuevo) renumeraciones.push({planoId: ct.planoId, numeroViejo: ct.numero, numeroNuevo});
+    ct.numero = numeroNuevo; ct.nombre = "CERTIFICADO "+numeroNuevo;
+  });
   await guardarContratistaDetalle(c);
   actualizarResumenEnIndice(c);
   await guardarContratistasIndex();
+  if(c.obra){
+    if(borrado && borrado.planoId) await quitarSnapshotDelPlano(c.obra, borrado.planoId, `cert_${c.id}_${numeroTxt}`);
+    for(const r of renumeraciones){
+      await renombrarClaveSnapshotPlano(c.obra, r.planoId, `cert_${c.id}_${r.numeroViejo}`, `cert_${c.id}_${r.numeroNuevo}`, r.numeroViejo, r.numeroNuevo);
+    }
+  }
   showToast("Certificado eliminado");
   registrarActividad(`eliminó el Certificado N° ${numeroTxt} de "${c.nombre}"`);
   renderDetalleContratista(c);
   renderDashboard();
+}
+// Saca del historial del plano el hito de un certificado que se eliminó -- si no, queda un hito
+// huérfano etiquetado "Certificado N°X" que ya no corresponde a ningún certificado real.
+async function quitarSnapshotDelPlano(obra, planoId, claveUnica){
+  try{
+    const r = await window.storage.get(`plano_avance_snapshots_${obra}_${planoId}`, true);
+    let snapshots = r && r.value ? JSON.parse(r.value) : [];
+    const antes = snapshots.length;
+    snapshots = snapshots.filter(s=>s.claveUnica!==claveUnica);
+    if(snapshots.length!==antes) await window.storage.set(`plano_avance_snapshots_${obra}_${planoId}`, JSON.stringify(snapshots), true);
+  }catch(e){ /* este plano todavía no tenía snapshots guardados */ }
+}
+// Re-clava (mueve) el hito de un certificado que cambió de número al renumerarse -- si no, el hito
+// se queda guardado con la clave VIEJA para siempre, y la próxima vez que se reedite ese
+// certificado se crea un hito NUEVO aparte en vez de actualizar el que ya existía.
+async function renombrarClaveSnapshotPlano(obra, planoId, claveVieja, claveNueva, numeroViejo, numeroNuevo){
+  try{
+    const r = await window.storage.get(`plano_avance_snapshots_${obra}_${planoId}`, true);
+    const snapshots = r && r.value ? JSON.parse(r.value) : [];
+    const s = snapshots.find(x=>x.claveUnica===claveVieja);
+    if(s){
+      s.claveUnica = claveNueva;
+      if(s.etiqueta) s.etiqueta = s.etiqueta.split(`N° ${numeroViejo} `).join(`N° ${numeroNuevo} `);
+      await window.storage.set(`plano_avance_snapshots_${obra}_${planoId}`, JSON.stringify(snapshots), true);
+    }
+  }catch(e){ /* este plano todavía no tenía snapshots guardados */ }
 }
 // Agrega o saca la foto del plano de un certificado YA GUARDADO -- útil si te olvidaste de
 // tocar "Traer avance del plano" en su momento -- sin esto, el PDF de ese certificado sale de 2
