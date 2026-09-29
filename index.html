@@ -2645,7 +2645,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
         <div class="table-wrap" style="margin-top:12px;">
           <table class="trab" id="tabla-usuarios">
-            <thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Asistencia</th><th style="text-align:center;">Pedidos</th><th style="text-align:center;">Caja Chica</th><th style="text-align:center;">Certificados</th><th style="text-align:center;">Clima</th><th style="text-align:center;">Minutas</th><th style="text-align:center;">Remitos</th><th style="text-align:center;">Herramientas</th><th style="text-align:center;">Observaciones</th><th></th></tr></thead>
+            <thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Asistencia</th><th style="text-align:center;">Pedidos</th><th style="text-align:center;">Caja Chica</th><th style="text-align:center;">Certificados</th><th style="text-align:center;">Clima</th><th style="text-align:center;">Minutas</th><th style="text-align:center;">Remitos</th><th style="text-align:center;">Herramientas</th><th style="text-align:center;">Observaciones</th><th style="text-align:center;">Presupuesto</th><th></th></tr></thead>
             <tbody id="tbody-usuarios"></tbody>
           </table>
         </div>
@@ -2896,7 +2896,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
     <div class="card" id="card-vista-informes-tabla" style="display:none;">
       <h2>Por trabajador</h2>
-      <p class="helper" style="margin-bottom:10px;">Días presente ÷ (presente + ausencias reales). Feriados, otra obra, vacaciones y enfermedad quedan afuera del cálculo.</p>
+      <p class="helper" style="margin-bottom:10px;">Días presente ÷ (presente + ausente + enfermo) — no fue a trabajar, sea cual sea el motivo. Feriados, otra obra y justificados quedan afuera del cálculo.</p>
       <div class="table-wrap">
         <table class="tabla-asist" id="tabla-informes-asistencia">
           <thead><tr><th>Nombre</th><th>Días</th><th>% Asistencia</th></tr></thead>
@@ -5495,6 +5495,13 @@ function totalHorasRango(dias, desde, hasta){
   for(let d=desde; d<=hasta; d++){
     const v = (dias||{})[d];
     if(esNumeroPuro(v)) total += parseFloat(v);
+    else{
+      // "LL5" (llovió pero igual se trabajaron 5hs) clasifica como "presente" en
+      // calcularStatsAsistenciaMes, pero acá nunca se sumaba -- el % de asistencia quedaba bien
+      // pero el total de horas de la quincena/mes se subestimaba silenciosamente.
+      const m = /^LL(\d+([.,]\d+)?)$/i.test((v||"").trim()) ? (v||"").trim().match(/^LL(\d+([.,]\d+)?)$/i) : null;
+      if(m) total += parseFloat(m[1].replace(",","."));
+    }
   }
   return total;
 }
@@ -5589,7 +5596,11 @@ async function renderAsistencia(){
 }
 
 function esNumeroPuro(valor){
-  return /^-?\d+(\.\d+)?$/.test((valor||"").trim());
+  // Acepta coma decimal ("4,5") además de punto -- el resto de los campos numéricos de la app ya
+  // normaliza coma a punto al tipear, pero acá no se hacía: un valor como "4,5" no matcheaba nada
+  // conocido y caía en el default "otra_obra" (clasificarValorDia), y esas horas quedaban afuera
+  // de "Total hs" (totalHorasRango) sin ningún aviso.
+  return /^-?\d+([.,]\d+)?$/.test((valor||"").trim());
 }
 // ---------------- Copiar la semana anterior (si el equipo es estable, evita re-cargar todo) ----------------
 function abrirCopiarSemanaAnterior(){
@@ -5666,7 +5677,7 @@ function setDia(filaId, dia, valor){
     renderVistaDia();
     return;
   }
-  if(esNumeroPuro(val) && parseFloat(val) <= 0){
+  if(esNumeroPuro(val) && parseFloat(val.replace(",",".")) <= 0){
     showToast("Las horas tienen que ser un número mayor a 0 (usá un código de la leyenda si no trabajó)");
     renderAsistencia();
     renderVistaDia();
@@ -5674,7 +5685,9 @@ function setDia(filaId, dia, valor){
   }
   const reg = asistenciaCache[mesActual][filaId];
   if(!reg) return;
-  reg.days[dia] = valor;
+  // Se normaliza la coma decimal a punto al guardar -- así el resto del código (totalHorasRango,
+  // clasificarValorDia, exportaciones) no tiene que volver a lidiar con las dos notaciones.
+  reg.days[dia] = esNumeroPuro(val) ? val.replace(",",".") : valor;
   guardarAsistenciaMes(mesActual);
   registrarActividadAsistenciaDebounced();
   renderAsistencia();
@@ -5697,7 +5710,18 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId){
   const data = asistenciaCache[mesActual];
   const reg = data[filaTempId] || {obra:"",days:{},notaQ1:"",notaQ2:""};
   delete data[filaTempId];
-  data[trabajadorId] = data[trabajadorId] || reg;
+  // OJO: cada trabajador visible en el mes ya tiene su propia entrada auto-creada al renderizar
+  // (aunque esté vacía) -- un objeto vacío sigue siendo "truthy" en JS, así que "data[trabajadorId]
+  // || reg" siempre se quedaba con esa entrada vieja (vacía) y descartaba EN SILENCIO lo recién
+  // tipeado en la fila extra. Ahora se mezclan los días de las dos (los de la fila extra ganan si
+  // hay choque, por ser la acción explícita que se acaba de confirmar).
+  const existente = data[trabajadorId] || {obra:"",days:{},notaQ1:"",notaQ2:""};
+  data[trabajadorId] = {
+    obra: existente.obra || reg.obra || "",
+    days: {...(existente.days||{}), ...(reg.days||{})},
+    notaQ1: existente.notaQ1 || reg.notaQ1 || "",
+    notaQ2: existente.notaQ2 || reg.notaQ2 || "",
+  };
   guardarAsistenciaMes(mesActual);
   renderAsistencia();
   renderVistaDia();
@@ -6171,7 +6195,10 @@ async function guardarCatalogoMateriales(){
 function actualizarCatalogoMateriales(items){
   let cambio = false;
   (items||[]).forEach(it=>{
-    const desc = (it.desc||"").trim();
+    // Colapsa espacios internos repetidos ("Cemento  Portland" -> "Cemento Portland") además de
+    // los de las puntas -- si no, dos formas de tipear lo mismo generaban dos entradas separadas
+    // en el catálogo, ensuciando el autocompletado con sugerencias duplicadas.
+    const desc = (it.desc||"").trim().replace(/\s+/g," ");
     if(!desc) return;
     const clave = desc.toLowerCase();
     const existente = materialesCatalogo.find(m=>m.desc.toLowerCase()===clave);
@@ -7648,6 +7675,12 @@ async function guardarRecordatorioDirecto(titulo, fecha, prioridad){
 }
 async function guardarObservacionDirecta(titulo, prioridad){
   const obra = obraPorDefecto();
+  // El formulario manual bloquea guardar sin obra (guardarObservacion) -- acá, en cambio, no había
+  // ningún chequeo: si no hay obra predeterminada activa (o no hay ninguna obra activa cargada),
+  // obraPorDefecto() devuelve "" y la observación quedaba guardada con obra:"" para siempre, sin
+  // aparecer nunca en los avisos del Dashboard ni en las notificaciones (ambos exigen
+  // obrasActivas().includes(o.obra), y "" nunca está ahí), y sin forma de filtrarla en la lista.
+  if(!obra){ showToast("⚠ No se pudo cargar la observación: no hay ninguna obra activa elegida"); return; }
   const obsNueva = {
     id: uid(), titulo: titulo||"Observación", obra,
     responsable: "", descripcion: "", prioridad: ["alta","media","baja"].includes(prioridad)?prioridad:"media",
@@ -7854,7 +7887,7 @@ function prepararFormularioNuevoPedido(pedidoExistente){
   const refEl = document.getElementById("ped-ultimo-numero-ref");
   const anterior = pedidosIndex.find(p=>p.id!==pedidoEditandoId);
   refEl.textContent = anterior ? `Último pedido cargado: N° ${numeroFormateado(anterior.numero)} — ${anterior.obra}` : "";
-  renderSelectsPedido(pedidoExistente && pedidoExistente.obra);
+  renderSelectsPedido(pedidoExistente && pedidoExistente.obra, pedidoExistente && pedidoExistente.rubro);
   if(pedidoEditandoId){
     document.getElementById("np-obra").value = pedidoExistente.obra;
     document.getElementById("np-rubro").value = pedidoExistente.rubro;
@@ -7862,17 +7895,30 @@ function prepararFormularioNuevoPedido(pedidoExistente){
   renderTablaItemsPedido();
   renderAdjuntosLista();
 }
-function renderSelectsPedido(valorActualObra){
+function renderSelectsPedido(valorActualObra, valorActualRubro){
   document.getElementById("np-obra").innerHTML = `<option value="">— elegir —</option>`+opcionesObra(valorActualObra);
+  // Mismo motivo que opcionesObra() de arriba: si se está editando un pedido viejo cuyo rubro ya
+  // se borró del catálogo, hay que agregarlo igual a las opciones -- si no, el <select> queda en
+  // blanco al abrir "Editar pedido" y guardar sin darse cuenta pisa el rubro real con uno distinto
+  // (el formulario bloquea guardar con rubro vacío, así que obliga a elegir cualquier otro).
+  const rubrosConExtra = (valorActualRubro && !rubros.includes(valorActualRubro)) ? [...rubros, valorActualRubro] : rubros;
   document.getElementById("np-rubro").innerHTML = `<option value="">— elegir —</option>`+
-    rubros.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");
+    rubrosConExtra.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");
   if(obraPredeterminada && obrasActivas().includes(obraPredeterminada)){
     document.getElementById("np-obra").value = obraPredeterminada;
   }
 }
 function renderTablaItemsPedido(){
   const cont = document.getElementById("tbody-items-pedido");
-  const optsUn = unidades.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join("");
+  // El <select> de Unidad se arma por ítem (no una sola vez para todos): si la unidad guardada ya
+  // no está en el catálogo vigente (se borró desde Configuración), se agrega igual como opción
+  // extra -- mismo criterio que ya se usa para Obra/Rubro. Sin esto, "sel.value = it.un" (más
+  // abajo) no encontraba ninguna <option> que matchee y el desplegable quedaba en blanco para ese
+  // ítem, aunque el dato interno (it.un) siguiera bien.
+  const optsUnPara = (unSel)=>{
+    const lista = (unSel && !unidades.includes(unSel)) ? [...unidades, unSel] : unidades;
+    return `<option value="">—</option>`+lista.map(u=>`<option value="${esc(u)}"${u===unSel?" selected":""}>${esc(u)}</option>`).join("");
+  };
   cont.innerHTML = npItems.map((it,i)=>`
     <div class="item-card">
       <div class="item-card-num">${i+1}</div>
@@ -7885,7 +7931,7 @@ function renderTablaItemsPedido(){
         </div>
         <div class="item-campo">
           <label>Unidad</label>
-          <select onchange="npItems[${i}].un=this.value"><option value="">—</option>${optsUn}</select>
+          <select onchange="npItems[${i}].un=this.value">${optsUnPara(it.un)}</select>
         </div>
       </div>
       <div class="item-fila-foto">
@@ -7901,10 +7947,6 @@ function renderTablaItemsPedido(){
       </div>
     </div>
   `).join("");
-  [...cont.querySelectorAll(".item-card")].forEach((card,i)=>{
-    const sel = card.querySelector("select");
-    if(sel) sel.value = npItems[i].un || "";
-  });
 }
 function quitarFilaItem(i){
   npItems.splice(i,1);
@@ -8890,6 +8932,13 @@ async function eliminarPedido(){
   await guardarPedidosIndex();
   delete pedidosCache[pedidoAbiertoId];
   try{ await window.storage.delete("pedido_"+pedidoAbiertoId, true); }catch(e){}
+  // Si era el último pedido numerado (nadie más usa ese número ni uno mayor), liberamos el
+  // correlativo para que el próximo no deje un hueco en la numeración -- mismo arreglo ya hecho
+  // para Caja Chica, Remitos y Minutas.
+  if(p && p.numero===correlativoSiguiente-1 && !pedidosIndex.some(x=>x.numero>=p.numero)){
+    correlativoSiguiente = p.numero;
+    await guardarCorrelativo();
+  }
   showToast("Pedido eliminado");
   registrarActividad(`eliminó el Pedido N° ${numeroTxt}`);
   cambiarVistaPedidos("lista");
@@ -10627,6 +10676,11 @@ async function guardarContratista(){
     showToast("Contratista guardado ✓");
     registrarActividad(`agregó el contratista "${nombre}" (${obra})`);
   }
+  // entradaIndice no trae "proyeccion" (se calcula y guarda aparte, ver actualizarResumenEnIndice)
+  // -- sin este llamado, editar cualquier campo del contratista (aunque no se toque ningún
+  // certificado) borraba de golpe la estimación de finalización ya calculada del Dashboard y de
+  // la lista, hasta que se cargara o editara el próximo certificado.
+  actualizarResumenEnIndice(c);
   await guardarContratistasIndex();
   cambiarVistaCert("lista");
   renderDashboard();
@@ -10763,7 +10817,7 @@ function renderDetalleContratista(c){
         const proyTxt = textoProyeccionFinalizacion(c);
         return proyTxt ? `<div>Estimación de finalización: <b style="color:var(--verde-oscuro);">${proyTxt}</b></div>` : "";
       })()}
-      <div class="rc-diferencia ${r.saldoPendiente<1?'ok':'positiva'}">Saldo pendiente de cobro: <b>${formatoMoneda(r.saldoPendiente)}</b></div>
+      <div class="rc-diferencia ${Math.abs(r.saldoPendiente)<1?'ok':(r.saldoPendiente>0?'positiva':'negativa')}">Saldo pendiente de cobro: <b>${formatoMoneda(r.saldoPendiente)}</b></div>
     </div>
     ${timelineHtml}
     <div class="foot-actions-grid" style="margin-top:14px;">
@@ -10784,6 +10838,13 @@ async function eliminarContratista(){
   await guardarContratistasIndex();
   delete contratistasCache[contratistaAbiertoId];
   try{ await window.storage.delete("cert_contratista_"+contratistaAbiertoId, true); }catch(e){}
+  // Desvincular cualquier plano que todavía diga "vinculado" a este contratista -- si no, la
+  // tarjeta del plano sigue mostrando su nombre y el chip "🔗 Vinculado" como si el vínculo
+  // siguiera vivo, y el reporte/dibujo de ese plano intenta cargar un contratista que ya no existe
+  // (el % ponderado por ítems de contrato deja de calcularse, sin ningún aviso de por qué).
+  let huboPlanoDesvinculado = false;
+  planosIndex.forEach(p=>{ if(p.contratistaId===contratistaAbiertoId){ p.contratistaId = null; p.contratistaNombre = null; huboPlanoDesvinculado = true; } });
+  if(huboPlanoDesvinculado) await guardarPlanosIndex();
   showToast("Contratista eliminado");
   registrarActividad(`eliminó el contratista "${nombreTxt}" (con todos sus certificados)`);
   cambiarVistaCert("lista");
@@ -11353,10 +11414,19 @@ function guardarCertificado(btn){
     ? (c.certificados||[])[certificadoEditandoIndex-1]
     : (c.certificados||[])[(c.certificados||[]).length-1];
   const fechaFueraDeOrden = !!(fechaNueva && certAnteriorEnOrden && certAnteriorEnOrden.fecha && fechaNueva < certAnteriorEnOrden.fecha);
-  if((retrocesos.length>0 || fechaFueraDeOrden) && btn && btn.dataset.confirmando!=="1"){
+  // Al EDITAR un certificado que no es el último, la validación de arriba (mirando solo "hacia
+  // atrás") no alcanza: si se edita el N°1 y se le pone una fecha posterior a la del N°2 o N°3, el
+  // chequeo de "certAnteriorEnOrden" da undefined (es el primero del array) y no avisa nada, pero
+  // igual queda una cronología imposible que rompe la proyección de finalización (que asume que el
+  // primer certificado del array es cronológicamente el más viejo) y el PDF resumen (que lista los
+  // certificados en orden de array, no de fecha).
+  const certSiguienteEnOrden = certificadoEditandoIndex!==null ? (c.certificados||[])[certificadoEditandoIndex+1] : null;
+  const fechaFueraDeOrdenAdelante = !!(fechaNueva && certSiguienteEnOrden && certSiguienteEnOrden.fecha && fechaNueva > certSiguienteEnOrden.fecha);
+  if((retrocesos.length>0 || fechaFueraDeOrden || fechaFueraDeOrdenAdelante) && btn && btn.dataset.confirmando!=="1"){
     const avisos = [];
     if(retrocesos.length>0) avisos.push(`El % de "${retrocesos.map(f=>f.nombre).join(", ")}" quedó por debajo del certificado anterior.`);
     if(fechaFueraDeOrden) avisos.push(`Este certificado queda fechado antes que el N° ${certAnteriorEnOrden.numero} (${certAnteriorEnOrden.fecha}), del que toma el "% anterior".`);
+    if(fechaFueraDeOrdenAdelante) avisos.push(`Este certificado queda fechado después que el N° ${certSiguienteEnOrden.numero} (${certSiguienteEnOrden.fecha}), que va justo a continuación.`);
     showToast(avisos.join(" ")+' Tocá "Guardar" de nuevo si es correcto.');
     confirmarDoble(btn, "⚠ Tocá de nuevo para confirmar", ()=>guardarCertificadoConfirmado());
     return;
@@ -11373,8 +11443,10 @@ async function guardarCertificadoConfirmado(){
   certFormItems.forEach(f=>avances[f.itemId]=f.pctAcumulado);
   c.certificados = c.certificados || [];
   let numero;
+  let planoIdAnterior = null;
   if(certificadoEditandoIndex!==null){
     numero = c.certificados[certificadoEditandoIndex].numero;
+    planoIdAnterior = c.certificados[certificadoEditandoIndex].planoId || null;
     c.certificados[certificadoEditandoIndex] = {numero, nombre:"CERTIFICADO "+numero, fecha, avances, anotacion, planoId: certFormPlanoIdUsado, planoImagenSnapshot: certFormPlanoImagenSnapshot};
   }else{
     numero = c.certificados.length+1;
@@ -11396,6 +11468,13 @@ async function guardarCertificadoConfirmado(){
         poligonosDelPlano, `cert_${c.id}_${numero}`
       );
     }catch(e){ console.error("No se pudo dejar el hito del plano para este certificado:", e); }
+  }
+  // Si se editó el certificado y se cambió de plano (o se sacó el plano usado), hay que borrar el
+  // hito que había quedado en el plano VIEJO -- si no, ese plano sigue mostrando para siempre en su
+  // historial un "Certificado N° X" con datos que ya no corresponden a ningún certificado vigente.
+  if(planoIdAnterior && planoIdAnterior!==certFormPlanoIdUsado && c.obra){
+    try{ await quitarSnapshotDelPlano(c.obra, planoIdAnterior, `cert_${c.id}_${numero}`); }
+    catch(e){ console.error("No se pudo limpiar el hito del plano anterior:", e); }
   }
   nexoAvisoFlotante("guardado", certificadoEditandoIndex!==null ? "Certificado N° "+numero+" actualizado ✓" : "Certificado N° "+numero+" guardado ✓");
   registrarActividad(`${certificadoEditandoIndex!==null?"editó":"cargó"} el Certificado N° ${numero} de "${c.nombre}"`);
@@ -12165,8 +12244,18 @@ function ocultarBotonFlotanteGuardar(){
   document.getElementById("fab-guardar-flotante").style.display = "none";
   fabGuardarAccion = null;
 }
-function ejecutarGuardarFlotante(){
-  if(typeof fabGuardarAccion==="function") fabGuardarAccion();
+async function ejecutarGuardarFlotante(){
+  if(typeof fabGuardarAccion!=="function") return;
+  const btn = document.getElementById("fab-guardar-flotante");
+  // Evita que un doble-toque (táctil, con lag de red es habitual) dispare la acción de guardar dos
+  // veces casi en simultáneo -- el correlativo en memoria (Pedidos, Caja Chica, Remitos, Minutas,
+  // Certificados) recién se incrementa DESPUÉS de que el primer guardado termina, así que un
+  // segundo toque que arranca antes de eso leía el mismo número y generaba dos registros con el
+  // MISMO N°.
+  if(btn && btn.disabled) return;
+  if(btn) btn.disabled = true;
+  try{ await fabGuardarAccion(); }
+  finally{ if(btn) btn.disabled = false; }
 }
 function irA(view){
   // Blindaje: si el plano estaba abierto en modo overlay (desde un certificado) y el usuario
@@ -13255,10 +13344,18 @@ async function migrarFotosObservacionesSiHaceFalta(){
   if(observacionesMigracionIntentada || errorCargaObservaciones) return;
   observacionesMigracionIntentada = true;
   const LIMITE = 20000;
-  const pesadas = observaciones.filter(o=>o.foto && o.foto.length>LIMITE);
+  // También hay que cubrir fotoDespues, no solo foto ("antes") -- si no, si esa quedara pesada
+  // (por ejemplo, el editor de marcado reexporta un dataURL más grande al anotar la foto), nunca se
+  // detecta ni se achica, y el índice completo (un solo documento en Firestore) se acerca al límite
+  // de 1 MB, hasta que en algún momento falla el guardado de CUALQUIER observación, no solo la
+  // pesada -- el mismo riesgo que ya se rompió una vez en Herramientas.
+  const pesadas = observaciones.filter(o=>(o.foto && o.foto.length>LIMITE) || (o.fotoDespues && o.fotoDespues.length>LIMITE));
   if(pesadas.length===0) return;
   for(const o of pesadas){
-    try{ o.foto = await recomprimirDataUrlAMiniatura(o.foto); }
+    try{
+      if(o.foto && o.foto.length>LIMITE) o.foto = await recomprimirDataUrlAMiniatura(o.foto);
+      if(o.fotoDespues && o.fotoDespues.length>LIMITE) o.fotoDespues = await recomprimirDataUrlAMiniatura(o.fotoDespues);
+    }
     catch(e){ console.error("No se pudo recomprimir una foto de observación:", e); }
   }
   const ok = await guardarObservacionesIndex();
@@ -13734,8 +13831,7 @@ function editarObservacion(id){
   document.getElementById("obs-form-titulo").textContent = "✏️ Editar observación";
   document.getElementById("obs-btn-cancelar-edicion").style.display = "";
   document.getElementById("obs-titulo").value = o.titulo || "";
-  poblarSelectObras(document.getElementById("obs-obra"));
-  document.getElementById("obs-obra").value = o.obra;
+  poblarSelectObras(document.getElementById("obs-obra"), o.obra);
   document.getElementById("obs-responsable").value = o.responsable || "";
   document.getElementById("obs-descripcion").value = o.descripcion || "";
   obsFotoData = o.foto || null;
@@ -14048,8 +14144,14 @@ function irADashChip(condicion){
 }
 
 /* ---------------- Clima: formulario ---------------- */
-function poblarSelectObras(select){
-  const actual = select.value;
+function poblarSelectObras(select, valorPreferido){
+  // valorPreferido: para cuando se va a editar un registro ya guardado y su obra puede ya no
+  // estar en pantalla (ej. abrir "Editar" sin haber tocado antes el select) -- sin esto, el select
+  // se poblaba en base a lo que YA tenía puesto (típicamente vacío o la obra predeterminada), nunca
+  // en base a la obra real del registro, así que si esa obra estaba finalizada el select quedaba en
+  // blanco (opcionesObra solo agrega como excepción el valor QUE YA TENÍA el select, no cualquier
+  // otro) y guardar sin darse cuenta reasignaba el registro a una obra distinta.
+  const actual = valorPreferido!==undefined ? valorPreferido : select.value;
   select.innerHTML = opcionesObra(actual);
   if(actual && obras.includes(actual)) select.value = actual;
   else if(obraPredeterminada && obrasActivas().includes(obraPredeterminada)) select.value = obraPredeterminada;
@@ -17734,9 +17836,9 @@ async function iniciarAppData(){
 let usuarios = [];
 let sesionActual = null; // {username, role, permisos}
 const MODULOS_PERMISO = ["asistencia","pedidos","caja","certificados","clima","minutas","remitos","herramientas","observaciones","presupuesto"];
-const PERMISOS_ADMIN = {asistencia:true, pedidos:true, caja:true, certificados:true, clima:true, minutas:true, remitos:true, herramientas:true, observaciones:true};
-const PERMISOS_CAPATAZ_DEFAULT = {asistencia:true, pedidos:false, caja:false, certificados:false, clima:false, minutas:false, remitos:false, herramientas:false, observaciones:false};
-const NOMBRES_MODULO = {asistencia:"Asistencia", pedidos:"Pedidos", caja:"Caja Chica", certificados:"Certificados", clima:"Libro climático", minutas:"Minutas", remitos:"Remitos", herramientas:"Herramientas", observaciones:"Pendientes"};
+const PERMISOS_ADMIN = {asistencia:true, pedidos:true, caja:true, certificados:true, clima:true, minutas:true, remitos:true, herramientas:true, observaciones:true, presupuesto:true};
+const PERMISOS_CAPATAZ_DEFAULT = {asistencia:true, pedidos:false, caja:false, certificados:false, clima:false, minutas:false, remitos:false, herramientas:false, observaciones:false, presupuesto:false};
+const NOMBRES_MODULO = {asistencia:"Asistencia", pedidos:"Pedidos", caja:"Caja Chica", certificados:"Certificados", clima:"Libro climático", minutas:"Minutas", remitos:"Remitos", herramientas:"Herramientas", observaciones:"Pendientes", presupuesto:"Presupuesto"};
 
 /* ---------------- Registro de actividad (quién hizo qué y cuándo) ----------------
    Guardamos solo las acciones importantes (crear/editar/eliminar/cambios de permiso), NO cada
@@ -18346,7 +18448,11 @@ function intentarSesionAutomaticaDelDia(){
       console.log("[sesión] el usuario guardado ya no está en 'usuarios'. usuarios.length =", usuarios.length, "buscado:", guardada.username);
       return false;
     }
-    ingresarComo({username:guardada.username, role:guardada.role, permisos:guardada.permisos});
+    // Se usan role/permisos VIGENTES (recién cargados de "usuarios"), no los que quedaron
+    // guardados en localStorage en el último login -- si no, un cambio de permisos a media mañana
+    // (ej. sacarle a un capataz el acceso a Caja) no se aplicaba hasta que esa persona cerrara
+    // sesión a mano: refrescar la pestaña o reabrir la PWA la re-logueaba con los permisos VIEJOS.
+    ingresarComo({username:u.username, role:u.role, permisos:u.permisos});
     return true;
   }catch(e){
     console.log("[sesión] excepción al intentar la sesión automática:", e);
@@ -18399,7 +18505,11 @@ async function revisarNotificacionesGenerales(){
       }
     }
     if(detectoresOn.observaciones!==false && typeof observaciones!=="undefined"){
-      const criticas = observaciones.filter(o=>o.prioridad==="alta" && o.estado!=="resuelto");
+      // Mismo criterio que el Dashboard (avisosDeHoy, que exige obrasActivas().includes(o.obra)):
+      // si se finaliza una obra a propósito con una observación crítica sin resolver, el Dashboard
+      // deja de avisarla -- pero acá no se filtraba, así que el celular seguía mandando la
+      // notificación push igual, contradiciendo la expectativa de "obra finalizada = sin más avisos".
+      const criticas = observaciones.filter(o=>o.prioridad==="alta" && o.estado!=="resuelto" && obrasActivas().includes(o.obra));
       const nuevas = criticas.filter(o=>!yaAvisados.includes("obs_"+o.id));
       if(nuevas.length>0){
         const titulo = nuevas.length===1 ? "📋 1 observación crítica" : `📋 ${nuevas.length} observaciones críticas`;
@@ -20010,6 +20120,17 @@ function eliminarPlano(id, btn){
     try{ await window.storage.delete(`plano_avance_imagen_${obra}_${id}`, true); }catch(e){}
     try{ await window.storage.delete(`plano_avance_poligonos_${obra}_${id}`, true); }catch(e){}
     try{ await window.storage.delete(`plano_avance_snapshots_${obra}_${id}`, true); }catch(e){}
+    // Ningún ítem de contrato debe seguir apuntando a este plano ya borrado -- si no, "Traer
+    // avance del plano" deja de completar ese ítem para siempre sin ningún aviso, y si era el
+    // único plano del contratista la propia UI deja de mostrar la columna del selector (solo
+    // aparece con 2+ planos), sin ninguna forma de corregirlo desde ahí.
+    for(const entradaC of contratistasIndex.filter(x=>x.obra===obra)){
+      const cont = await cargarContratistaDetalle(entradaC.id);
+      if(!cont) continue;
+      let tocado = false;
+      (cont.items||[]).forEach(it=>{ if(it.planoId===id){ it.planoId = null; tocado = true; } });
+      if(tocado) await guardarContratistaDetalle(cont);
+    }
     if(planoActualId===id){
       planoActualId = null;
       imagenPlano = null;
@@ -20171,8 +20292,14 @@ function renderGraficoHistorialSnapshots(){
   // (la vieja quedaba con el nombre anterior y desaparecía, la nueva arrancaba de cero como si
   // fuera otra actividad). Los snapshots de antes de que existiera capaId no lo tienen -- para
   // esos se sigue agrupando por nombre, como siempre.
+  // Se ordena por fecha (no por orden de inserción en el array) antes de calcular series/deltas --
+  // mismo motivo que ya hace abrirLineaDeTiempoPlano(): si un hito se agrega fuera de secuencia
+  // (ej. un certificado "retroactivo" cargado después de ya haber cerrado semanas posteriores), el
+  // orden de inserción no coincide con el cronológico real y el "antes/después" de cada capa
+  // saldría calculado al revés.
+  const snapsOrdenados = snapshotsPlanoActual.slice().sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""));
   const porCapa = {};
-  snapshotsPlanoActual.forEach(snap=>{
+  snapsOrdenados.forEach(snap=>{
     (snap.porcentajes||[]).forEach(p=>{
       const clave = p.capaId || p.nombreCompleto;
       if(!porCapa[clave]) porCapa[clave] = {nombre:p.nombreCompleto, valores:[]};
@@ -20240,9 +20367,10 @@ function renderListaSnapshots(){
         </div>`).join("")}
     </div>`;
   // Mismo motivo que en el gráfico de arriba: se agrupa por capaId (estable ante un renombre)
-  // en vez de por nombreCompleto, con fallback al nombre para snapshots viejos sin capaId.
+  // en vez de por nombreCompleto, con fallback al nombre para snapshots viejos sin capaId. Y se
+  // ordena por fecha (no por orden de inserción) antes de armar el historial/delta de cada capa.
   const porCapa = {};
-  snapshotsPlanoActual.forEach(snap=>{
+  snapshotsPlanoActual.slice().sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||"")).forEach(snap=>{
     (snap.porcentajes||[]).forEach(p=>{
       const clave = p.capaId || p.nombreCompleto;
       if(!porCapa[clave]) porCapa[clave] = {nombre:p.nombreCompleto, historial:[]};
@@ -20368,10 +20496,14 @@ function pintarLineaDeTiempo(i){
   const r = document.getElementById("lt-range");
   if(r && +r.value!==i) r.value = i;
   const previo = i>0 ? ltSnaps[i-1] : null;
+  // Mismo motivo que en renderGraficoHistorialSnapshots/renderListaSnapshots: agrupar por capaId
+  // (estable ante un renombre) en vez de por nombreCompleto -- si no, renombrar una capa entre dos
+  // hitos le hacía perder el delta "+/-" (o mostraba uno cruzado con otra capa vieja que por
+  // casualidad tuviera el nombre nuevo).
   const mapaPrevio = {};
-  if(previo) (previo.porcentajes||[]).forEach(p=>{ mapaPrevio[p.nombreCompleto] = p.pct; });
+  if(previo) (previo.porcentajes||[]).forEach(p=>{ mapaPrevio[p.capaId || p.nombreCompleto] = p.pct; });
   document.getElementById("lt-leyenda").innerHTML = (snap.porcentajes||[]).map(p=>{
-    const antes = mapaPrevio[p.nombreCompleto];
+    const antes = mapaPrevio[p.capaId || p.nombreCompleto];
     const d = antes===undefined ? null : p.pct - antes;
     const dTxt = (d===null || d===0) ? "" :
       `<span style="font-size:10px;font-weight:800;color:${d>0?"#5EEAD4":"#F2A199"};">${d>0?"+":""}${d}</span>`;
