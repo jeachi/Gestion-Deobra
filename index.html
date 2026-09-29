@@ -5494,7 +5494,10 @@ function totalHorasRango(dias, desde, hasta){
   let total=0;
   for(let d=desde; d<=hasta; d++){
     const v = (dias||{})[d];
-    if(esNumeroPuro(v)) total += parseFloat(v);
+    // OJO: replace(",",".") -- esNumeroPuro ahora acepta coma decimal ("4,5"), pero parseFloat
+    // corta en la coma (parseFloat("4,5")===4), así que sin este reemplazo un valor así quedaba
+    // reconocido como número pero sumado de menos (4 en vez de 4.5) en vez de excluido del todo.
+    if(esNumeroPuro(v)) total += parseFloat(String(v).trim().replace(",","."));
     else{
       // "LL5" (llovió pero igual se trabajaron 5hs) clasifica como "presente" en
       // calcularStatsAsistenciaMes, pero acá nunca se sumaba -- el % de asistencia quedaba bien
@@ -20120,15 +20123,18 @@ function eliminarPlano(id, btn){
     try{ await window.storage.delete(`plano_avance_imagen_${obra}_${id}`, true); }catch(e){}
     try{ await window.storage.delete(`plano_avance_poligonos_${obra}_${id}`, true); }catch(e){}
     try{ await window.storage.delete(`plano_avance_snapshots_${obra}_${id}`, true); }catch(e){}
-    // Ningún ítem de contrato debe seguir apuntando a este plano ya borrado -- si no, "Traer
-    // avance del plano" deja de completar ese ítem para siempre sin ningún aviso, y si era el
-    // único plano del contratista la propia UI deja de mostrar la columna del selector (solo
-    // aparece con 2+ planos), sin ninguna forma de corregirlo desde ahí.
+    // Ningún ítem de contrato NI ningún certificado ya guardado debe seguir apuntando a este plano
+    // borrado -- si no, "Traer avance del plano" deja de completar ese ítem para siempre sin
+    // ningún aviso (y si era el único plano del contratista la propia UI deja de mostrar la
+    // columna del selector, sin forma de corregirlo desde ahí), y un certificado con su propio
+    // planoId colgante vuelve a escribirse solo con ese id muerto cada vez que se lo reedita y
+    // guarda (cargarPoligonosDePlano falla en silencio, atrapado por el try/catch de más abajo).
     for(const entradaC of contratistasIndex.filter(x=>x.obra===obra)){
       const cont = await cargarContratistaDetalle(entradaC.id);
       if(!cont) continue;
       let tocado = false;
       (cont.items||[]).forEach(it=>{ if(it.planoId===id){ it.planoId = null; tocado = true; } });
+      (cont.certificados||[]).forEach(cert=>{ if(cert.planoId===id){ cert.planoId = null; tocado = true; } });
       if(tocado) await guardarContratistaDetalle(cont);
     }
     if(planoActualId===id){
