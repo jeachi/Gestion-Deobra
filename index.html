@@ -14138,15 +14138,22 @@ async function guardarRegistroClima(){
   if(!obra){ showToast("Elegí una obra"); return; }
   if(!fecha){ showToast("Elegí una fecha"); return; }
   if(!climaCondicionSel){ showToast("Elegí la condición climática"); return; }
-  const registro = {
-    id: uid(), obra, fecha, condicion: climaCondicionSel, seTrabajo: climaTrabajoSel,
+  // Si ya había un registro para esta MISMA obra y fecha, lo actualizamos en vez de agregar uno
+  // nuevo -- dos registros contradictorios para el mismo día (ej: "Soleado, se trabajó" y después
+  // "Lluvia, no se trabajó" sin borrar el primero) hacían que climaNoLaborable() (la usa Asistencia
+  // para el descuento automático de días no laborables) dependiera del orden del array en vez de
+  // cuál es el dato real. Esto también sirve como forma de "editar" un día ya cargado.
+  const existente = climaRegistros.find(r=>r.obra===obra && r.fecha===fecha);
+  const datos = {
+    obra, fecha, condicion: climaCondicionSel, seTrabajo: climaTrabajoSel,
     observaciones: document.getElementById("clima-observaciones").value.trim(),
     usuario: sesionActual ? sesionActual.username : "", timestamp: new Date().toISOString()
   };
-  climaRegistros.unshift(registro);
+  if(existente) Object.assign(existente, datos);
+  else climaRegistros.unshift({id: uid(), ...datos});
   await guardarClimaRegistros();
-  registrarActividad(`registró el clima de ${esc(obra)} (${fecha}): ${climaCondicionSel}`);
-  showToast("Registro climático guardado ✓");
+  registrarActividad(`${existente?"actualizó":"registró"} el clima de ${esc(obra)} (${fecha}): ${climaCondicionSel}`);
+  showToast(existente ? "Registro climático actualizado ✓" : "Registro climático guardado ✓");
   document.getElementById("clima-observaciones").value = "";
   climaCondicionSel = null;
   document.querySelectorAll("#clima-condicion-grid .condicion-btn").forEach(b=>b.classList.remove("sel"));
