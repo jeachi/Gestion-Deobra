@@ -3369,7 +3369,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
   <section class="view" id="view-minutas">
     <div class="card">
-      <h2>📝 Nueva minuta</h2>
+      <div class="row-flex" style="justify-content:space-between;align-items:center;">
+        <h2 id="min-form-titulo" style="margin:0;">📝 Nueva minuta</h2>
+        <button type="button" class="btn btn-outline btn-sm" id="min-btn-cancelar-edicion" style="display:none;" onclick="cancelarEdicionMinuta()">✕ Cancelar edición</button>
+      </div>
       <div id="avisos-minuta-box" style="display:none;"></div>
       <div class="row-flex">
         <div class="field" style="flex:1;min-width:150px;">
@@ -14104,6 +14107,7 @@ let climaCondicionSel = null;
 let climaTrabajoSel = "si";
 let minutasIndex = [];
 let correlativoMinutaSiguiente = 1;
+let minutaEditandoId = null; // null = minuta nueva · id = la que se está editando
 
 async function cargarClimaRegistros(){
   try{
@@ -16649,15 +16653,61 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
   registrarActividad(`generó el PDF tamaño A1 (todos los meses) del presupuesto de "${obra}"`);
 }
 function prepararVistaMinutas(){
+  limpiarFormularioMinuta();
+  renderListaMinutas();
+}
+// Deja el formulario listo para cargar una minuta nueva -- se usa tanto al entrar a la pestaña
+// como después de guardar (nueva o editada), que antes dejaba la obra/fecha/contenido/firmas del
+// envío anterior todavía cargados en pantalla, invitando a mandar sin querer la misma minuta dos
+// veces o a que la próxima arranque con firmas de otra reunión ya puestas.
+function limpiarFormularioMinuta(){
+  minutaEditandoId = null;
+  document.getElementById("min-form-titulo").textContent = "📝 Nueva minuta";
+  document.getElementById("min-btn-cancelar-edicion").style.display = "none";
   poblarSelectObras(document.getElementById("min-obra"));
   document.getElementById("min-fecha").value = hoyISO();
   document.getElementById("min-contenido").value = "";
   document.getElementById("lista-firmas-minuta").innerHTML = "";
   agregarFirmaMinuta();
   document.getElementById("avisos-minuta-box").style.display = "none";
-  renderListaMinutas();
   renderObservacionesParaCitarEnMinuta();
   mostrarBotonFlotanteGuardar("Guardar minuta", generarMinutaPDF, "📝");
+}
+function cancelarEdicionMinuta(){
+  limpiarFormularioMinuta();
+}
+async function editarMinuta(id){
+  let minuta = null;
+  try{
+    const r = await window.storage.get("minuta_"+id, true);
+    minuta = r && r.value ? JSON.parse(r.value) : null;
+  }catch(e){}
+  if(!minuta){ showToast("No se pudo abrir esa minuta (revisá conexión)"); return; }
+  minutaEditandoId = id;
+  document.getElementById("min-form-titulo").textContent = "✏️ Editar Minuta N° "+minuta.numero;
+  document.getElementById("min-btn-cancelar-edicion").style.display = "";
+  poblarSelectObras(document.getElementById("min-obra"), minuta.obra);
+  document.getElementById("min-fecha").value = minuta.fecha || "";
+  document.getElementById("min-contenido").value = minuta.contenido || "";
+  document.getElementById("lista-firmas-minuta").innerHTML = "";
+  const firmas = minuta.firmas && minuta.firmas.length ? minuta.firmas : [null];
+  firmas.forEach(f=>{
+    agregarFirmaMinuta();
+    const card = document.getElementById("lista-firmas-minuta").lastElementChild;
+    if(!f) return;
+    card.querySelector(".firma-aclaracion-input").value = f.aclaracion || "";
+    card.querySelector(".firma-cargo-input").value = f.cargo || "";
+    if(f.firma){
+      card.querySelector(".firma-preview-img").src = f.firma;
+      card.querySelector(".firma-preview-img").style.display = "";
+      card.querySelector(".firma-preview-vacio-txt").style.display = "none";
+      card.querySelector(".firma-editar-btn").style.display = "";
+    }
+  });
+  document.getElementById("avisos-minuta-box").style.display = "none";
+  renderObservacionesParaCitarEnMinuta();
+  mostrarBotonFlotanteGuardar("Guardar cambios", generarMinutaPDF, "📝");
+  document.getElementById("view-minutas").scrollIntoView({behavior:"smooth", block:"start"});
 }
 // Un acta de reunión suele hablar de puntos pendientes que ya están cargados en Observaciones --
 // antes había que volver a escribirlos de memoria. Esto lista las observaciones ABIERTAS de la
@@ -16720,18 +16770,28 @@ async function generarMinutaPDF(){
     avisosBox.style.display = "none";
   }
 
-  const id = uid();
-  const numero = correlativoMinutaSiguiente;
+  const esEdicion = !!minutaEditandoId;
+  const id = esEdicion ? minutaEditandoId : uid();
+  const numero = esEdicion ? minutasIndex.find(m=>m.id===id).numero : correlativoMinutaSiguiente;
   const minuta = {id, numero, obra, fecha, contenido, firmas, creadoPor: sesionActual?sesionActual.username:"", timestamp:new Date().toISOString()};
   nexoAvisoFlotante("guardando");
   try{ await window.storage.set("minuta_"+id, JSON.stringify(minuta), true); }catch(e){ nexoAvisoFlotante("error", "No se pudo guardar la minuta ⚠"); return; }
-  minutasIndex.unshift({id, numero, obra, fecha});
-  await guardarMinutasIndex();
-  correlativoMinutaSiguiente++;
-  await guardarCorrelativoMinuta();
-  registrarActividad(`cargó la Minuta N° ${numero} de ${esc(obra)}`);
-  nexoAvisoFlotante("guardado", "Minuta guardada ✓");
+  if(esEdicion){
+    const idx = minutasIndex.findIndex(m=>m.id===id);
+    if(idx>-1) minutasIndex[idx] = {id, numero, obra, fecha};
+    await guardarMinutasIndex();
+    registrarActividad(`editó la Minuta N° ${numero} de ${esc(obra)}`);
+    nexoAvisoFlotante("guardado", "Minuta actualizada ✓");
+  }else{
+    minutasIndex.unshift({id, numero, obra, fecha});
+    await guardarMinutasIndex();
+    correlativoMinutaSiguiente++;
+    await guardarCorrelativoMinuta();
+    registrarActividad(`cargó la Minuta N° ${numero} de ${esc(obra)}`);
+    nexoAvisoFlotante("guardado", "Minuta guardada ✓");
+  }
   renderListaMinutas();
+  limpiarFormularioMinuta();
   mostrarModalPDF(construirHtmlMinuta(minuta), "portrait", `Minuta_${numero}_${nombreArchivoSeguro(obra)}.pdf`);
 }
 function construirHtmlMinuta(minuta){
@@ -16771,6 +16831,7 @@ function renderListaMinutas(){
         <div class="sub">${esc(m.obra)} · ${m.fecha ? fechaAR(m.fecha) : ""}</div>
       </div>
       <div class="botones">
+        <button type="button" class="btn btn-outline btn-sm" onclick="editarMinuta('${m.id}')">✏️ Editar</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="corregirNumeroMinuta('${m.id}')">✎ N°</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="verMinutaPDF('${m.id}')">🖨 Ver PDF</button>
         <button type="button" class="btn btn-danger btn-sm" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarMinuta('${m.id}'))">🗑</button>
