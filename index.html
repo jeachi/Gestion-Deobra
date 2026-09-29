@@ -16702,10 +16702,21 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
   </tr>`;
   const obra = claveObraPresupuesto();
   const tituloRango = desde===hasta ? `MES ${desde}` : `MES ${desde} A ${hasta}`;
-  const armarHtml = (fontSize)=>`<div class="print-page" style="width:100% !important;min-width:0 !important;box-sizing:border-box;padding:6px 10px !important;">
+  // El padding de .trab td/th es FIJO en el CSS global (7px 8px), pensado para el tamaño de letra
+  // normal de pantalla -- no se achica solo cuando este algoritmo prueba una fuente más chica para
+  // entrar en 2 hojas. A 10px de letra ese padding fijo pasa a ser la mayor parte de la altura de
+  // cada fila (~28px medidos, de los cuales 14px son solo el padding vertical), así que "achicar la
+  // letra" dejaba de servir de mucho en reportes largos -- el algoritmo llegaba al piso (10px) sin
+  // conseguir entrar en 2 hojas aunque el contenido, bien compactado, sí entraría. Se agrega un
+  // <style> chico que escala el padding junto con la fuente candidata en cada intento.
+  const armarHtml = (fontSize)=>{
+    const padV = Math.max(1, Math.round(fontSize*0.3));
+    const padH = Math.max(2, Math.round(fontSize*0.5));
+    return `<div class="print-page" style="width:100% !important;min-width:0 !important;box-sizing:border-box;padding:6px 10px !important;">
+    <style>.pg-a1-tabla td, .pg-a1-tabla th{padding:${padV}px ${padH}px !important;}</style>
     ${construirEncabezadoReportePDF(`PRESUPUESTO GENERAL — ${tituloRango}${soloPendientes?" (solo pendientes)":""}`, "100%")}
     <div class="rc-semana-row">${esc(obra)} · Generado el ${new Date().toLocaleDateString("es-AR")}</div>
-    <table class="trab" width="100%" cellspacing="0" cellpadding="0" style="font-size:${fontSize}px;">
+    <table class="trab pg-a1-tabla" width="100%" cellspacing="0" cellpadding="0" style="font-size:${fontSize}px;">
       <thead>
         <tr><th rowspan="2">Rubro</th><th rowspan="2">Descripción</th>${colsBase.map(c=>`<th rowspan="2">${c.th}</th>`).join("")}${thMeses}</tr>
         <tr>${thSub}</tr>
@@ -16713,6 +16724,7 @@ function generarPdfA1TodosLosMeses(desde, hasta, soloPendientes){
       <tbody>${filasHtml}</tbody>
     </table>
   </div>`;
+  };
   // Se prueba con letra cada vez más chica hasta que el contenido entre en 2 hojas A1 -- medido de
   // verdad (fuera de pantalla), no adivinado solo por la cantidad de meses como antes (que no
   // tenía en cuenta cuántos ítems había, la otra mitad de lo que hace larga la tabla). Si ni con la
