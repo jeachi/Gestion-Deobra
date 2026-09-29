@@ -9514,10 +9514,18 @@ function renderDashboard(){
     if(contratistasActivos.length===0){
       elContratistas.innerHTML = "";
     }else{
+      // Igual que el resto del Dashboard (ver avisosDeHoy), se acota la lista para que la tarjeta
+      // siga siendo "un pantallazo rápido" -- antes crecía sin límite con muchos contratistas activos.
+      const contratistasVisiblesDash = contratistasActivos.slice(0, 5);
+      const contratistasOcultosDash = contratistasActivos.length - contratistasVisiblesDash.length;
       elContratistas.innerHTML = `
         <h2>📈 Avance de contratistas${filtroObra ? " — "+esc(filtroObra) : ""}</h2>
-        ${contratistasActivos.map(c=>{
+        ${contratistasVisiblesDash.map(c=>{
           const pct = Math.max(0, Math.min(100, Math.round((c.pctConAnticipo||0)*1000)/10));
+          // Los m² son una medida FÍSICA de obra ejecutada -- deben salir del % sin anticipo
+          // (pctSinAnticipo, "plata certificada / monto sin anticipo"), no del % con anticipo, que
+          // ya incluye plata pagada por adelantado sin que se haya certificado un solo metro.
+          const pctM2 = Math.max(0, Math.min(100, Math.round((c.pctSinAnticipo||0)*1000)/10));
           const proyTxt = textoProyeccionDesdeIndice(c);
           return `<div class="dash-contratista-bloque" onclick="irA('certificados');abrirContratista('${c.id}')">
             <div class="dash-contratista-row">
@@ -9525,12 +9533,13 @@ function renderDashboard(){
               <div class="dash-contratista-barra"><div class="dash-contratista-barra-fill" style="width:${pct}%;"></div></div>
               <div class="dash-contratista-pct-m2">
                 <div class="dash-contratista-pct">${pct}%</div>
-                ${c.m2Total ? `<div class="dash-contratista-m2">📏 ${Math.round((c.m2Total*pct/100)*10)/10} m²</div>` : ""}
+                ${c.m2Total ? `<div class="dash-contratista-m2">📏 ${Math.round((c.m2Total*pctM2/100)*10)/10} m²</div>` : ""}
               </div>
             </div>
             ${proyTxt ? `<div class="dash-contratista-proyeccion">${proyTxt}</div>` : ""}
           </div>`;
         }).join("")}
+        ${contratistasOcultosDash>0 ? `<p class="tiny dash-contratistas-ver-mas" onclick="irA('certificados')">+${contratistasOcultosDash} contratista${contratistasOcultosDash===1?"":"s"} más -- ver todos</p>` : ""}
       `;
     }
   }
@@ -10436,7 +10445,7 @@ async function sembrarContratistasIniciales(claves){
     await guardarContratistaDetalle(c);
     const r = calcularCertificadosDetallados(c);
     contratistasIndex.unshift({id:c.id, nombre:c.nombre, obra:c.obra, montoContrato:c.montoContrato, anticipoMonto:c.anticipoMonto, m2Total:c.m2Total,
-      totalPagado:r.totalPagado, saldoPendiente:r.saldoPendiente, pctConAnticipo:r.pctConAnticipo, ultimoCertNumero:(c.certificados||[]).length});
+      totalPagado:r.totalPagado, saldoPendiente:r.saldoPendiente, pctConAnticipo:r.pctConAnticipo, pctSinAnticipo:r.pctSinAnticipo, ultimoCertNumero:(c.certificados||[]).length});
     if(!obras.includes(c.obra)){ obras.push(c.obra); await guardarObras(); }
   }
   await guardarContratistasIndex();
@@ -10728,7 +10737,7 @@ async function guardarContratista(){
   const resumen = calcularCertificadosDetallados(c);
   const entradaIndice = {
     id:c.id, nombre:c.nombre, obra:c.obra, montoContrato:c.montoContrato, anticipoMonto:c.anticipoMonto, m2Total:c.m2Total,
-    totalPagado:resumen.totalPagado, saldoPendiente:resumen.saldoPendiente, pctConAnticipo:resumen.pctConAnticipo,
+    totalPagado:resumen.totalPagado, saldoPendiente:resumen.saldoPendiente, pctConAnticipo:resumen.pctConAnticipo, pctSinAnticipo:resumen.pctSinAnticipo,
     ultimoCertNumero: (c.certificados||[]).length
   };
   if(esEdicion){
@@ -10762,10 +10771,14 @@ function renderListaContratistas(){
   const cont = document.getElementById("lista-contratistas");
   cont.innerHTML = lista.map(c=>{
     const pct = Math.max(0, Math.min(100, (c.pctConAnticipo||0)*100));
+    // Los m² son físicos: salen del % SIN anticipo, no del % con anticipo (ver mismo fix en el
+    // widget del Dashboard) -- si no, un contratista recién arrancado con anticipo ya muestra
+    // metros "ejecutados" sin haber certificado nada todavía.
+    const pctM2 = Math.max(0, Math.min(100, (c.pctSinAnticipo||0)*100));
     // Solo se muestra si el contrato TIENE m² cargados -- si no, no aparece nada acá (ni un
     // "0 m²" ni un guion, directamente se omite esa línea).
     const m2Html = c.m2Total ? (()=>{
-      const ejecutado = Math.round((c.m2Total*pct/100)*10)/10;
+      const ejecutado = Math.round((c.m2Total*pctM2/100)*10)/10;
       const restante = Math.round((c.m2Total-ejecutado)*10)/10;
       return `<div class="cc-m2-label">📏 ${ejecutado} m² de ${c.m2Total} m² (faltan ${restante} m²)</div>`;
     })() : "";
@@ -10852,7 +10865,10 @@ function renderDetalleContratista(c){
   window._ocultosTimelineHtml = ocultosTL.map((item,idx)=>htmlHito(item,false)).join("");
 
   const pctCertChip = Math.max(0, Math.min(100, Math.round((r.pctConAnticipo||0)*1000)/10));
-  const m2EjecutadoChip = c.m2Total ? Math.round((c.m2Total*pctCertChip/100)*10)/10 : null;
+  // Los m² ejecutados son físicos: salen de pctSinAnticipo, no del % con anticipo que "pctCertChip"
+  // muestra como avance financiero.
+  const pctM2Chip = Math.max(0, Math.min(100, Math.round((r.pctSinAnticipo||0)*1000)/10));
+  const m2EjecutadoChip = c.m2Total ? Math.round((c.m2Total*pctM2Chip/100)*10)/10 : null;
   const m2FaltanChip = c.m2Total ? Math.round((c.m2Total-m2EjecutadoChip)*10)/10 : null;
   const resumenChipsHtml = `
     <div class="resumen-chips-cert">
@@ -11024,6 +11040,7 @@ function actualizarResumenEnIndice(c){
     contratistasIndex[idx].totalPagado = r.totalPagado;
     contratistasIndex[idx].saldoPendiente = r.saldoPendiente;
     contratistasIndex[idx].pctConAnticipo = r.pctConAnticipo;
+    contratistasIndex[idx].pctSinAnticipo = r.pctSinAnticipo;
     contratistasIndex[idx].ultimoCertNumero = (c.certificados||[]).length;
     // Se guarda ya calculada (no solo la fórmula) para que el Dashboard y la lista de
     // contratistas la puedan mostrar sin tener que cargar el detalle completo de cada uno --
@@ -11409,7 +11426,11 @@ function renderTablaFormCertificado(){
   renderComparadorCertificado();
 }
 function actualizarFilaCertForm(i, valor){
-  certFormItems[i].pctAcumulado = (parseFloat(valor)||0)/100;
+  // Clampeado a [0,1]: sin esto, un tipeo de más (ej. "150" en vez de "15,0") queda guardado como
+  // 1.5 y contamina todos los reportes derivados (saldo negativo, "142.0%" en la tabla del PDF
+  // mientras la barra de arriba se clampa a 100%, y el contratista "desaparece" del widget de
+  // avance del Dashboard porque deja de contar como pct<100).
+  certFormItems[i].pctAcumulado = Math.max(0, Math.min(1, (parseFloat(valor)||0)/100));
   actualizarValoresFilaCertForm(i);
   actualizarTotalesCertForm();
   renderComparadorCertificado();
