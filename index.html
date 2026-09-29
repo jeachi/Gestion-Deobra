@@ -5052,15 +5052,26 @@ async function cargarAsistenciaMes(mes){
   }
   return asistenciaCache[mes];
 }
+// Devuelve true solo si el guardado llegó de verdad a Firestore. window.storage.set() nunca
+// rechaza (la cola offline atrapa el error internamente y devuelve {pendiente:true}), así que el
+// try/catch de acá abajo no alcanza para detectar un guardado que solo quedó en el celular -- sin
+// revisar "pendiente", cualquier llamador (como el asistente NEXO) puede mostrar "✓ guardado"
+// cuando en realidad el cambio nunca salió del dispositivo.
 async function guardarAsistenciaMes(mes){
   if(mesesConErrorDeCarga[mes]){
     showToast("⚠ No se guardó — primero hay que poder leer bien lo que ya estaba cargado (revisá conexión y volvé a entrar).");
-    return;
+    return false;
   }
   try{
-    await window.storage.set("asistencia_"+mes, JSON.stringify(asistenciaCache[mes]||{}), true);
-    document.getElementById("estado-guardado").textContent = "Guardado ✓ "+new Date().toLocaleTimeString();
-  }catch(e){ showToast("No se pudo guardar (revisá conexión)"); }
+    const r = await window.storage.set("asistencia_"+mes, JSON.stringify(asistenciaCache[mes]||{}), true);
+    const elEstado = document.getElementById("estado-guardado");
+    if(r && r.pendiente){
+      if(elEstado) elEstado.textContent = "⏳ Pendiente de sincronizar";
+      return false;
+    }
+    if(elEstado) elEstado.textContent = "Guardado ✓ "+new Date().toLocaleTimeString();
+    return true;
+  }catch(e){ showToast("No se pudo guardar (revisá conexión)"); return false; }
 }
 
 /* ---------------- Catálogos ---------------- */
@@ -7688,24 +7699,19 @@ async function aplicarAccionesMultiIntencion(){
       (a.ausentes||[]).forEach(n=>ausentes.push(n));
       (a.enfermos||[]).forEach(n=>enfermos.push(n));
     }else if(a.tipo==="observacion"){
-      await guardarObservacionDirecta(a.observacionTitulo||a.resumen, a.observacionPrioridad||"media");
-      observacionesCreadas++;
+      // Se cuenta como "guardada" solo si guardarObservacionDirecta() de verdad guardó algo --
+      // antes se contaba siempre, así que un fallo (sin obra activa, error de Firestore) mostraba
+      // su propio aviso de error seguido, contradictoriamente, de "✓ Se guardó".
+      if(await guardarObservacionDirecta(a.observacionTitulo||a.resumen, a.observacionPrioridad||"media")) observacionesCreadas++;
     }else if(a.tipo==="recordatorio"){
-      await guardarRecordatorioDirecto(a.recordatorioTitulo||a.resumen, a.recordatorioFecha||null, a.recordatorioPrioridad||"baja");
-      recordatoriosCreados++;
+      if(await guardarRecordatorioDirecto(a.recordatorioTitulo||a.resumen, a.recordatorioFecha||null, a.recordatorioPrioridad||"baja")) recordatoriosCreados++;
     }else if(a.tipo==="pedido"){
       ultimoPedido = a; pedidosGastosEncontrados++;
     }else if(a.tipo==="gasto"){
       ultimoGasto = a; pedidosGastosEncontrados++;
     }
   }
-  if(ausentes.length>0 || enfermos.length>0){
-    const activos = trabajadores.filter(t=>t.estado==="Activo");
-    mostrarPreviewAsistenciaAsistente(activos, ausentes, enfermos);
-    await aplicarPreviewAsistenciaAsistente();
-  }
   document.getElementById("asistente-preview-multi").style.display = "none";
-  document.getElementById("asistente-texto").value = "";
   if(observacionesCreadas>0) showToast(`✓ Se guardaron ${observacionesCreadas} observación(es)`);
   if(recordatoriosCreados>0) showToast(`✓ Se guardaron ${recordatoriosCreados} recordatorio(s)`);
   // Pedido y gasto necesitan revisión tuya sí o sí (montos, obra, rubro) — los dejamos prellenados
@@ -7714,16 +7720,29 @@ async function aplicarAccionesMultiIntencion(){
     aplicarResultadoGasto({tipo:"gasto", monto:ultimoGasto.gastoMonto||"", observaciones:ultimoGasto.resumen||"", ticket:"", fechaGasto:hoyISO(), avisos:pedidosGastosEncontrados>1?["Se detectó más de un pedido/gasto — solo se prellenó el último, cargá el resto a mano."]:[]}, "gemini");
   }else if(ultimoPedido){
     aplicarResultadoPedido({tipo:"pedido", obra:null, rubro:null, items:[{desc:ultimoPedido.materialDesc||"", cant:ultimoPedido.materialCantidad||"", un:""}], avisos:pedidosGastosEncontrados>1?["Se detectó más de un pedido/gasto — solo se prellenó el último, cargá el resto a mano."]:[]}, "gemini");
+  }
+  // La asistencia NUNCA se aplica sola acá -- se muestra su propia vista previa por trabajador
+  // (donde se puede detectar y corregir un nombre mal interpretado) y hace falta un segundo toque
+  // explícito en "✓ Cargar en la grilla de hoy" para que se guarde de verdad. Antes se llamaba a
+  // aplicarPreviewAsistenciaAsistente() en el mismo instante en que se armaba la vista previa, así
+  // que "Cancelar" no cancelaba nada -- el guardado ya se había disparado.
+  if(ausentes.length>0 || enfermos.length>0){
+    const activos = trabajadores.filter(t=>t.estado==="Activo");
+    mostrarPreviewAsistenciaAsistente(activos, ausentes, enfermos);
   }else{
-    cerrarAsistentePedidos();
+    document.getElementById("asistente-texto").value = "";
+    if(!ultimoGasto && !ultimoPedido) cerrarAsistentePedidos();
   }
 }
+// Devuelve true/false según si realmente quedó guardado -- sin esto, aplicarAccionesMultiIntencion()
+// contaba "guardado" aunque hubiera fallado por falta de obra o por error de Firestore, mostrando un
+// "✓ Se guardó" contradictorio justo al lado del aviso de error.
 async function guardarRecordatorioDirecto(titulo, fecha, prioridad){
   const obra = obraPorDefecto();
   // Mismo chequeo que ya tiene guardarObservacionDirecta(): sin obra activa, obraPorDefecto()
   // devuelve "" y el recordatorio quedaba guardado con obra:"" para siempre, invisible en el
   // Dashboard y en las notificaciones (ambos exigen obrasActivas().includes(r.obra)).
-  if(!obra){ showToast("⚠ No se pudo cargar el recordatorio: no hay ninguna obra activa elegida"); return; }
+  if(!obra){ showToast("⚠ No se pudo cargar el recordatorio: no hay ninguna obra activa elegida"); return false; }
   const nuevo = {
     id: uid(), titulo: titulo||"Recordatorio", obra,
     fecha: fecha||null, prioridad: ["alta","media","baja"].includes(prioridad)?prioridad:"baja",
@@ -7732,8 +7751,9 @@ async function guardarRecordatorioDirecto(titulo, fecha, prioridad){
   };
   recordatorios.unshift(nuevo);
   const ok = await guardarRecordatoriosIndex();
-  if(!ok){ recordatorios.shift(); return; }
+  if(!ok){ recordatorios.shift(); return false; }
   registrarActividad(`cargó el recordatorio "${esc(nuevo.titulo)}" desde el asistente unificado`);
+  return true;
 }
 async function guardarObservacionDirecta(titulo, prioridad){
   const obra = obraPorDefecto();
@@ -7742,7 +7762,7 @@ async function guardarObservacionDirecta(titulo, prioridad){
   // obraPorDefecto() devuelve "" y la observación quedaba guardada con obra:"" para siempre, sin
   // aparecer nunca en los avisos del Dashboard ni en las notificaciones (ambos exigen
   // obrasActivas().includes(o.obra), y "" nunca está ahí), y sin forma de filtrarla en la lista.
-  if(!obra){ showToast("⚠ No se pudo cargar la observación: no hay ninguna obra activa elegida"); return; }
+  if(!obra){ showToast("⚠ No se pudo cargar la observación: no hay ninguna obra activa elegida"); return false; }
   const obsNueva = {
     id: uid(), titulo: titulo||"Observación", obra,
     responsable: "", descripcion: "", prioridad: ["alta","media","baja"].includes(prioridad)?prioridad:"media",
@@ -7751,8 +7771,9 @@ async function guardarObservacionDirecta(titulo, prioridad){
   };
   observaciones.unshift(obsNueva);
   const ok = await guardarObservacionesIndex();
-  if(!ok){ observaciones.shift(); return; }
+  if(!ok){ observaciones.shift(); return false; }
   registrarActividad(`cargó la observación "${esc(obsNueva.titulo)}" desde el asistente unificado`);
+  return true;
 }
 
 /* ---------------- Asistente en modo Asistencia (voz/texto para cargar el día) ----------------
@@ -7807,10 +7828,12 @@ async function llamarIAAsistencia(texto, nombres){
   );
 }
 function interpretarAsistenciaTextoLocal(texto, nombres){
-  const textoNorm = texto.toLowerCase();
+  // normalizarTexto (saca tildes + minúscula) evita que "hoy faltó andres" (sin tilde, como se
+  // suele hablar/transcribir) no reconozca a "Andrés Gómez" solo por la tilde.
+  const textoNorm = normalizarTexto(texto);
   const ausentes = [], enfermos = [];
   nombres.forEach(nombre=>{
-    const partes = nombre.toLowerCase().split(/\s+/).filter(p=>p.length>2);
+    const partes = normalizarTexto(nombre).split(/\s+/).filter(p=>p.length>2);
     const posiciones = partes.map(p=>textoNorm.indexOf(p)).filter(i=>i>=0);
     if(posiciones.length===0) return;
     const idx = Math.min(...posiciones);
@@ -7855,10 +7878,16 @@ function mostrarPreviewAsistenciaAsistente(activos, ausentes, enfermos){
   const hoy = hoyISO();
   const horasNormales = esViernesISO(hoy) ? "8" : "9";
   const fechaTxt = new Date(hoy+"T00:00:00").toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"2-digit"});
+  // La IA devuelve los nombres "tal cual" los escribió/transcribió -- normalizamos (sin tildes,
+  // minúscula) antes de comparar, para que "Andres Gomez" o distinto casing sigan matcheando a
+  // "Andrés Gómez" en vez de quedar marcados "Presente" en silencio por una diferencia cosmética.
+  const enfermosNorm = enfermos.map(normalizarTexto);
+  const ausentesNorm = ausentes.map(normalizarTexto);
   const filas = activos.map(t=>{
     let estado, badge, clase;
-    if(enfermos.includes(t.nombre)){ estado="E"; badge=`🤒 Enfermo`; clase="badge-enfermo"; }
-    else if(ausentes.includes(t.nombre)){ estado="A"; badge=`❌ Ausente`; clase="badge-ausente"; }
+    const nombreNorm = normalizarTexto(t.nombre);
+    if(enfermosNorm.includes(nombreNorm)){ estado="E"; badge=`🤒 Enfermo`; clase="badge-enfermo"; }
+    else if(ausentesNorm.includes(nombreNorm)){ estado="A"; badge=`❌ Ausente`; clase="badge-ausente"; }
     else{ estado=horasNormales; badge=`✅ Presente · ${horasNormales} hs`; clase="badge-presente"; }
     return {id:t.id, nombre:t.nombre, estado, badge, clase};
   });
@@ -7889,9 +7918,12 @@ async function aplicarPreviewAsistenciaAsistente(){
     data[f.id] = existente;
   });
   asistenciaCache[mes] = data;
-  await guardarAsistenciaMes(mes);
+  // guardarAsistenciaMes() ahora devuelve si el guardado llegó de verdad a Firestore -- antes acá
+  // se mostraba "✓ cargada" siempre, aunque hubiese fallado (sin señal) y guardarAsistenciaMes ya
+  // hubiera mostrado su propio aviso de error justo antes, dando dos toasts contradictorios.
+  const guardadoOk = await guardarAsistenciaMes(mes);
   registrarActividad(`cargó la asistencia de hoy con el asistente (${filas.filter(f=>f.estado==="A").length} ausente(s), ${filas.filter(f=>f.estado==="E").length} enfermo(s))`);
-  showToast("✓ Asistencia de hoy cargada");
+  showToast(guardadoOk ? "✓ Asistencia de hoy cargada" : "⚠ Sin conexión: quedó guardada en el celular, falta sincronizar con el servidor");
   document.getElementById("asistente-preview-asistencia").style.display = "none";
   document.getElementById("asistente-texto").value = "";
   cerrarAsistentePedidos();
@@ -18501,7 +18533,11 @@ function normalizarEspacios(s){
 function interpretarComandoNexo(textoOriginalCrudo){
   const textoOriginal = normalizarEspacios(textoOriginalCrudo);
   const t = normalizarTexto(textoOriginal);
-  const mRec = textoOriginal.match(/^(?:record[aá]me|recordatorio|anot[aá] que)\s+(.+)/i);
+  // "recordatorio\s*:?" (con los dos puntos opcionales) para que "recordatorio: comprar cemento"
+  // también entre por acá -- con solo "recordatorio" sin el ":?", ese caso no matcheaba este regex
+  // pero SÍ el de detectarAccionLocalUnica() (que sí tolera los dos puntos), así que terminaba
+  // guardándose directo sin pasar por la confirmación obligatoria del Tool Layer.
+  const mRec = textoOriginal.match(/^(?:record[aá]me|recordatorio\s*:?|anot[aá] que)\s+(.+)/i);
   if(mRec) return {tool:"crearRecordatorio", params:{titulo: mRec[1].trim(), fecha:null}};
   const mMem = textoOriginal.match(/^(?:record[aá]|acordate|tené en cuenta|ten en cuenta)\s+que\s+(.+)/i);
   if(mMem) return {tool:"recordarPreferencia", params:{texto: mMem[1].trim()}};
