@@ -9260,10 +9260,13 @@ function renderDashboard(){
   // de Caja Chica, para que no se mezclen las rendiciones de un Capataz con las de otro (ni con
   // las del Administrador).
   const esAdminDash = sesionActual && sesionActual.role==="admin";
+  // OJO: a propósito SIN filtrar por obraVisible -- la Caja Chica es una sola por persona, no una
+  // por obra (el campo "obra" de cada rendición solo registra dónde se gastó esa plata en ese
+  // período). Filtrar acá por el chip de obra seleccionado hacía que el Dashboard mostrara un
+  // saldo viejo/incorrecto si la rendición más reciente de verdad quedó tageada con otra obra.
   const rendicionesPropias = rendicionesIndex.filter(r=>{
     if(sesionActual && !esAdminDash && r.usuario!==sesionActual.username) return false;
     if(sesionActual && esAdminDash && r.usuario && r.usuario!==sesionActual.username) return false;
-    if(!obraVisible(r.obra)) return false;
     return true;
   });
   // Saldo de Caja Chica = plata real disponible ahora mismo, no "lo pendiente de reclamar".
