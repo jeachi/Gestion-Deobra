@@ -16558,6 +16558,7 @@ function renderListaMinutas(){
         <div class="sub">${esc(m.obra)} · ${m.fecha ? fechaAR(m.fecha) : ""}</div>
       </div>
       <div class="botones">
+        <button type="button" class="btn btn-outline btn-sm" onclick="corregirNumeroMinuta('${m.id}')">✎ N°</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="verMinutaPDF('${m.id}')">🖨 Ver PDF</button>
         <button type="button" class="btn btn-danger btn-sm" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarMinuta('${m.id}'))">🗑</button>
       </div>
@@ -16570,7 +16571,48 @@ async function eliminarMinuta(id){
   await guardarMinutasIndex();
   try{ await window.storage.delete("minuta_"+id, true); }catch(e){}
   if(m) registrarActividad(`eliminó la Minuta N° ${m.numero} de ${esc(m.obra)}`);
+  // Si era la última minuta numerada (nadie más usa ese número ni uno mayor), liberamos el
+  // correlativo para que la próxima no deje un hueco en la numeración -- mismo arreglo ya hecho
+  // para Caja Chica.
+  if(m && m.numero===correlativoMinutaSiguiente-1 && !minutasIndex.some(x=>x.numero>=m.numero)){
+    correlativoMinutaSiguiente = m.numero;
+    await guardarCorrelativoMinuta();
+  }
   showToast("Minuta eliminada");
+  renderListaMinutas();
+}
+// Corregir a mano el N° de una minuta ya creada (ej: quedó mal numerada porque se borró una
+// intermedia antes de que existiera el reciclado del correlativo de arriba).
+function corregirNumeroMinuta(id){
+  const m = minutasIndex.find(x=>x.id===id);
+  if(!m) return;
+  abrirPromptGenerico(`
+    <h2 style="margin-top:0;">✎ Corregir N° de la Minuta</h2>
+    <p class="helper">Minuta actual: N° ${m.numero} — ${esc(m.obra)}</p>
+    <input type="number" id="minuta-numero-nuevo" min="1" step="1" value="${m.numero}" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;font-weight:800;text-align:center;box-sizing:border-box;margin-bottom:10px;">
+    <button class="btn btn-primary" style="width:100%;" onclick="guardarNumeroMinutaCorregido('${id}')">Guardar</button>
+  `);
+}
+async function guardarNumeroMinutaCorregido(id){
+  const m = minutasIndex.find(x=>x.id===id);
+  if(!m) return;
+  const nuevoNumero = parseInt(document.getElementById("minuta-numero-nuevo").value, 10);
+  if(!nuevoNumero || nuevoNumero<1){ showToast("Escribí un número válido"); return; }
+  if(nuevoNumero!==m.numero && minutasIndex.some(x=>x.id!==id && x.numero===nuevoNumero)){
+    showToast(`Ya existe la Minuta N° ${nuevoNumero} — elegí otro número`);
+    return;
+  }
+  m.numero = nuevoNumero;
+  await guardarMinutasIndex();
+  try{
+    const r = await window.storage.get("minuta_"+id, true);
+    const detalle = r && r.value ? JSON.parse(r.value) : null;
+    if(detalle){ detalle.numero = nuevoNumero; await window.storage.set("minuta_"+id, JSON.stringify(detalle), true); }
+  }catch(e){}
+  if(nuevoNumero>=correlativoMinutaSiguiente){ correlativoMinutaSiguiente = nuevoNumero+1; await guardarCorrelativoMinuta(); }
+  registrarActividad(`corrigió el N° de una Minuta de ${esc(m.obra)} a N° ${nuevoNumero}`);
+  showToast("N° corregido ✓");
+  cerrarPromptGenerico();
   renderListaMinutas();
 }
 async function verMinutaPDF(id){
