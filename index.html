@@ -17457,15 +17457,30 @@ async function enviarPorWhatsapp(){
         const utilHA4 = altoHojaMmB*MM_A_PT - MARGEN_A4*2;
         const bloques = [...pagina.children];
         const ESCALA_BLOQUE = 2;
+        // El Certificado de obra y el Presupuesto A1 tienen, aparte del encabezado, UNA sola tabla
+        // de primer nivel con 100-250 filas -- más alta que una hoja A4/A1 entera. Capturada entera
+        // como imagen única (como cualquier otro bloque), nunca disparaba salto de hoja la primera
+        // vez que se la intentaba ubicar ("huboContenidoEnHoja" seguía en false) y las filas que
+        // pasaban el borde inferior de la hoja quedaban directamente cortadas/invisibles en el PDF
+        // compartido por WhatsApp -- ítems certificados que "desaparecían" aunque se vieran bien al
+        // imprimir (que pagina de verdad, vía fijarOrientacionImpresion). Estas se detectan aparte y
+        // se cortan por filas más abajo; el resto de los bloques (títulos, fotos de Observaciones)
+        // se sigue capturando todo junto en paralelo, como antes, para no perder velocidad.
+        const esTablaGrande = bloques.map(b=>{
+          if(b.tagName!=="TABLE") return false;
+          const filas = b.querySelectorAll(":scope > tbody > tr");
+          if(filas.length===0) return false;
+          return b.getBoundingClientRect().height*PX_A_PT > utilHA4;
+        });
         estado.textContent = `Armando el informe: capturando ${bloques.length} bloques…`;
-        const canvasBloques = await Promise.all(bloques.map(b=>
-          html2canvas(b, {scale:ESCALA_BLOQUE, backgroundColor:"#ffffff", useCORS:true, logging:false})
+        const canvasNormales = await Promise.all(bloques.map((b,idxB)=>
+          esTablaGrande[idxB] ? null : html2canvas(b, {scale:ESCALA_BLOQUE, backgroundColor:"#ffffff", useCORS:true, logging:false})
         ));
         if(i===0){ pdf = new jsPDF({orientation: orientacionPdfActual, unit:"pt", format:"a4"}); }
         else{ pdf.addPage("a4", orientacionPdfActual); }
         let y = MARGEN_A4;
         let huboContenidoEnHoja = false;
-        canvasBloques.forEach(canvasBloque=>{
+        const dibujarImagenBloque = (canvasBloque)=>{
           const wPtB = (canvasBloque.width/ESCALA_BLOQUE)*PX_A_PT;
           const hPtB = (canvasBloque.height/ESCALA_BLOQUE)*PX_A_PT;
           // Por las dudas -- no debería pasar nunca, ya el contenedor está al ancho real de hoja.
@@ -17479,7 +17494,43 @@ async function enviarPorWhatsapp(){
           pdf.addImage(canvasBloque.toDataURL("image/png"), "PNG", MARGEN_A4, y, wFinalB, hFinalB);
           y += hFinalB;
           huboContenidoEnHoja = true;
-        });
+        };
+        for(let idxB=0; idxB<bloques.length; idxB++){
+          if(!esTablaGrande[idxB]){ dibujarImagenBloque(canvasNormales[idxB]); continue; }
+          const bloque = bloques[idxB];
+          const thead = bloque.querySelector(":scope > thead");
+          const filasTabla = [...bloque.querySelectorAll(":scope > tbody > tr")];
+          const altoTheadPt = thead ? thead.getBoundingClientRect().height*PX_A_PT : 0;
+          const anchoTablaPx = bloque.getBoundingClientRect().width;
+          const alturasFilasPt = filasTabla.map(f=>f.getBoundingClientRect().height*PX_A_PT);
+          let idxFila = 0;
+          while(idxFila < filasTabla.length){
+            let espacioPt = (MARGEN_A4 + utilHA4) - y;
+            if(huboContenidoEnHoja && espacioPt < altoTheadPt + alturasFilasPt[idxFila]){
+              pdf.addPage("a4", orientacionPdfActual);
+              y = MARGEN_A4;
+              huboContenidoEnHoja = false;
+              espacioPt = utilHA4;
+            }
+            let acumPt = altoTheadPt, fin = idxFila;
+            while(fin < filasTabla.length && acumPt + alturasFilasPt[fin] <= espacioPt){
+              acumPt += alturasFilasPt[fin];
+              fin++;
+            }
+            if(fin===idxFila) fin = idxFila+1; // ni una fila entra sola (gigante) -- va igual, para no colgarnos
+            const clon = bloque.cloneNode(false);
+            clon.style.width = anchoTablaPx+"px";
+            if(thead) clon.appendChild(thead.cloneNode(true));
+            const tbodyClon = doc.createElement("tbody");
+            for(let k=idxFila;k<fin;k++) tbodyClon.appendChild(filasTabla[k].cloneNode(true));
+            clon.appendChild(tbodyClon);
+            doc.body.appendChild(clon);
+            const canvasChunk = await html2canvas(clon, {scale:ESCALA_BLOQUE, backgroundColor:"#ffffff", useCORS:true, logging:false});
+            doc.body.removeChild(clon);
+            dibujarImagenBloque(canvasChunk);
+            idxFila = fin;
+          }
+        }
         estado.textContent = `Informe armado en ${pdf.internal.getNumberOfPages()} hoja${pdf.internal.getNumberOfPages()===1?"":"s"} A4…`;
         continue;
       }
