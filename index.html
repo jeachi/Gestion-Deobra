@@ -17084,6 +17084,119 @@ async function capturarHojaAncha(pagina, escala){
   return combinado;
 }
 
+// Reparte la grilla de Nómina en tantas hojas A4 apaisadas reales como hagan falta, repitiendo el
+// encabezado de columnas en cada una -- antes se escalaba TODO el plantel (cualquier cantidad de
+// trabajadores) para que entrara en una sola hoja, y con un plantel de 15-20+ personas el texto
+// quedaba directamente ilegible. El logo/título va solo en la primera hoja de esta quincena, y el
+// "Total general" + la leyenda de códigos van solo en la última.
+function dibujarGrillaNominaPaginada(pdf, pagina, tabla, factor, orient, PX_A_PT, esPrimeraPaginaDelPdf){
+  const PX = PX_A_PT*factor;
+  const MARGEN = 14.17;
+  const A4H = 595.28;
+  const utilH = A4H - MARGEN*2;
+  const parseColor = (c)=>{ const m = c && c.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/); if(!m) return null; if(m[4]!==undefined && parseFloat(m[4])===0) return null; return [+m[1],+m[2],+m[3]]; };
+  const textoSeguro = (s)=> s.replace(/☐/g,"[ ]").replace(/[✓☑]/g,"OK");
+  const rectTabla = tabla.getBoundingClientRect();
+  function dibujarFila(celdas, baseTop, y){
+    celdas.forEach(celda=>{
+      const r = celda.getBoundingClientRect();
+      const p = { x:(r.left-rectTabla.left)*PX+MARGEN, y:(r.top-baseTop)*PX+y, w:r.width*PX, h:r.height*PX };
+      if(p.w<=0 || p.h<=0) return;
+      const cs = celda.ownerDocument.defaultView.getComputedStyle(celda);
+      const fondo = parseColor(cs.backgroundColor);
+      if(fondo){ pdf.setFillColor(fondo[0],fondo[1],fondo[2]); pdf.rect(p.x,p.y,p.w,p.h,"F"); }
+      pdf.setDrawColor(170,170,170); pdf.setLineWidth(0.4*factor);
+      pdf.rect(p.x,p.y,p.w,p.h);
+      const texto = textoSeguro(celda.textContent||"");
+      if(!texto.trim()) return;
+      const negrita = parseInt(cs.fontWeight,10)>=600;
+      pdf.setFont("helvetica", negrita?"bold":"normal");
+      pdf.setFontSize(6.5*factor);
+      const col = parseColor(cs.color) || [0,0,0];
+      pdf.setTextColor(col[0],col[1],col[2]);
+      const lineas = pdf.splitTextToSize(texto.replace(/\s+/g," ").trim(), Math.max(4,p.w-3*factor));
+      const lh = 6.5*factor*1.15;
+      let ty = p.y + p.h/2 - (lineas.length-1)*lh/2 + 6.5*factor*0.35;
+      lineas.forEach(l=>{
+        if(cs.textAlign==="center") pdf.text(l, p.x+p.w/2, ty, {align:"center"});
+        else if(cs.textAlign==="right") pdf.text(l, p.x+p.w-1.5*factor, ty, {align:"right"});
+        else pdf.text(l, p.x+1.5*factor, ty);
+        ty += lh;
+      });
+    });
+  }
+  function dibujarLineaSimple(el, y){
+    const r = el.getBoundingClientRect();
+    const p = { x:(r.left-rectTabla.left)*PX+MARGEN, w:r.width*PX, h:r.height*PX };
+    const cs = el.ownerDocument.defaultView.getComputedStyle(el);
+    const texto = textoSeguro(el.textContent||"").trim();
+    if(!texto) return;
+    pdf.setFont("helvetica", parseInt(cs.fontWeight,10)>=600 ? "bold" : "normal");
+    pdf.setFontSize(8.5*factor);
+    pdf.setTextColor(10,37,64);
+    pdf.text(texto, p.x, y + p.h*0.8);
+  }
+
+  const thead = tabla.querySelector("thead");
+  const theadCeldas = [...thead.querySelectorAll("th")];
+  const theadTop = thead.getBoundingClientRect().top;
+  const altoThead = thead.getBoundingClientRect().height*PX;
+  const filas = [...tabla.querySelectorAll("tbody tr")];
+
+  const titulo = pagina.querySelector(".p-title");
+  const sub = pagina.querySelector(".p-sub");
+  const img = pagina.querySelector("img");
+  const totalGeneral = pagina.querySelector(".print-total-general");
+  const leyenda = pagina.querySelector(".print-leyenda");
+  // La primera hoja también carga el logo/título arriba del todo -- si no se descuenta ese
+  // espacio acá, la última fila de esa hoja puede terminar calculándose adentro pero en realidad
+  // salirse del margen inferior (el bug real: se detectó con un plantel grande donde la fila de
+  // corte quedaba fuera de la hoja).
+  const altoEncabezadoSuperior = Math.max(img ? img.getBoundingClientRect().height*PX : 0, 32*factor) + 4;
+
+  const paginasDeFilas = [];
+  let actual = [], yAcum = altoThead + altoEncabezadoSuperior;
+  filas.forEach(fila=>{
+    const altoFila = fila.getBoundingClientRect().height*PX;
+    if(actual.length>0 && (yAcum+altoFila) > utilH){ paginasDeFilas.push(actual); actual=[]; yAcum=altoThead; }
+    actual.push(fila); yAcum += altoFila;
+  });
+  paginasDeFilas.push(actual);
+
+  paginasDeFilas.forEach((filasDePagina, idx)=>{
+    if(!(idx===0 && esPrimeraPaginaDelPdf)) pdf.addPage("a4", orient);
+    let y = MARGEN;
+    if(idx===0){
+      if(img && img.src && img.src.startsWith("data:image")){
+        const r = img.getBoundingClientRect();
+        try{ pdf.addImage(img.src, "PNG", (r.left-rectTabla.left)*PX+MARGEN, y, r.width*PX, r.height*PX); }catch(e){}
+      }
+      if(titulo){ pdf.setFont("helvetica","bold"); pdf.setFontSize(13*factor); pdf.setTextColor(10,37,64); pdf.text(titulo.textContent.trim(), MARGEN+130*PX, y+10*factor); }
+      if(sub){ pdf.setFont("helvetica","normal"); pdf.setFontSize(8*factor); pdf.setTextColor(75,85,99); pdf.text(sub.textContent.trim(), MARGEN+130*PX, y+22*factor); }
+      y += Math.max(img ? img.getBoundingClientRect().height*PX : 0, 32*factor) + 4;
+    }
+    dibujarFila(theadCeldas, theadTop, y);
+    y += altoThead;
+    filasDePagina.forEach(fila=>{
+      dibujarFila([...fila.querySelectorAll("td")], fila.getBoundingClientRect().top, y);
+      y += fila.getBoundingClientRect().height*PX;
+    });
+    if(idx===paginasDeFilas.length-1){
+      // El pie (total + leyenda) puede no entrar si esta última hoja ya quedó llena de filas --
+      // en ese caso se dibuja en una hoja aparte, en vez de salirse del margen inferior.
+      const altoTotal = totalGeneral ? totalGeneral.getBoundingClientRect().height*PX : 0;
+      const altoLeyenda = leyenda ? leyenda.getBoundingClientRect().height*PX : 0;
+      if((y+4+altoTotal+altoLeyenda) > (MARGEN+utilH)){ pdf.addPage("a4", orient); y = MARGEN; }
+      else y += 4;
+      if(totalGeneral){ dibujarLineaSimple(totalGeneral, y); y += altoTotal; }
+      if(leyenda){
+        const filaLeyenda = leyenda.querySelector("tr");
+        if(filaLeyenda) dibujarFila([...filaLeyenda.querySelectorAll("td")], filaLeyenda.getBoundingClientRect().top, y);
+      }
+    }
+  });
+  return pdf.internal.getNumberOfPages();
+}
 // ---- Dibujado vectorial (SIN captura de imagen) ----
 // Para la Nómina, la herramienta de "sacar foto" demostró no poder con tablas tan anchas en el
 // celular, sin importar cuántas vueltas le dimos. Así que acá directamente NO le sacamos foto:
@@ -17370,24 +17483,36 @@ async function enviarPorWhatsapp(){
         estado.textContent = `Informe armado en ${pdf.internal.getNumberOfPages()} hoja${pdf.internal.getNumberOfPages()===1?"":"s"} A4…`;
         continue;
       }
-      // Nómina (la grilla de días) y los reportes de Pedido/Pendientes van por el camino
-      // vectorial: dibujamos el PDF a mano leyendo la vista previa, SIN sacarle ninguna foto.
-      // A la grilla de Nómina la obligaba el ancho; a estos dos los pasamos acá directamente
-      // porque la "foto" (html2canvas) les venía dejando una línea vertical de más que no
-      // pudimos explicar por el lado del HTML/CSS — dibujarlos a mano la elimina de raíz.
-      if(pagina.querySelector("table.print-grid") || pagina.querySelector("table.op-items")){
+      // Nómina (la grilla de días): antes se forzaba TODO el plantel (cualquier cantidad de
+      // trabajadores) a una sola hoja A4, escalando también por el ALTO -- con un plantel de 15-20+
+      // personas el texto quedaba directamente ilegible. Ahora se pagina por filas: el factor de
+      // escala sale solo del ANCHO (fijo, no depende de cuántos trabajadores haya) y las filas se
+      // reparten en tantas hojas A4 reales como hagan falta, repitiendo el encabezado en cada una.
+      if(pagina.querySelector("table.print-grid")){
+        const tabla = pagina.querySelector("table.print-grid");
+        const rectTabla = tabla.getBoundingClientRect();
+        const wPt = rectTabla.width*PX_A_PT;
+        const esApaisada = true; // Nómina siempre es más ancha que alta
+        const orient = esApaisada ? "landscape" : "portrait";
+        const A4W = 841.89, A4H = 595.28;
+        const MARGEN = 14.17;
+        const utilW = A4W - MARGEN*2;
+        const factor = utilW/wPt;
+        if(i===0){ pdf = new jsPDF({orientation: orient, unit:"pt", format:"a4"}); }
+        const cantidadHojas = dibujarGrillaNominaPaginada(pdf, pagina, tabla, factor, orient, PX_A_PT, i===0);
+        estado.textContent = `Nómina: repartida en ${cantidadHojas} hoja${cantidadHojas===1?"":"s"} A4 ${orient}, escala ${factor.toFixed(2)}…`;
+        continue;
+      }
+      // Los reportes de Pedido/Pendientes van por el camino vectorial: dibujamos el PDF a mano
+      // leyendo la vista previa, SIN sacarle ninguna foto -- la "foto" (html2canvas) les venía
+      // dejando una línea vertical de más que no pudimos explicar por el lado del HTML/CSS.
+      if(pagina.querySelector("table.op-items")){
         const rect = pagina.getBoundingClientRect();
         const wPt = rect.width*PX_A_PT;
         const hPt = rect.height*PX_A_PT;
-        // Hoja A4 estándar con márgenes estrechos (5mm). La orientación se elige según la forma
-        // del contenido (Nómina apaisada → A4 horizontal). OJO: sin aclarar la orientación,
-        // jsPDF da vuelta solo las medidas — ese era el bug de fondo de los PDF cortados.
-        // OJO: antes esto se decidía solo mirando si la hoja salía más ancha que alta. Con pocos
-        // materiales (Orden de Pedido / Reporte de Pendientes con pocas filas), la hoja termina
-        // siendo más ancha que alta y por eso se ponía horizontal — pero este formulario SIEMPRE
-        // debe ir vertical, tenga 3 materiales o 30. A Nómina (la única que sí necesita apaisada)
-        // no le cambia nada, porque para ella wPt siempre es mayor que hPt de por sí.
-        const esApaisada = pagina.classList.contains("op-page") ? false : (wPt > hPt);
+        // Este formulario SIEMPRE va vertical, tenga 3 materiales o 30 (antes, con pocas filas la
+        // hoja salía más ancha que alta y se ponía horizontal sin que tuviera sentido).
+        const esApaisada = false;
         const A4W = esApaisada ? 841.89 : 595.28;
         const A4H = esApaisada ? 595.28 : 841.89;
         const MARGEN = 14.17; // 5mm en puntos
