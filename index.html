@@ -11629,7 +11629,7 @@ function bloqueBarraProgreso(pct, color, label){
 }
 
 /* ---------------- PDF: certificado individual (hoja "CERT_XX" del Excel) ---------------- */
-function construirHtmlCertificado(c, certIndex){
+function construirHtmlCertificado(c, certIndex, totalHojas){
   const r = calcularCertificadosDetallados(c);
   const cert = r.certs[certIndex];
   if(!cert) return "";
@@ -11687,12 +11687,15 @@ function construirHtmlCertificado(c, certIndex){
         <td width="${CW[5]}">${formatoMoneda(cert.totalPeriodo)}</td><td width="${CW[6]}">${formatoMoneda(cert.totalAcumulado)}</td><td width="${CW[7]}">${formatoMoneda(cert.totalSaldo)}</td>
       </tr>
     </table>
-    <div class="cert-footer">Monto del contrato: ${formatoMoneda(c.montoContrato)}${c.anticipoMonto ? ` · Anticipo: ${formatoMoneda(c.anticipoMonto)}` : ""}. Hoja 2 de 2 — certificado individual.</div>
+    <div class="cert-footer">Monto del contrato: ${formatoMoneda(c.montoContrato)}${c.anticipoMonto ? ` · Anticipo: ${formatoMoneda(c.anticipoMonto)}` : ""}. Hoja 2 de ${totalHojas||2} — certificado individual.</div>
   </div>`;
 }
 
 /* ---------------- PDF: resumen general del contratista (hoja "RESUMEN" del Excel) ---------------- */
-function construirHtmlResumenContratista(c){
+// totalHojas: cuántas hojas tiene el PDF completo donde se inserta este resumen -- 1 si se descarga
+// solo ("Solo resumen"), 2 si va con el certificado individual, 3 si además lleva el plano adjunto.
+// Antes el pie decía siempre "Hoja 1 de 2", aunque el PDF real tuviera 1 o 3 hojas.
+function construirHtmlResumenContratista(c, totalHojas){
   const r = calcularCertificadosDetallados(c);
   const anchoTabla = 900;
   // Mismo truco de ancho fijo por columna que en el certificado individual.
@@ -11736,7 +11739,7 @@ function construirHtmlResumenContratista(c){
       <tr class="cert-th-row"><td width="${CWR[0]}">N° CERTIFICADO</td><td width="${CWR[1]}">FECHA</td><td width="${CWR[2]}">% ACUM. OBRA</td><td width="${CWR[3]}">$ ACUMULADO</td><td width="${CWR[4]}">$ DEL PERÍODO</td><td width="${CWR[5]}">SALDO POR COBRAR</td></tr>
       ${filasResumen}
     </table>
-    <div class="cert-footer">${c.anticipoMonto ? `Incluye anticipo de ${formatoMoneda(c.anticipoMonto)} sobre el total del contrato. ` : ""}Hoja 1 de 2 — resumen general de todos los certificados de este contratista.</div>
+    <div class="cert-footer">${c.anticipoMonto ? `Incluye anticipo de ${formatoMoneda(c.anticipoMonto)} sobre el total del contrato. ` : ""}Hoja 1 de ${totalHojas||2} — resumen general de todos los certificados de este contratista.</div>
   </div>`;
 }
 
@@ -11779,8 +11782,6 @@ async function verCertificadoPDF(contratistaId, certIndex, forzarHorizontal){
   const c = contratistasCache[contratistaId];
   if(!c) return;
   const cert = (c.certificados||[])[certIndex];
-  const htmlCert = construirHtmlCertificado(c, certIndex);
-  if(!htmlCert) return;
   let imgPlano = cert && cert.planoImagenSnapshot;
   let callbackOrientacion = null;
   if(imgPlano){
@@ -11799,14 +11800,19 @@ async function verCertificadoPDF(contratistaId, certIndex, forzarHorizontal){
     // esté viendo el reporte del Plano de avance o la vista previa de un Certificado.
     reportePlanoOrientacionActual = quiereHorizontal ? "landscape" : "portrait";
   }
-  const htmlPlano = construirHtmlHojaPlanoCertificado(c, cert, imgPlano);
-  const htmlCompleto = construirHtmlResumenContratista(c) + htmlCert + htmlPlano;
+  // El PDF tiene 3 hojas si hay plano adjunto, 2 si no -- antes el pie de cada hoja decía siempre
+  // "de 2" aunque este caso puntual tuviera 3.
+  const totalHojas = imgPlano ? 3 : 2;
+  const htmlCert = construirHtmlCertificado(c, certIndex, totalHojas);
+  if(!htmlCert) return;
+  const htmlPlano = construirHtmlHojaPlanoCertificado(c, cert, imgPlano, totalHojas);
+  const htmlCompleto = construirHtmlResumenContratista(c, totalHojas) + htmlCert + htmlPlano;
   mostrarModalPDF(htmlCompleto, "landscape", `Certificado_${nombreArchivoSeguro(c.nombre)}_${numeroFormateado(cert.numero)}.pdf`, callbackOrientacion);
 }
 // 3ra hoja del PDF del certificado -- el plano tal como estaba cuando se tocó "Traer avance",
 // congelado (no el estado actual del plano, que puede haber seguido cambiando después). Si el
 // certificado nunca usó "Traer avance del plano", esta hoja simplemente no se agrega.
-function construirHtmlHojaPlanoCertificado(c, cert, imgPlanoOverride){
+function construirHtmlHojaPlanoCertificado(c, cert, imgPlanoOverride, totalHojas){
   const imgPlano = imgPlanoOverride!==undefined ? imgPlanoOverride : (cert && cert.planoImagenSnapshot);
   if(!cert || !imgPlano) return "";
   const anchoTabla = 900;
@@ -11851,12 +11857,15 @@ function construirHtmlHojaPlanoCertificado(c, cert, imgPlanoOverride){
       <tbody>${filasItems || `<tr><td colspan="3" style="color:#999;">Este contratista no tiene ítems de contrato cargados.</td></tr>`}</tbody>
     </table>
     <div style="margin-top:8px;font-size:10px;color:#6b7280;text-align:center;">Estado del plano al momento de este certificado — el plano real puede haber seguido avanzando después.</div>
+    <div class="cert-footer">Hoja 3 de ${totalHojas||3} — plano de avance adjunto.</div>
   </div>`;
 }
 function descargarPDFResumenContratista(contratistaId){
   const c = contratistasCache[contratistaId];
   if(!c) return;
-  mostrarModalPDF(construirHtmlResumenContratista(c), "landscape", `Resumen_${nombreArchivoSeguro(c.nombre)}.pdf`);
+  // Este PDF es SOLO el resumen (botón "🖨 Solo resumen (1 hoja)") -- antes su pie decía "Hoja 1 de
+  // 2" aunque el documento generado tuviera una sola hoja.
+  mostrarModalPDF(construirHtmlResumenContratista(c, 1), "landscape", `Resumen_${nombreArchivoSeguro(c.nombre)}.pdf`);
 }
 
 /* ==================== FIN CERTIFICADOS ==================== */
