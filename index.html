@@ -6367,9 +6367,17 @@ async function agregarEquivalencia(){
   const cantChica = parseFloat(document.getElementById("eq-cant-chica").value);
   const unidadChica = document.getElementById("eq-un-chica").value.trim();
   if(!material || !unidadGrande || !cantChica || !unidadChica){ showToast("Completá los 4 campos"); return; }
-  equivalenciasMateriales.push({material, unidadGrande, cantChica, unidadChica});
+  // Si ya existe una equivalencia para el mismo material+unidad grande, se ACTUALIZA en vez de
+  // agregar una nueva -- antes quedaban las dos guardadas, y buscarEquivalencia() (que usa .find(),
+  // así que siempre devuelve la PRIMERA) seguía usando la entrada vieja/incorrecta para convertir
+  // unidades en los remitos, aunque alguien hubiera "corregido" el error agregando una entrada nueva.
+  const existente = equivalenciasMateriales.find(e=>
+    e.material.trim().toLowerCase()===material.toLowerCase() && e.unidadGrande.trim().toLowerCase()===unidadGrande.toLowerCase());
+  const esActualizacion = !!existente;
+  if(existente){ existente.cantChica = cantChica; existente.unidadChica = unidadChica; }
+  else{ equivalenciasMateriales.push({material, unidadGrande, cantChica, unidadChica}); }
   await guardarEquivalenciasIndex();
-  registrarActividad(`agregó la equivalencia "1 ${esc(unidadGrande)} de ${esc(material)} = ${cantChica} ${esc(unidadChica)}"`);
+  registrarActividad(`${esActualizacion?"actualizó":"agregó"} la equivalencia "1 ${esc(unidadGrande)} de ${esc(material)} = ${cantChica} ${esc(unidadChica)}"`);
   document.getElementById("eq-material").value = "";
   document.getElementById("eq-un-grande").value = "";
   document.getElementById("eq-cant-chica").value = "";
@@ -18962,6 +18970,11 @@ async function exportarRespaldo(){
     alert("No se pudo generar el respaldo. Detalle: "+(err && err.message ? err.message : err));
   }
 }
+// Separada en su propia función (en vez de llamar a location.reload() directo adentro de
+// importarRespaldo) para poder simularla en tests automatizados sin recargar la página de verdad.
+function recargarTrasRestaurarRespaldo(){
+  location.reload();
+}
 async function importarRespaldo(input){
   const file = input.files[0];
   if(!file) return;
@@ -18986,8 +18999,15 @@ async function importarRespaldo(input){
         if(valor===null || valor===undefined) continue;
         await window.storage.set(clave, valor, true);
       }
-      info.textContent = "Restaurado ✓ — recargá la página para ver los datos actualizados.";
-      showToast("Respaldo restaurado ✓ — recargá la página");
+      info.textContent = "Restaurado ✓ — la página se va a recargar sola para traer los datos nuevos…";
+      showToast("Respaldo restaurado ✓ — recargando…");
+      // Recarga FORZADA, no un aviso pasivo: importarRespaldo() escribe directo en Firestore pero
+      // nunca actualiza las variables JS en memoria (usuarios, rubros, trabajadores, etc.). Antes
+      // solo se pedía "recargá la página" en un texto chico -- si alguien seguía trabajando sin
+      // recargar (algo muy probable), el primer guardado posterior de CUALQUIER catálogo
+      // (ej. togglePermisoUsuario -> guardarUsuarios) pisaba en Firestore la restauración entera
+      // con el array viejo que seguía en memoria, deshaciéndola en silencio sin ningún error.
+      setTimeout(recargarTrasRestaurarRespaldo, 1200);
     }catch(err){
       console.error(err);
       alert("No se pudo leer el archivo de respaldo. Detalle: "+(err && err.message ? err.message : err));
