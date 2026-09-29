@@ -6311,6 +6311,13 @@ async function guardarCorrelativo(){
 async function guardarCorrelativoManual(){
   const v = parseInt(document.getElementById("config-correlativo").value, 10);
   if(!v || v<1){ showToast("Número inválido"); return; }
+  // Mismo chequeo que ya hace guardarPedido() al asignar el correlativo automático -- si no, el
+  // aviso de "ya existe un pedido con ese N°" recién aparecía al cargar el PRÓXIMO pedido, dejando
+  // a quien corrige el número acá sin ninguna pista de qué estaba mal.
+  if(pedidosIndex.some(p=>p.numero===v)){
+    showToast("Ya existe un pedido con el N° "+numeroFormateado(v)+" — elegí otro número");
+    return;
+  }
   correlativoSiguiente = v;
   await guardarCorrelativo();
   showToast("Próximo número actualizado ✓");
@@ -9169,20 +9176,26 @@ async function agregarAvisosDeEstaSemana(estaSemana){
   return estaSemana;
 }
 function mostrarDetalleHerramientasPrestadas(){
-  const obraActual = dashboardObraFiltro || obraPorDefecto();
-  const prestadas = herramientas.filter(h=>h.obra===obraActual && h.estado==="prestada");
+  // Este popup explica el número de la tarjeta "Herramientas prestadas" del Dashboard -- tiene que
+  // contar exactamente lo mismo que esa tarjeta. Antes, con "Todas las obras" elegido (sin chip),
+  // la tarjeta sumaba todas las obras pero este detalle caía a obraPorDefecto() (una sola obra
+  // puntual) -- mostraba una lista mucho más corta que el número en el que se tocó.
+  const filtroObra = dashboardObraFiltro;
+  const obraVisible = o => obrasActivas().includes(o) && (!filtroObra || o===filtroObra);
+  const prestadas = herramientas.filter(h=>obraVisible(h.obra) && h.estado==="prestada");
+  const titulo = filtroObra || "Todas las obras";
   if(prestadas.length===0){
-    showToast(`No hay ninguna herramienta prestada en ${esc(obraActual)} ahora mismo.`);
+    showToast(`No hay ninguna herramienta prestada en ${esc(titulo)} ahora mismo.`);
     return;
   }
   const html = `
-    <h2 style="margin-top:0;">🔁 Herramientas prestadas — ${esc(obraActual)}</h2>
+    <h2 style="margin-top:0;">🔁 Herramientas prestadas — ${esc(titulo)}</h2>
     ${prestadas.map(h=>{
       const p = h.prestamo || {};
       const destino = p.tipo==="persona" ? p.persona : p.obraDestino;
       return `<div class="entrega-fila">
         <div class="ef-info">
-          <div class="ef-desc">${esc(h.nombre)}</div>
+          <div class="ef-desc">${esc(h.nombre)}${filtroObra ? "" : ` <span style="color:var(--tinta-suave);font-weight:400;">— ${esc(h.obra)}</span>`}</div>
           <div class="ef-meta">${p.tipo==="persona"?"🧑":"🏗️"} ${esc(destino||"(sin destino)")} · desde ${p.fechaEnvio?fechaAR(p.fechaEnvio):"-"}</div>
         </div>
       </div>`;
@@ -20153,22 +20166,29 @@ function renderGraficoHistorialSnapshots(){
   const cont = document.getElementById("grafico-snapshots");
   if(!cont) return;
   if(snapshotsPlanoActual.length<2){ cont.innerHTML = ""; return; }
+  // Se agrupa por capaId (estable ante un renombre de la actividad/capa) en vez de por
+  // nombreCompleto -- si no, renombrar una capa le cortaba su propia serie histórica en dos
+  // (la vieja quedaba con el nombre anterior y desaparecía, la nueva arrancaba de cero como si
+  // fuera otra actividad). Los snapshots de antes de que existiera capaId no lo tienen -- para
+  // esos se sigue agrupando por nombre, como siempre.
   const porCapa = {};
   snapshotsPlanoActual.forEach(snap=>{
     (snap.porcentajes||[]).forEach(p=>{
-      if(!porCapa[p.nombreCompleto]) porCapa[p.nombreCompleto] = [];
-      porCapa[p.nombreCompleto].push(p.pct);
+      const clave = p.capaId || p.nombreCompleto;
+      if(!porCapa[clave]) porCapa[clave] = {nombre:p.nombreCompleto, valores:[]};
+      porCapa[clave].nombre = p.nombreCompleto; // el más reciente -- así el renombre se refleja
+      porCapa[clave].valores.push(p.pct);
     });
   });
-  const nombres = Object.keys(porCapa);
-  if(nombres.length===0){ cont.innerHTML = ""; return; }
+  const claves = Object.keys(porCapa);
+  if(claves.length===0){ cont.innerHTML = ""; return; }
   const COLORES = ["#0E9488","#DC5A5A","#F59E0B","#3B82F6","#8B5CF6","#10B981","#EC4899","#6B7280"];
   const W=320, H=110, PAD=6;
   const n = snapshotsPlanoActual.length;
   const xPara = i => n<=1 ? PAD : PAD + i*((W-PAD*2)/(n-1));
   const yPara = pct => H - PAD - (Math.max(0,Math.min(100,pct))/100)*(H-PAD*2);
-  const lineas = nombres.map((nombre,idx)=>{
-    const valores = porCapa[nombre];
+  const lineas = claves.map((clave,idx)=>{
+    const {nombre, valores} = porCapa[clave];
     const color = COLORES[idx % COLORES.length];
     const pts = valores.map((v,i)=>`${xPara(i)},${yPara(v)}`).join(" ");
     return {nombre, color, pts, ultimo: valores[valores.length-1]};
@@ -20219,15 +20239,19 @@ function renderListaSnapshots(){
           <button type="button" class="btn-mini" onclick="elegirFotoEvidenciaSnapshot('${s.id}')">📷 ${s.fotoEvidencia?"Cambiar":"Agregar"}</button>
         </div>`).join("")}
     </div>`;
+  // Mismo motivo que en el gráfico de arriba: se agrupa por capaId (estable ante un renombre)
+  // en vez de por nombreCompleto, con fallback al nombre para snapshots viejos sin capaId.
   const porCapa = {};
   snapshotsPlanoActual.forEach(snap=>{
     (snap.porcentajes||[]).forEach(p=>{
-      if(!porCapa[p.nombreCompleto]) porCapa[p.nombreCompleto] = [];
-      porCapa[p.nombreCompleto].push({fecha: snap.fecha, etiqueta: snap.etiqueta, pct: p.pct});
+      const clave = p.capaId || p.nombreCompleto;
+      if(!porCapa[clave]) porCapa[clave] = {nombre:p.nombreCompleto, historial:[]};
+      porCapa[clave].nombre = p.nombreCompleto;
+      porCapa[clave].historial.push({fecha: snap.fecha, etiqueta: snap.etiqueta, pct: p.pct});
     });
   });
-  const bloqueCapas = Object.keys(porCapa).map(nombreCompleto=>{
-    const historial = porCapa[nombreCompleto];
+  const bloqueCapas = Object.keys(porCapa).map(clave=>{
+    const {nombre, historial} = porCapa[clave];
     const filas = historial.map((h,i)=>{
       const anterior = i>0 ? historial[i-1].pct : null;
       const delta = anterior!==null ? h.pct - anterior : null;
@@ -20237,7 +20261,7 @@ function renderListaSnapshots(){
         <div class="pct-txt" style="width:auto;">${h.pct}%${deltaTxt}</div>
       </div>`;
     }).join("");
-    return `<div class="lista-actividad"><div class="cab"><div class="pa-nombre">${esc(nombreCompleto)}</div></div>${filas}</div>`;
+    return `<div class="lista-actividad"><div class="cab"><div class="pa-nombre">${esc(nombre)}</div></div>${filas}</div>`;
   }).join("");
   cont.innerHTML = bloqueComparar + bloqueEvidencia + bloqueCapas;
 }
