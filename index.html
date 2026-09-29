@@ -18287,10 +18287,24 @@ async function quitarUsuario(username){
   const admins = usuarios.filter(u=>u.role==="admin");
   const objetivo = usuarios.find(u=>u.username===username);
   if(objetivo && objetivo.role==="admin" && admins.length<=1){ showToast("Tiene que quedar al menos un Administrador"); return; }
+  // Sin esto, las rendiciones de Caja Chica del capataz eliminado quedaban con un "usuario" que ya
+  // no existe -- invisibles para SIEMPRE para cualquier Administrador (el filtro "es mía" solo deja
+  // ver, además de las propias, las que tienen el campo vacío) y también para cualquier cuenta
+  // nueva que en el futuro reuse ese mismo nombre de usuario. Se las pasa al Administrador (usuario
+  // vacío = "de la caja del Administrador", mismo criterio que ya usan las rendiciones viejas de
+  // antes de que existiera este campo).
+  const rendicionesDelUsuario = rendicionesIndex.filter(r=>r.usuario===username);
+  for(const r of rendicionesDelUsuario){
+    r.usuario = "";
+    const detalle = await cargarRendicionDetalle(r.id);
+    if(detalle){ detalle.usuario = ""; await guardarRendicionDetalle(detalle); }
+  }
+  if(rendicionesDelUsuario.length>0) await guardarRendicionesIndex();
   usuarios = usuarios.filter(u=>u.username!==username);
   await guardarUsuarios();
   renderTablaUsuarios();
-  registrarActividad(`eliminó al usuario "${username}"`);
+  registrarActividad(`eliminó al usuario "${username}"`+(rendicionesDelUsuario.length>0?` (se pasaron ${rendicionesDelUsuario.length} rendición(es) de Caja Chica al Administrador)`:""));
+  showToast(rendicionesDelUsuario.length>0 ? `Usuario eliminado — se pasaron ${rendicionesDelUsuario.length} rendición(es) de Caja Chica al Administrador` : "Usuario eliminado");
 }
 function renderTablaUsuarios(){
   const tbody = document.getElementById("tbody-usuarios");
