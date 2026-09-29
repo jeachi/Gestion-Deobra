@@ -69,6 +69,13 @@ test("esc escapa comillas dobles para no romper atributos HTML, y tolera null/un
   assert.equal(esc(123), "123");
 });
 
+test("esc también escapa <, > y & (evita XSS persistente al insertar texto libre vía innerHTML)", () => {
+  assert.equal(esc("<img src=x onerror=alert(1)>"), "&lt;img src=x onerror=alert(1)&gt;");
+  assert.equal(esc("Juan & Cía"), "Juan &amp; Cía");
+  // El orden importa: "&" se escapa primero, si no "&lt;" quedaría re-escapado a "&amp;lt;".
+  assert.equal(esc("<a href=\"x\">"), "&lt;a href=&quot;x&quot;&gt;");
+});
+
 test("formatoMoneda: formato $ argentino, negativos, y entrada no numérica cae a $0,00", () => {
   assert.equal(formatoMoneda(1234.5), "$1.234,50");
   assert.equal(formatoMoneda(-500), "-$500,00");

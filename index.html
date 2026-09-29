@@ -5449,7 +5449,20 @@ function ordenarTrabajadoresPorObra(){
   renderVistaDia();
   showToast("Personal reordenado: por obra, con los serenos al final de cada una ✓");
 }
-function esc(s){ return String(s===null || s===undefined ? "" : s).replace(/"/g,"&quot;"); }
+// OJO: acá se sanitiza CUALQUIER texto libre (obra, descripciones, contenido de minutas,
+// observaciones, nombres...) antes de insertarlo como HTML real en la app (los PDFs se arman con
+// innerHTML directo, sin sandbox). Antes solo escapaba comillas dobles -- "<"/">"/"&" pasaban tal
+// cual, así que un simple "<img src=x onerror=...>" tipeado en cualquier campo de texto libre
+// (destinatario de un remito, contenido de una minuta, texto de una observación) quedaba guardado
+// y se ejecutaba solo con abrir ese registro después (inyección de HTML persistente). El orden
+// importa: "&" se escapa PRIMERO, si no "&lt;" quedaría re-escapado a "&amp;lt;".
+function esc(s){
+  return String(s===null || s===undefined ? "" : s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
 
 // Vuelve navegable por teclado cualquier "tarjeta/chip" con onclick que no sea ya un control
 // nativo (button/a/input/select/textarea ya son accesibles solos -- tocarlos de nuevo duplicaría
