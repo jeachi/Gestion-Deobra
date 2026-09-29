@@ -12437,6 +12437,7 @@ function renderListaRemitos(){
         <div class="sub">${esc(r.obra)} · ${r.fecha ? fechaAR(r.fecha) : ""}</div>
       </div>
       <div class="botones">
+        <button type="button" class="btn btn-outline btn-sm" onclick="corregirNumeroRemito('${r.id}')">✎ N°</button>
         <button type="button" class="btn btn-outline btn-sm" onclick="verRemitoPDF('${r.id}')">🖨 Ver PDF</button>
         <button type="button" class="btn btn-danger btn-sm" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarRemito('${r.id}'))">🗑</button>
       </div>
@@ -12456,7 +12457,48 @@ async function eliminarRemito(id){
   await guardarRemitosIndex();
   try{ await window.storage.delete("remito_"+id, true); }catch(e){}
   if(r) registrarActividad(`eliminó el Remito N° ${r.numero} de ${esc(r.obra)}`);
+  // Si era el último remito numerado (nadie más usa ese número ni uno mayor), liberamos el
+  // correlativo para que el próximo no deje un hueco en la numeración -- mismo arreglo ya hecho
+  // para Caja Chica y Minutas.
+  if(r && r.numero===correlativoRemitoSiguiente-1 && !remitosIndex.some(x=>x.numero>=r.numero)){
+    correlativoRemitoSiguiente = r.numero;
+    await guardarCorrelativoRemito();
+  }
   showToast("Remito eliminado");
+  renderListaRemitos();
+}
+// Corregir a mano el N° de un remito ya creado (ej: quedó mal numerado porque se borró uno
+// intermedio antes de que existiera el reciclado del correlativo de arriba).
+function corregirNumeroRemito(id){
+  const r = remitosIndex.find(x=>x.id===id);
+  if(!r) return;
+  abrirPromptGenerico(`
+    <h2 style="margin-top:0;">✎ Corregir N° del Remito</h2>
+    <p class="helper">Remito actual: N° ${r.numero} — ${esc(r.obra)}</p>
+    <input type="number" id="remito-numero-nuevo" min="1" step="1" value="${r.numero}" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;font-weight:800;text-align:center;box-sizing:border-box;margin-bottom:10px;">
+    <button class="btn btn-primary" style="width:100%;" onclick="guardarNumeroRemitoCorregido('${id}')">Guardar</button>
+  `);
+}
+async function guardarNumeroRemitoCorregido(id){
+  const r = remitosIndex.find(x=>x.id===id);
+  if(!r) return;
+  const nuevoNumero = parseInt(document.getElementById("remito-numero-nuevo").value, 10);
+  if(!nuevoNumero || nuevoNumero<1){ showToast("Escribí un número válido"); return; }
+  if(nuevoNumero!==r.numero && remitosIndex.some(x=>x.id!==id && x.numero===nuevoNumero)){
+    showToast(`Ya existe el Remito N° ${nuevoNumero} — elegí otro número`);
+    return;
+  }
+  r.numero = nuevoNumero;
+  await guardarRemitosIndex();
+  try{
+    const g = await window.storage.get("remito_"+id, true);
+    const detalle = g && g.value ? JSON.parse(g.value) : null;
+    if(detalle){ detalle.numero = nuevoNumero; await window.storage.set("remito_"+id, JSON.stringify(detalle), true); }
+  }catch(e){}
+  if(nuevoNumero>=correlativoRemitoSiguiente){ correlativoRemitoSiguiente = nuevoNumero+1; await guardarCorrelativoRemito(); }
+  registrarActividad(`corrigió el N° de un Remito de ${esc(r.obra)} a N° ${nuevoNumero}`);
+  showToast("N° corregido ✓");
+  cerrarPromptGenerico();
   renderListaRemitos();
 }
 
