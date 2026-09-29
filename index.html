@@ -2564,7 +2564,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
             <label>Obra actual</label>
             <select id="nt-obra"></select>
           </div>
-          <button class="btn btn-primary" onclick="agregarTrabajador()">+ Agregar</button>
+          <button class="btn btn-primary" onclick="agregarTrabajador(this)">+ Agregar</button>
         </div>
         <p class="helper">¿No está la categoría u obra que necesitás? Agregala en la pestaña "Obras", y va a aparecer acá.</p>
       </div>
@@ -5289,11 +5289,28 @@ async function quitarObra(i){
 }
 
 /* ---------------- Trabajadores ---------------- */
-async function agregarTrabajador(){
+async function agregarTrabajador(btn){
   const nombre = document.getElementById("nt-nombre").value.trim();
   const categoria = document.getElementById("nt-categoria").value;
   const obra = document.getElementById("nt-obra").value;
   if(!nombre){ showToast("Escribí un nombre"); return; }
+  // El alta manual (a diferencia de cargarEjemploExcel, que sí chequea duplicados) no avisaba si
+  // ya existía alguien con ese nombre -- lo más común es que la persona haya vuelto a trabajar y
+  // convenga reactivar su fila de "Baja" en vez de crear un legajo nuevo desconectado de su
+  // historial (nómina fragmentada, "Personal activo" contado dos veces si algún día se reactiva
+  // también la vieja por error).
+  const existente = trabajadores.find(t=>t.nombre.trim().toUpperCase()===nombre.toUpperCase());
+  if(existente && btn && btn.dataset.confirmando!=="1"){
+    const aviso = existente.estado==="Baja"
+      ? `Ya existe "${existente.nombre}" dado de baja -- si volvió a trabajar, mejor reactivarlo desde su fila en vez de crear uno nuevo.`
+      : `Ya hay un trabajador ACTIVO llamado "${existente.nombre}".`;
+    showToast(aviso+' Tocá "Agregar" de nuevo si igual querés crear uno nuevo.', 5000);
+    confirmarDoble(btn, "⚠ Tocá de nuevo para confirmar", ()=>agregarTrabajadorConfirmado(nombre, categoria, obra));
+    return;
+  }
+  await agregarTrabajadorConfirmado(nombre, categoria, obra);
+}
+async function agregarTrabajadorConfirmado(nombre, categoria, obra){
   trabajadores.push({id:uid(),nombre,categoria,obra,estado:"Activo",fechaBaja:"",obs:""});
   document.getElementById("nt-nombre").value="";
   document.getElementById("nt-categoria").value="";
@@ -5308,6 +5325,12 @@ function actualizarTrabajador(id, campo, valor){
   const t = trabajadores.find(x=>x.id===id);
   if(!t) return;
   t[campo] = valor;
+  // Al reactivar (Baja -> Activo) hay que limpiar fechaBaja -- si no, queda la fecha de la baja
+  // VIEJA cargada (el campo está deshabilitado mientras está Activo, así que nadie la puede borrar
+  // a mano) y si esta persona se vuelve a dar de baja más adelante sin que alguien note que hay
+  // que corregirla, filasParaMes() sigue usando esa fecha vieja para decidir desde qué mes ocultar
+  // la fila -- esconde de la grilla/PDF/Excel los meses en el medio donde en realidad trabajó.
+  if(campo==="estado" && valor==="Activo") t.fechaBaja = "";
   guardarTrabajadores();
   registrarActividad(`modificó "${campo}" de "${esc(t.nombre)}" en la nómina`);
 }
@@ -5349,7 +5372,12 @@ function renderTrabajadores(){
     </td></tr>`;
     return;
   }
-  const optsCat = categorias.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
+  // Mismo criterio que optsObra de abajo: si se borró una categoría del catálogo mientras algún
+  // trabajador todavía la tenía asignada, hay que agregarla igual como opción -- si no, esa fila
+  // queda con el <select> en blanco (el .value=t.categoria de más abajo no encuentra ninguna
+  // <option> que matchee), dando la falsa impresión de que "se perdió" el dato real.
+  const categoriasEnUso = trabajadores.map(t=>t.categoria).filter(Boolean);
+  const optsCat = [...new Set([...categorias, ...categoriasEnUso])].map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
   // El select de obra es uno solo compartido por todas las filas -- se agregan las obras ya
   // asignadas a algún trabajador aunque estén finalizadas, para no dejar en blanco la fila de
   // alguien que sigue asociado a una obra que ya se cerró.
@@ -5831,7 +5859,11 @@ function renderVistaDia(){
   // Si Clima ya dice que en alguna de las obras de hoy no se trabajó (lluvia u otro motivo), se
   // ofrece completar de una sola vez los casilleros vacíos de esos trabajadores con "LL" -- nunca
   // pisa un valor que ya esté cargado.
-  const obrasLluviaHoy = [...new Set(filas.filter(f=>f.trabajador).map(f=>f.trabajador.obra).filter(Boolean))]
+  // OJO: se usa reg.obra (la obra guardada para ESTE día/mes puntual, editable por fila) en vez de
+  // t.obra (la obra ACTUAL del trabajador en la ficha) -- si alguien estuvo en la Obra A el día que
+  // llovió y después se lo reasignó a la Obra B, mirar t.obra buscaba lluvia en la obra equivocada
+  // y el aviso/auto-llenado dejaba de aparecer para ese día ya pasado.
+  const obrasLluviaHoy = [...new Set(filas.map(f=>(data[f.id]||{}).obra || (f.trabajador?f.trabajador.obra:"")).filter(Boolean))]
     .filter(obra=>climaNoLaborable(inp.value, obra));
   const avisoLluvia = obrasLluviaHoy.length>0 ? `
     <div style="background:#EAF4FB;border:1px solid #3B82F6;border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#1D4ED8;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
@@ -5861,7 +5893,7 @@ function renderVistaDia(){
         <div class="avatar-mini ${esSereno?'sereno':''}"></div>
         <div class="dia-info">
           <div class="dia-nombre">${nombreHtml}</div>
-          <div class="dia-meta">${t?esc(t.categoria||""):""}${t&&t.obra?" · "+esc(t.obra):""}${baja?" · BAJA":""}${t&&val===""&&climaNoLaborable(inp.value,t.obra)?" · 🌧️ Lluvia (Clima)":""}</div>
+          <div class="dia-meta">${t?esc(t.categoria||""):""}${t&&t.obra?" · "+esc(t.obra):""}${baja?" · BAJA":""}${t&&val===""&&climaNoLaborable(inp.value,reg.obra||t.obra)?" · 🌧️ Lluvia (Clima)":""}</div>
         </div>
         <input class="dia-valor ${cls}" id="dia-input-${f.id}" value="${esc(String(val))}" ${baja?"disabled":""}
           onchange="setDia('${f.id}',${diaS},this.value); actualizarClaseDiaInput('${f.id}'); enfocarSiguienteDia('${f.id}');"
@@ -5889,8 +5921,10 @@ async function aplicarLluviaClimaDia(){
     if(!t || esBajaVigente(t)) return;
     const esSereno = (t.categoria||"").toLowerCase().includes("sereno");
     if(esSereno) return;
-    if(!climaNoLaborable(inp.value, t.obra)) return;
     const reg = data[f.id];
+    // reg.obra (la obra de ESTE día/mes, editable por fila), no t.obra (la obra actual de la
+    // ficha) -- mismo motivo que en el aviso y el banner de arriba.
+    if(!climaNoLaborable(inp.value, (reg&&reg.obra)||t.obra)) return;
     if(!reg || (reg.days[diaS]||"")!=="") return;
     reg.days[diaS] = "LL";
     cambios++;
@@ -6506,8 +6540,13 @@ async function calcularMaterialesRecibidos(){
   const obraFiltro = document.getElementById("rec-filtro-obra").value;
   const periodo = document.getElementById("rec-filtro-periodo").value;
   const mesHoy = mesHoyISO();
+  // El período "Este mes" filtra por la fecha de la última entrega REGISTRADA (fechaUltimaEntrega,
+  // seteada en guardarEntrega), no por la fecha del pedido -- un pedido cargado en agosto cuya
+  // entrega recién se marcó en septiembre debía contar como recibido en septiembre, no quedar
+  // afuera del reporte de ese mes. Los pedidos viejos sin ninguna entrega guardada todavía (o
+  // pedidos que nunca pasaron por acá) caen al fallback de la fecha del pedido.
   const pedidosFiltrados = pedidosIndex.filter(p=>
-    (!obraFiltro || p.obra===obraFiltro) && (periodo!=="mes" || (p.fecha||"").startsWith(mesHoy))
+    (!obraFiltro || p.obra===obraFiltro) && (periodo!=="mes" || (p.fechaUltimaEntrega||p.fecha||"").startsWith(mesHoy))
   );
   const acumulado = {};
   for(const pIdx of pedidosFiltrados){
@@ -7668,6 +7707,10 @@ async function aplicarAccionesMultiIntencion(){
 }
 async function guardarRecordatorioDirecto(titulo, fecha, prioridad){
   const obra = obraPorDefecto();
+  // Mismo chequeo que ya tiene guardarObservacionDirecta(): sin obra activa, obraPorDefecto()
+  // devuelve "" y el recordatorio quedaba guardado con obra:"" para siempre, invisible en el
+  // Dashboard y en las notificaciones (ambos exigen obrasActivas().includes(r.obra)).
+  if(!obra){ showToast("⚠ No se pudo cargar el recordatorio: no hay ninguna obra activa elegida"); return; }
   const nuevo = {
     id: uid(), titulo: titulo||"Recordatorio", obra,
     fecha: fecha||null, prioridad: ["alta","media","baja"].includes(prioridad)?prioridad:"baja",
@@ -8698,9 +8741,13 @@ async function guardarEntrega(){
   if(!pedido) return;
   const estadoAnterior = pedido.estado;
   pedido.estado = calcularEstadoPedido(pedido);
+  // Se guarda la fecha real en que se registró esta entrega -- "Materiales recibidos" la usa para
+  // el filtro "Este mes" en vez de la fecha del PEDIDO (que puede ser de semanas/meses antes de
+  // que el material realmente llegara), así el reporte no queda contando en el mes equivocado.
+  pedido.fechaUltimaEntrega = hoyISO();
   await guardarPedidoDetalle(pedido);
   const idx = pedidosIndex.findIndex(p=>p.id===pedido.id);
-  if(idx>-1){ pedidosIndex[idx].estado = pedido.estado; await guardarPedidosIndex(); }
+  if(idx>-1){ pedidosIndex[idx].estado = pedido.estado; pedidosIndex[idx].fechaUltimaEntrega = pedido.fechaUltimaEntrega; await guardarPedidosIndex(); }
   showToast("Entregas guardadas ✓");
   destellarConfirmacion(document.getElementById("btn-guardar-entrega"));
   if(pedido.estado==="Completo" && estadoAnterior!=="Completo"){
@@ -12820,7 +12867,12 @@ function renderInventarioHerramientas(){
       metaExtra = ` — a ${destino}${h.prestamo.fechaEnvio?" desde "+fechaAR(h.prestamo.fechaEnvio):""}`;
       const vencido = h.prestamo.fechaEntrega && h.prestamo.fechaEntrega<hoyISO();
       if(vencido){
-        const diasAtraso = Math.floor((new Date(hoyISO())-new Date(h.prestamo.fechaEntrega+"T00:00:00"))/86400000);
+        // OJO: hay que parsear las dos fechas de la misma forma -- "YYYY-MM-DD" sin hora se
+        // interpreta como medianoche UTC, mientras que con "T00:00:00" se interpreta como
+        // medianoche LOCAL. Mezclar ambas formas (como se hacía antes) restaba ~3hs de más en
+        // Argentina (UTC-3) antes de dividir por un día completo, así que un atraso real de 1 día
+        // daba Math.floor(0.875)=0 -- el badge mostraba "atrasada 0 días" con un día entero vencido.
+        const diasAtraso = Math.floor((new Date(hoyISO()+"T00:00:00")-new Date(h.prestamo.fechaEntrega+"T00:00:00"))/86400000);
         metaExtra += ` <span style="color:var(--texto-alerta);font-weight:800;">⏰ atrasada ${diasAtraso} día${diasAtraso===1?"":"s"}</span>`;
       }
     }
@@ -12837,10 +12889,17 @@ function renderInventarioHerramientas(){
           ${esAdmin ? `
             ${h.estado==="reparacion"
               ? `<button type="button" class="btn-mini admin" onclick="finalizarReparacionHerramienta('${h.id}')">✅ Volvió de reparación</button>`
-              : `<button type="button" class="btn-mini admin" onclick="abrirModalReparacion('${h.id}')">🔧 Enviar a reparar</button>`}
-            <button type="button" class="btn-mini admin" onclick="abrirModalPrestamo('${h.id}')">🔁 Prestar a otra obra</button>
-            <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${h.historialPrestamos&&h.historialPrestamos.length?` (${h.historialPrestamos.length})`:""}</button>
-            <button type="button" class="btn-mini peligro" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarHerramienta('${h.id}'))">🗑 Eliminar</button>
+              // Oculto mientras está prestada: "Enviar a reparar" pisaba el estado a "reparacion"
+              // sin cerrar el préstamo en curso (h.prestamo quedaba colgado, nunca se archivaba en
+              // historialPrestamos) -- hay que registrar la devolución primero.
+              : (h.estado!=="prestada" ? `<button type="button" class="btn-mini admin" onclick="abrirModalReparacion('${h.id}')">🔧 Enviar a reparar</button>` : "")}
+            ${h.estado!=="reparacion"
+              // Mismo motivo al revés: "Prestar a otra obra" con la herramienta en reparación
+              // pisaba el estado a "prestada" sin cerrar la reparación en curso (h.reparacion
+              // quedaba colgado, nunca se archivaba en historialReparaciones).
+              ? `<button type="button" class="btn-mini admin" onclick="abrirModalPrestamo('${h.id}')">🔁 Prestar a otra obra</button>` : ""}
+            <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${((h.historialPrestamos&&h.historialPrestamos.length)||0)+((h.historialReparaciones&&h.historialReparaciones.length)||0) > 0 ? ` (${((h.historialPrestamos&&h.historialPrestamos.length)||0)+((h.historialReparaciones&&h.historialReparaciones.length)||0)})` : ""}</button>
+            <button type="button" class="btn-mini peligro" onclick="confirmarDoble(this,'${h.estado==="prestada"?"⚠ Sigue prestada, ¿Seguro?":"¿Seguro?"}',()=>eliminarHerramienta('${h.id}'))">🗑 Eliminar</button>
           ` : ``}
         </div>
       </div>
@@ -12971,6 +13030,7 @@ function abrirHistorialHerramienta(id){
   const h = herramientas.find(x=>x.id===id);
   if(!h) return;
   const historial = h.historialPrestamos || [];
+  const historialRep = h.historialReparaciones || [];
   const enCurso = h.estado==="prestada" ? h.prestamo : null;
   const atrasados = historial.filter(p=>p.fechaEntrega && p.fechaRecepcion && p.fechaRecepcion>p.fechaEntrega).length;
   const html = `
@@ -12978,8 +13038,10 @@ function abrirHistorialHerramienta(id){
     <div class="resumen-box-fila" style="display:flex;gap:8px;margin-bottom:14px;">
       <div class="resumen-box" style="flex:1;"><div class="num">${historial.length}</div><div class="lbl">Veces prestada</div></div>
       <div class="resumen-box" style="flex:1;"><div class="num">${atrasados}</div><div class="lbl">Devuelta tarde</div></div>
+      <div class="resumen-box" style="flex:1;"><div class="num">${historialRep.length}</div><div class="lbl">Reparaciones</div></div>
     </div>
     ${enCurso ? `<div style="background:#FFF3CD;border:1px solid #F0C85A;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#7A5C00;font-weight:700;">🔄 Ahora mismo está prestada a ${esc(enCurso.tipo==="persona"?enCurso.persona:enCurso.obraDestino)}</div>` : ""}
+    ${h.estado==="reparacion" && h.reparacion ? `<div style="background:#FBD5D5;border:1px solid #E58A8A;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#7A1E1E;font-weight:700;">🔧 Ahora mismo está en reparación${h.reparacion.motivo?": "+esc(h.reparacion.motivo):""}</div>` : ""}
     ${historial.length===0 ? `<p class="helper">Todavía no se completó ningún préstamo de esta herramienta.</p>` : [...historial].reverse().map(p=>{
       const tarde = p.fechaEntrega && p.fechaRecepcion && p.fechaRecepcion>p.fechaEntrega;
       return `<div class="entrega-fila">
@@ -12989,6 +13051,13 @@ function abrirHistorialHerramienta(id){
         </div>
       </div>`;
     }).join("")}
+    ${historialRep.length>0 ? `<h4 style="margin:14px 0 6px;font-size:12px;">🔧 Reparaciones</h4>${[...historialRep].reverse().map(r=>`
+      <div class="entrega-fila">
+        <div class="ef-info">
+          <div class="ef-desc">${esc(r.motivo||"(sin motivo)")}</div>
+          <div class="ef-meta">Enviada ${r.fechaEnvio?fechaAR(r.fechaEnvio):"-"} · Volvió ${r.fechaVuelta?fechaAR(r.fechaVuelta):"-"}</div>
+        </div>
+      </div>`).join("")}` : ""}
     <button class="btn btn-outline" style="width:100%;margin-top:12px;" onclick="cerrarModalHerramienta()">Cerrar</button>`;
   document.getElementById("herr-modal-panel").innerHTML = html;
   document.getElementById("herr-modal-overlay").style.display = "flex";
@@ -13038,7 +13107,10 @@ async function eliminarHerramienta(id){
   herramientas = herramientas.filter(x=>x.id!==id);
   const ok = await guardarHerramientasIndex();
   if(!ok){ if(h) herramientas.unshift(h); return; }
-  if(h) registrarActividad(`eliminó la herramienta "${esc(h.nombre)}"`);
+  if(h){
+    const destinoPrestamo = h.estado==="prestada" && h.prestamo ? (h.prestamo.tipo==="persona" ? h.prestamo.persona : h.prestamo.obraDestino) : null;
+    registrarActividad(`eliminó la herramienta "${esc(h.nombre)}"${destinoPrestamo ? ` (seguía prestada a ${esc(destinoPrestamo)})` : ""}`);
+  }
   showToast("Herramienta eliminada");
   renderInventarioHerramientas();
 }
@@ -13522,6 +13594,9 @@ async function guardarRecordatorio(){
   const titulo = document.getElementById("rec-titulo").value.trim();
   const obra = document.getElementById("rec-obra").value;
   if(!titulo){ showToast("Escribí un título corto"); return; }
+  // Mismo chequeo que ya tiene guardarObservacion(): sin esto, con todas las obras finalizadas
+  // (el <select> queda sin opciones) se podía guardar con obra:"" sin ningún aviso.
+  if(!obra){ showToast("Elegí una obra"); return; }
   const datos = {
     titulo, obra,
     asunto: document.getElementById("rec-asunto").value.trim(),
@@ -13560,7 +13635,12 @@ function editarRecordatorio(id){
   try{
     const r = recordatorios.find(x=>x.id===id); if(!r){ showToast("No se encontró ese recordatorio (id: "+id+")"); return; }
     recEditandoId = id;
-    poblarSelectObras(document.getElementById("rec-obra"));
+    // Mismo motivo que ya se arregló en Observaciones/Minutas: si no se pasa r.obra como
+    // "valorPreferido", poblarSelectObras arma las opciones en base a lo que el select YA tenía
+    // (no la obra real del recordatorio) -- si esa obra está finalizada/borrada, el intento de
+    // ".value = r.obra" de más abajo no encuentra ninguna opción y es un no-op silencioso: el
+    // combo queda en otra obra cualquiera y guardar reasigna el recordatorio sin darse cuenta.
+    poblarSelectObras(document.getElementById("rec-obra"), r.obra);
     document.getElementById("rec-form-titulo").textContent = "✏️ Editar recordatorio";
     document.getElementById("rec-titulo").value = r.titulo || "";
     document.getElementById("rec-asunto").value = r.asunto || "";
@@ -16292,8 +16372,14 @@ function exportarTodosLosMesesExcel(){
     const idxPrecioCoef = colsBase.findIndex(c=>c.id==="precio_coef");
     if(idxPrecioCoef>=0) filaRubro[2+idxPrecioCoef] = montoRubro;
     for(let n=1; n<=max; n++){
+      // OJO: sumar siempre "monto del mes" acá, sin importar si la columna elegida era esa o
+      // "$ Acumulado" (columnas distintas, valores distintos), hacía que el subtotal del rubro en
+      // "$ Acumulado" mostrara la suma de ESE MES puntual (mucho menor) en vez del acumulado real
+      // -- no coincidía con la suma de sus propias filas de ítem, que sí usan c.val(it,n) bien.
+      // Reusando el mismo c.val() que ya usan las filas de ítem, el subtotal siempre coincide con
+      // la columna que de verdad se está mostrando.
       let sumMonto = 0;
-      grupo.items.forEach(it=>{ sumMonto += obtenerEntradaMes(it, n).monto; });
+      if(idxColMonto>=0) grupo.items.forEach(it=>{ sumMonto += colsMes[idxColMonto].val(it, n); });
       colsMes.forEach((c,i)=>{ filaRubro.push(i===idxColMonto ? sumMonto : ""); });
     }
     aoa.push(filaRubro);
@@ -18583,7 +18669,10 @@ async function revisarNotificacionesGenerales(){
       }
     }
     if(detectoresOn.recordatorios!==false && typeof recordatorios!=="undefined"){
-      const urgentes = recordatorios.filter(r=>r.estado==="pendiente" && prioridadEfectivaRecordatorio(r)==="alta");
+      // Mismo criterio que ya se aplicó a observaciones críticas: si se finaliza una obra con un
+      // recordatorio urgente sin resolver, el Dashboard deja de avisarlo (usa obraVisible), pero
+      // sin este filtro el celular seguía mandando la notificación push igual.
+      const urgentes = recordatorios.filter(r=>r.estado==="pendiente" && prioridadEfectivaRecordatorio(r)==="alta" && obrasActivas().includes(r.obra));
       const nuevos = urgentes.filter(r=>!yaAvisados.includes("rec_"+r.id));
       if(nuevos.length>0){
         const titulo = nuevos.length===1 ? "📌 1 recordatorio urgente" : `📌 ${nuevos.length} recordatorios urgentes`;
@@ -19737,6 +19826,14 @@ async function guardarPlanoAvancePoligonos(){
   try{
     ignorarProximoSnapshotPropio = true;
     await window.storage.set(`plano_avance_poligonos_${obra}_${planoActualId}`, JSON.stringify(poligonos), true);
+    // El Plano Maestro cachea los polígonos/estados/anotaciones de "otros planos" para sus pines
+    // vinculados, y esos cachés nunca se invalidaban solos -- guardar acá (en el plano de un
+    // contratista, por ejemplo) no se reflejaba en el Maestro hasta recargar la página entera,
+    // aunque se volviera a esa pestaña enseguida. Vaciarlos es seguro: si hay un cache-miss,
+    // simplemente se vuelve a pedir a Firestore.
+    Object.keys(cachePoligonosOtrosPlanos).forEach(k=>delete cachePoligonosOtrosPlanos[k]);
+    Object.keys(cacheEstadosOtrosPlanos).forEach(k=>delete cacheEstadosOtrosPlanos[k]);
+    Object.keys(cacheAnotacionesOtrosPlanos).forEach(k=>delete cacheAnotacionesOtrosPlanos[k]);
     mostrarIndicadorGuardado("guardado");
   }catch(e){
     showToast("No se pudo guardar el avance del plano (revisá conexión)");
@@ -20160,11 +20257,33 @@ async function duplicarPlano(idOriginal){
     ]);
     const nuevoId = uid();
     if(rImg && rImg.value) await window.storage.set(`plano_avance_imagen_${obra}_${nuevoId}`, rImg.value, true);
-    if(rPol && rPol.value) await window.storage.set(`plano_avance_poligonos_${obra}_${nuevoId}`, rPol.value, true);
+    if(rPol && rPol.value){
+      // Se regeneran los capaId de la copia (mapeo viejo-id -> nuevo-id) -- si no, el plano
+      // duplicado quedaba con los MISMOS capaId que el original, así que cualquier vínculo por id
+      // (ítems de contrato, pines del Plano Maestro) podía terminar apuntando a la capa equivocada
+      // entre original y copia, tratándolas como si fueran la misma capa real.
+      const poligonosCopia = JSON.parse(rPol.value);
+      const mapaCapaId = {};
+      poligonosCopia.forEach(p=>{
+        if(!p.capaId) return;
+        if(!mapaCapaId[p.capaId]) mapaCapaId[p.capaId] = uid();
+        p.capaId = mapaCapaId[p.capaId];
+      });
+      await window.storage.set(`plano_avance_poligonos_${obra}_${nuevoId}`, JSON.stringify(poligonosCopia), true);
+    }
     if(rTxt && rTxt.value) await window.storage.set(`plano_avance_textos_${obra}_${nuevoId}`, rTxt.value, true);
+    // Si el plano original es un Plano Maestro, hay que conservar su tipo (si no, la copia queda
+    // como un plano de contratista común, sin el badge 🏛️ MAESTRO) Y copiar sus pines -- si no,
+    // la copia sale vacía de pines/checklists, perdiendo todo ese trabajo sin ningún aviso.
+    if(original.tipo==="maestro"){
+      try{
+        const rPines = await window.storage.get(`plano_maestro_pines_${obra}_${idOriginal}`, true);
+        await window.storage.set(`plano_maestro_pines_${obra}_${nuevoId}`, (rPines && rPines.value) ? rPines.value : "[]", true);
+      }catch(e){ await window.storage.set(`plano_maestro_pines_${obra}_${nuevoId}`, "[]", true); }
+    }
     planosIndex.push({
       id: nuevoId, nombre: original.nombre+" (copia)", fecha: hoyISO(),
-      contratistaId: null, contratistaNombre: null,
+      contratistaId: null, contratistaNombre: null, tipo: original.tipo,
       miniatura: original.miniatura, orientacionReporte: original.orientacionReporte,
       m2PorActividad: original.m2PorActividad ? {...original.m2PorActividad} : undefined
     });
