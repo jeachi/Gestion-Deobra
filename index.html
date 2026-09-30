@@ -8051,6 +8051,13 @@ function renderTablaItemsPedido(){
   `).join("");
 }
 function quitarFilaItem(i){
+  const it = npItems[i];
+  // Editar un pedido no muestra entregado/cerrado por fila -- sin este aviso, se podía borrar de un
+  // toque un ítem con entregas ya registradas (o cerrado a mano) sin ninguna señal de que se estaba
+  // por perder ese historial para siempre al guardar (guardarPedido solo mapea lo que queda en npItems).
+  if(it && ((parseFloat(it.entregado)||0)>0 || it.cerrado)){
+    if(!window.confirm(`Este ítem ya tiene ${it.entregado||0} ${it.un||""} entregado(s) registrado(s)${it.cerrado?" y está cerrado":""} -- si lo quitás, esa entrega se pierde para siempre. ¿Seguro?`)) return;
+  }
   npItems.splice(i,1);
   renderTablaItemsPedido();
 }
@@ -8783,7 +8790,10 @@ function toggleCierreItem(idx){
 function actualizarEntrega(idx, valor){
   const pedido = pedidosCache[pedidoAbiertoId];
   if(!pedido) return;
-  pedido.items[idx].entregado = valor;
+  // Sin esto, un valor negativo tipeado a mano quedaba guardado tal cual: calcularEstadoPedido()
+  // filtra entregado>0, así que un ítem en -10 dejaba de contar como entregado, pudiendo retroceder
+  // el estado del pedido de "Parcial" a "Pendiente" sin que nadie lo note.
+  pedido.items[idx].entregado = Math.max(0, parseFloat(valor)||0);
   // refresco visual liviano del renglón sin recargar toda la vista
   const estado = calcularEstadoPedido(pedido);
   const badge = document.querySelector("#detalle-pedido-content .estado-badge");
@@ -8932,7 +8942,8 @@ async function procesarRemito(imagenData, documentoPDF){
       pendientes.push(linea);
       return;
     }
-    aplicarLineaRemito(pedido, itemPedido, linea, cantidad);
+    const avisoUnidad = aplicarLineaRemito(pedido, itemPedido, linea, cantidad);
+    if(avisoUnidad) avisosVarios.push(avisoUnidad);
     coincidieron++;
   });
 
@@ -8955,14 +8966,21 @@ async function procesarRemito(imagenData, documentoPDF){
 // Suma la cantidad recibida al ítem del pedido que corresponda, convirtiendo la unidad con la
 // tabla de Equivalencias si el remito la menciona en una unidad distinta a la del pedido (ej:
 // el remito dice "2 Pallet" pero el pedido se controla en Bolsa).
+// Devuelve un aviso (string) si la unidad del remito no coincide con la del pedido y no hay
+// ninguna Equivalencia cargada para convertir -- sin esto, se sumaba la cantidad CRUDA como si
+// fueran unidades del pedido sin ningún aviso (ej: remito "3 Pallet" con pedido en "Bolsa" sin
+// equivalencia cargada sumaba "3" como si fueran 3 bolsas), o null si no hizo falta convertir nada.
 function aplicarLineaRemito(pedido, itemPedido, linea, cantidad){
   let cantidadFinal = cantidad;
+  let aviso = null;
   if(linea.unidadRemito && itemPedido.un && linea.unidadRemito.trim().toLowerCase()!==itemPedido.un.trim().toLowerCase()){
     const equiv = buscarEquivalencia(itemPedido.desc, linea.unidadRemito);
     if(equiv) cantidadFinal = cantidad * equiv.cantChica;
+    else aviso = `"${itemPedido.desc}": el remito dice "${linea.unidadRemito}" pero el pedido está en "${itemPedido.un}" y no hay ninguna Equivalencia cargada para convertir -- se sumó ${cantidad} tal cual, revisalo.`;
   }
   const entregadoActual = parseFloat(pedido.items[itemPedido.idx].entregado)||0;
   pedido.items[itemPedido.idx].entregado = entregadoActual + cantidadFinal;
+  return aviso;
 }
 function renderConfirmacionesRemitoPendientes(){
   const cont = document.getElementById("remito-confirmaciones-pendientes");
@@ -8986,12 +9004,12 @@ async function confirmarAliasRemito(indicePendiente, idxItemPedido){
   const itemPedido = linea.itemsPedido.find(it=>it.idx===idxItemPedido);
   if(!pedido || !itemPedido) return;
   const cantidad = parseFloat(String(linea.cantidadRecibida).replace(",","."))||0;
-  aplicarLineaRemito(pedido, itemPedido, linea, cantidad);
+  const avisoUnidad = aplicarLineaRemito(pedido, itemPedido, linea, cantidad);
   await guardarNuevoAlias(linea.descRemito, itemPedido.desc);
   registrarActividad(`enseñó que "${esc(linea.descRemito)}" es "${esc(itemPedido.desc)}" para próximos remitos`);
   remitoLineasPendientes.splice(indicePendiente,1);
   renderDetallePedido(pedido);
-  showToast("✓ Sumado, y recordado para la próxima vez");
+  showToast(avisoUnidad ? `⚠ ${avisoUnidad}` : "✓ Sumado, y recordado para la próxima vez");
   renderConfirmacionesRemitoPendientes();
 }
 function descartarLineaRemito(indicePendiente){
@@ -9150,9 +9168,14 @@ function descargarPDFPedido(){
 
 /* ---------------- Reporte de pendientes por entregar ---------------- */
 function construirHtmlPendientes(pedido){
+  // Mismo filtro que calcularFaltantes() (el reporte GENERAL de pendientes, botón de la lista de
+  // pedidos): un ítem cerrado a mano ("no llega el resto") no cuenta como pendiente ahí -- acá no
+  // se filtraba, así que el reporte individual de ESTE MISMO pedido podía listar "FALTA: 40" en
+  // rojo para un ítem que el reporte general ya daba por cerrado, dando información contradictoria
+  // sobre el mismo pedido según desde qué botón se generara el PDF.
   const filas = pedido.items
     .map((it,i)=>({...it, idx:i+1}))
-    .filter(it=>it.desc && it.desc.trim()!=="")
+    .filter(it=>it.desc && it.desc.trim()!=="" && !it.cerrado)
     .map(it=>{
       const cant = parseFloat(it.cant)||0;
       const entregado = parseFloat(it.entregado)||0;
