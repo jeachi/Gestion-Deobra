@@ -20591,6 +20591,16 @@ function eliminarPlano(id, btn){
       (cont.certificados||[]).forEach(cert=>{ if(cert.planoId===id){ cert.planoId = null; tocado = true; } });
       if(tocado) await guardarContratistaDetalle(cont);
     }
+    // Mismo motivo que arriba, pero para los pines de Plano Maestro: un pin con una capa de ESTE
+    // plano vinculada (capasVinculadas) quedaba con un planoId muerto -- al reabrirlo, la lectura de
+    // los polígonos de ese plano fallaba en silencio y el vínculo pasaba a mostrar "sin marcar
+    // todavía" para siempre, como si nunca se hubiese dibujado nada.
+    await conTodosLosPinesMaestro(obra, pin=>{
+      if(!pin.capasVinculadas || pin.capasVinculadas.length===0) return false;
+      const antes = pin.capasVinculadas.length;
+      pin.capasVinculadas = pin.capasVinculadas.filter(v=>v.planoId!==id);
+      return pin.capasVinculadas.length!==antes;
+    });
     if(planoActualId===id){
       planoActualId = null;
       imagenPlano = null;
@@ -22108,8 +22118,18 @@ function siguienteNumeroParaTipo(tipo){
 function elegirTipoAmbientePin(tipo){
   const pin = pinesMaestro.find(p=>p.id===pinAbiertoId);
   if(!pin) return;
-  pin.tipoAmbiente = tipo;
   const plantilla = plantillasChecklistPin[tipo] || [];
+  const checklistPrevio = pin.checklist || [];
+  // Elegir un tipo de ambiente SIEMPRE reemplazaba el checklist entero por la plantilla en blanco,
+  // sin fusionar ni preguntar -- ni tildes (hecho:true) ni ítems agregados a mano (que no forman
+  // parte de ninguna plantilla) sobrevivían. Alcanzaba con volver a tocar "cambiar tipo" y elegir el
+  // MISMO tipo (para corregir el nombre, por ejemplo) para perder todo el progreso sin darse cuenta.
+  const hayTildes = checklistPrevio.some(it=>it.hecho);
+  const hayCustom = checklistPrevio.some(it=>!plantilla.includes(it.texto));
+  if((hayTildes || hayCustom) && !window.confirm(
+    `Este pin ya tiene ${checklistPrevio.filter(it=>it.hecho).length} ítem(s) tildado(s)${hayCustom?" y/o ítems agregados a mano":""} -- cambiar el tipo de ambiente reemplaza TODO el checklist por la plantilla en blanco de "${tipo}", perdiendo ese progreso. ¿Seguro?`
+  )) return;
+  pin.tipoAmbiente = tipo;
   pin.checklist = plantilla.map(texto=>({texto, hecho:false, urgente:false}));
   if(!pin.nombre || !pin.nombre.trim()){
     pin.nombre = `${tipo} ${siguienteNumeroParaTipo(tipo)}`;
@@ -22374,6 +22394,48 @@ function desvincularCapaPin(i){
   pin.capasVinculadas.splice(i,1);
   guardarPinesMaestro();
   renderAvancePin(pin);
+}
+// Recorre los pines de TODOS los Planos Maestro de la obra (el que esté abierto en memoria, y el
+// resto directo de storage) y les aplica "mutador" -- que debe devolver true si tocó algo, para
+// saber si hace falta volver a guardar ese Maestro. Usado para mantener capasVinculadas sincronizada
+// cuando se borra un plano o se renombra una capa/actividad, porque capasVinculadas guarda
+// planoId+nombreCompleto como una COPIA (no una referencia viva): sin este barrido, un pin vinculado
+// a algo borrado o renombrado queda mostrando "sin marcar todavía" para siempre, en silencio.
+async function conTodosLosPinesMaestro(obra, mutador){
+  const maestros = planosIndex.filter(p=>p.obra===obra && p.tipo==="maestro");
+  for(const m of maestros){
+    const esActual = m.id===planoActualId;
+    let pines;
+    if(esActual){
+      pines = pinesMaestro;
+    }else{
+      try{
+        const r = await window.storage.get(`plano_maestro_pines_${obra}_${m.id}`, true);
+        pines = r && r.value ? JSON.parse(r.value) : [];
+      }catch(e){ continue; }
+    }
+    let tocado = false;
+    pines.forEach(pin=>{ if(mutador(pin)) tocado = true; });
+    if(!tocado) continue;
+    if(esActual) await guardarPinesMaestro();
+    else await guardarClave(`plano_maestro_pines_${obra}_${m.id}`, JSON.stringify(pines));
+  }
+}
+// "mapeoNombres" es {nombreCompletoViejo: nombreCompletoNuevo} -- ver conTodosLosPinesMaestro().
+async function actualizarVinculosPinesPorRenombreCapa(mapeoNombres){
+  if(!mapeoNombres || Object.keys(mapeoNombres).length===0) return;
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return;
+  await conTodosLosPinesMaestro(obra, pin=>{
+    let tocado = false;
+    (pin.capasVinculadas||[]).forEach(v=>{
+      if((v.tipo||"capa")==="capa" && v.planoId===planoActualId && mapeoNombres[v.nombreCompleto]!==undefined){
+        v.nombreCompleto = mapeoNombres[v.nombreCompleto];
+        tocado = true;
+      }
+    });
+    return tocado;
+  });
 }
 function eliminarPinMaestro(btn){
   if(btn.dataset.confirmando==="1"){
@@ -25440,11 +25502,12 @@ function confirmarEstiloCapaNuevaDestino(idx, nuevaCapa){
   cerrarFotoAvanceOverlay();
   aplicarCambioCapaPieza(idx, nuevaCapa, color, patron);
 }
-function aplicarCambioCapaPieza(idx, nuevaCapa, color, patron){
+async function aplicarCambioCapaPieza(idx, nuevaCapa, color, patron){
   const p = poligonos[idx];
   if(!p) return;
   cerrarFotoAvanceOverlay(); // por si se llega directo desde el selector (con estilo ya de referencia), sin pasar por el picker de estilo -- inofensivo si ya estaba cerrado
   guardarEnHistorial();
+  const nombreViejo = p.nombreCompleto;
   p.capa = nuevaCapa || null;
   p.nombreCompleto = nuevaCapa ? `${p.nombreBase} - ${nuevaCapa}` : p.nombreBase;
   p.color = color;
@@ -25453,7 +25516,10 @@ function aplicarCambioCapaPieza(idx, nuevaCapa, color, patron){
   renderSelectorActividades();
   renderActividades();
   renderPorcentajesFlotantes();
-  guardarPlanoAvancePoligonos();
+  await guardarPlanoAvancePoligonos();
+  // Mismo motivo que confirmarPromptRenombrarCapa(): sin esto, un pin vinculado a la capa vieja
+  // quedaba buscando un nombreCompleto que ya no existe en ningún polígono.
+  if(nombreViejo!==p.nombreCompleto) await actualizarVinculosPinesPorRenombreCapa({[nombreViejo]: p.nombreCompleto});
   showToast(`✓ Pasada a "${p.nombreCompleto}"`);
 }
 // ================= FUSIÓN VISUAL DE CONTORNOS UNIFICADOS =================
@@ -26343,6 +26409,17 @@ async function confirmarPromptRenombrarCapa(){
     const yaExiste = poligonos.some(p=>p.nombreBase===nuevoNombre);
     if(yaExiste && !confirm(`Ya existe una actividad "${nuevoNombre}" en este plano -- si seguís, TODO (área total y capas) se va a sumar/mezclar con esa. ¿Continuar?`)) return;
     guardarEnHistorial();
+    // capasVinculadas de los pines del Plano Maestro guarda "nombreCompleto" como texto COPIADO, no
+    // como una referencia -- si no se actualiza acá, un pin vinculado a una de estas capas queda
+    // buscando el nombre VIEJO para siempre y pasa a mostrar "sin marcar todavía" en silencio.
+    const mapeoNombres = {};
+    poligonos.forEach(p=>{
+      if(p.nombreBase===nombreBase){
+        const nombreViejo = p.nombreCompleto;
+        const nombreNuevo = p.capa ? `${nuevoNombre} - ${p.capa}` : nuevoNombre;
+        if(nombreViejo!==nombreNuevo) mapeoNombres[nombreViejo] = nombreNuevo;
+      }
+    });
     poligonos.forEach(p=>{
       if(p.nombreBase===nombreBase){
         p.nombreBase = nuevoNombre;
@@ -26355,6 +26432,7 @@ async function confirmarPromptRenombrarCapa(){
     redibujar();
     renderPorcentajesFlotantes();
     await guardarPlanoAvancePoligonos();
+    await actualizarVinculosPinesPorRenombreCapa(mapeoNombres);
     showToast(`✓ Actividad renombrada a "${nuevoNombre}"`);
     return;
   }
@@ -26363,6 +26441,7 @@ async function confirmarPromptRenombrarCapa(){
   const yaExiste = poligonos.some(p=>p.nombreBase===nombreBase && p.capa===nuevoNombre);
   if(yaExiste && !confirm(`Ya existe una capa "${nuevoNombre}" en esta actividad -- si seguís, se van a sumar juntas. ¿Continuar?`)) return;
   guardarEnHistorial();
+  const mapeoNombresCapa = {[`${nombreBase} - ${nombreCapaActual}`]: `${nombreBase} - ${nuevoNombre}`};
   poligonos.forEach(p=>{
     if(p.nombreBase===nombreBase && p.capa===nombreCapaActual){
       p.capa = nuevoNombre;
@@ -26375,6 +26454,7 @@ async function confirmarPromptRenombrarCapa(){
   redibujar();
   renderPorcentajesFlotantes();
   await guardarPlanoAvancePoligonos();
+  await actualizarVinculosPinesPorRenombreCapa(mapeoNombresCapa);
   showToast(`✓ Renombrada a "${nuevoNombre}"`);
 }
 function duplicarComoNuevaCapa(idx){
