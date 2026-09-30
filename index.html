@@ -13939,7 +13939,7 @@ function renderListaRecordatorios(){
       <div class="rec-botones">
         <button class="btn btn-outline btn-sm" style="color:#0A4A8A;border-color:#5B9BD5;" onclick="editarRecordatorio('${r.id}')">✏️ Editar</button>
         ${r.estado==="pendiente" ? `<button class="btn btn-outline btn-sm" onclick="marcarRecordatorioHecho('${r.id}')">✓ Marcar hecho</button>` : `<button class="btn btn-outline btn-sm" onclick="reabrirRecordatorio('${r.id}')">↺ Reabrir</button>`}
-        <button class="btn btn-outline btn-sm" style="color:var(--texto-alerta);border-color:#DC5A5A;" onclick="eliminarRecordatorio('${r.id}')">🗑 Eliminar</button>
+        ${sesionActual && sesionActual.role==="admin" ? `<button class="btn btn-outline btn-sm" style="color:var(--texto-alerta);border-color:#DC5A5A;" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarRecordatorio('${r.id}'))">🗑 Eliminar</button>` : ``}
       </div>
     </div>`;
   }).join("") || `<p class="empty-msg">No hay recordatorios ${recFiltroEstado==="pendiente"?"pendientes":"hechos"}.</p>`;
@@ -13960,12 +13960,16 @@ async function reabrirRecordatorio(id){
   if(!ok){ r.estado="hecho"; return; }
   renderListaRecordatorios();
 }
+// Mismo resguardo que ya tiene eliminarObservacion() (misma pantalla, mismo permiso de "Pendientes")
+// -- antes cualquier usuario con acceso a esta pestaña podía borrar el recordatorio de cualquier
+// otro con un solo confirm() nativo, y no quedaba ningún rastro en el registro de Actividad.
 async function eliminarRecordatorio(id){
-  if(!confirm("¿Eliminar este recordatorio?")) return;
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const respaldo = recordatorios.find(x=>x.id===id);
   recordatorios = recordatorios.filter(x=>x.id!==id);
   const ok = await guardarRecordatoriosIndex();
   if(!ok){ if(respaldo) recordatorios.unshift(respaldo); return; }
+  if(respaldo) registrarActividad(`eliminó el recordatorio "${esc(respaldo.titulo)}"`);
   showToast("Recordatorio eliminado");
   renderListaRecordatorios();
   renderDashboard();
@@ -14048,8 +14052,14 @@ async function abrirResumenSemanal(){
 }
 async function generarTextoResumenSemanal(){
   const hoy = hoyISO();
+  // hoyISO() calcula en horario LOCAL -- antes acá se usaba .toISOString() (UTC) para "hace7ISO" y
+  // para cada día del rango, lo que se desalinea con "hoy" entre las ~21:00 y las 23:59 hora
+  // Argentina (UTC-3): el día de HOY quedaba excluido del resumen (fechaISO en UTC ya caía en el
+  // día calendario siguiente, mayor a "hoy"), y "hace7ISO" quedaba un día más tarde de lo real,
+  // subestimando lluvia/gastos/pedidos de la ventana de 7 días. Ahora todo se calcula en local,
+  // igual que hoyISO().
   const hace7 = new Date(); hace7.setDate(hace7.getDate()-7);
-  const hace7ISO = hace7.toISOString().slice(0,10);
+  const hace7ISO = hace7.getFullYear()+"-"+pad2(hace7.getMonth()+1)+"-"+pad2(hace7.getDate());
   const mesHoy = mesHoyISO();
 
   // Asistencia: cuántos días hubo actividad y cuántos trabajadores en promedio por día trabajado.
@@ -14057,7 +14067,7 @@ async function generarTextoResumenSemanal(){
   let diasConGente = 0, sumaPresentes = 0;
   for(let i=0;i<7;i++){
     const d = new Date(); d.setDate(d.getDate()-i);
-    const fechaISO = d.toISOString().slice(0,10);
+    const fechaISO = d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
     if(fechaISO<hace7ISO || fechaISO>hoy) continue;
     const dia = String(Number(fechaISO.slice(8,10)));
     let presentesEseDia = 0;
@@ -18612,8 +18622,12 @@ const NEXO_TOOLS = {
     tipo:"escritura",
     descripcionConfirmacion: (params)=> `Crear un recordatorio: "${params.titulo}"${params.fecha?` para el ${fechaAR(params.fecha)}`:""}.`,
     ejecutar: async ({titulo, fecha})=>{
-      await guardarRecordatorioDirecto(titulo, fecha||null, "media");
-      return `Listo, creé el recordatorio "${titulo}".`;
+      // guardarRecordatorioDirecto() devuelve false (y muestra su propio aviso) si no hay obra
+      // activa o si falló el guardado -- sin revisar el resultado, esta burbuja de chat siempre
+      // decía "Listo, creé..." aunque el recordatorio nunca se hubiera guardado de verdad, y ese
+      // texto además se lee en voz alta (nexoHablar), agravando el engaño en modo manos libres.
+      const ok = await guardarRecordatorioDirecto(titulo, fecha||null, "media");
+      return ok ? `Listo, creé el recordatorio "${titulo}".` : `No pude crear el recordatorio "${titulo}" -- revisá que haya una obra activa elegida.`;
     }
   },
   recordarPreferencia: {
