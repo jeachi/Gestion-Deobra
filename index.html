@@ -12916,6 +12916,9 @@ const HERR_ESTADOS_INFO = {
   reparacion: {clase:"be-reparacion", txt:"🔧 En reparación"},
   prestada: {clase:"be-prestada", txt:"🔁 Prestada"}
 };
+function totalHistorialHerramienta(h){
+  return ((h.historialPrestamos&&h.historialPrestamos.length)||0) + ((h.historialReparaciones&&h.historialReparaciones.length)||0) + ((h.historialDanios&&h.historialDanios.length)||0);
+}
 function herramientasFiltradas(){
   const obraSel = document.getElementById("herr-filtro-obra").value;
   return obraSel ? herramientas.filter(h=>h.obra===obraSel) : herramientas.slice();
@@ -12970,6 +12973,12 @@ function renderInventarioHerramientas(){
         <div class="botones-fila-herr">
           <button type="button" class="btn-mini" onclick="abrirModalObservacion('${h.id}')">💬 Observación</button>
           ${esAdmin ? `
+            ${h.estado==="bien"
+              // Antes "dañada" solo se podía elegir al CARGAR la herramienta (chip del formulario
+              // de alta) -- no había ninguna forma de marcar como dañada una herramienta que ya
+              // estaba en uso. Solo se ofrece desde "bien": si ya está en reparación o prestada,
+              // hay que resolver eso primero (mismo criterio que "Enviar a reparar"/"Prestar").
+              ? `<button type="button" class="btn-mini admin" onclick="abrirModalDanada('${h.id}')">⚠ Marcar como dañada</button>` : ""}
             ${h.estado==="reparacion"
               ? `<button type="button" class="btn-mini admin" onclick="finalizarReparacionHerramienta('${h.id}')">✅ Volvió de reparación</button>`
               // Oculto mientras está prestada: "Enviar a reparar" pisaba el estado a "reparacion"
@@ -12981,7 +12990,7 @@ function renderInventarioHerramientas(){
               // pisaba el estado a "prestada" sin cerrar la reparación en curso (h.reparacion
               // quedaba colgado, nunca se archivaba en historialReparaciones).
               ? `<button type="button" class="btn-mini admin" onclick="abrirModalPrestamo('${h.id}')">🔁 Prestar a otra obra</button>` : ""}
-            <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${((h.historialPrestamos&&h.historialPrestamos.length)||0)+((h.historialReparaciones&&h.historialReparaciones.length)||0) > 0 ? ` (${((h.historialPrestamos&&h.historialPrestamos.length)||0)+((h.historialReparaciones&&h.historialReparaciones.length)||0)})` : ""}</button>
+            <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${totalHistorialHerramienta(h)>0 ? ` (${totalHistorialHerramienta(h)})` : ""}</button>
             <button type="button" class="btn-mini peligro" onclick="confirmarDoble(this,'${h.estado==="prestada"?"⚠ Sigue prestada, ¿Seguro?":"¿Seguro?"}',()=>eliminarHerramienta('${h.id}'))">🗑 Eliminar</button>
           ` : ``}
         </div>
@@ -13014,6 +13023,38 @@ async function guardarObservacionHerramienta(id){
   if(!ok) return;
   registrarActividad(`agregó una observación a "${esc(h.nombre)}"`);
   showToast("Observación guardada ✓");
+  cerrarModalHerramienta();
+  renderInventarioHerramientas();
+}
+function abrirModalDanada(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const h = herramientas.find(x=>x.id===id);
+  if(!h) return;
+  document.getElementById("herr-modal-panel").innerHTML = `
+    <h3>⚠ Marcar como dañada — ${esc(h.nombre)}</h3>
+    <div class="field"><label>Fecha</label><input type="date" id="modal-dan-fecha" value="${hoyISO()}"></div>
+    <div class="field"><label>Motivo</label><input type="text" id="modal-dan-motivo" placeholder="Ej: se rompió el cable"></div>
+    <div class="foot-actions">
+      <button class="btn btn-primary" onclick="guardarDanadaHerramienta('${id}')">Guardar</button>
+      <button class="btn btn-outline" onclick="cerrarModalHerramienta()">Cancelar</button>
+    </div>
+  `;
+  document.getElementById("herr-modal-overlay").style.display = "flex";
+}
+// Deja el paso a "dañada" registrado en su propio historial (historialDanios) -- mismo criterio que
+// ya usan préstamos y reparaciones, para poder ver más adelante cuándo y por qué se dañó cada vez.
+async function guardarDanadaHerramienta(id){
+  const h = herramientas.find(x=>x.id===id);
+  if(!h) return;
+  const fecha = document.getElementById("modal-dan-fecha").value || hoyISO();
+  const motivo = document.getElementById("modal-dan-motivo").value.trim();
+  h.estado = "danada";
+  if(!h.historialDanios) h.historialDanios = [];
+  h.historialDanios.push({fecha, motivo, usuario: sesionActual?sesionActual.username:""});
+  const ok = await guardarHerramientasIndex();
+  if(!ok) return;
+  registrarActividad(`marcó "${esc(h.nombre)}" como dañada${motivo?": "+esc(motivo):""}`);
+  showToast("Herramienta marcada como dañada ✓");
   cerrarModalHerramienta();
   renderInventarioHerramientas();
 }
@@ -13114,6 +13155,7 @@ function abrirHistorialHerramienta(id){
   if(!h) return;
   const historial = h.historialPrestamos || [];
   const historialRep = h.historialReparaciones || [];
+  const historialDan = h.historialDanios || [];
   const enCurso = h.estado==="prestada" ? h.prestamo : null;
   const atrasados = historial.filter(p=>p.fechaEntrega && p.fechaRecepcion && p.fechaRecepcion>p.fechaEntrega).length;
   const html = `
@@ -13122,6 +13164,7 @@ function abrirHistorialHerramienta(id){
       <div class="resumen-box" style="flex:1;"><div class="num">${historial.length}</div><div class="lbl">Veces prestada</div></div>
       <div class="resumen-box" style="flex:1;"><div class="num">${atrasados}</div><div class="lbl">Devuelta tarde</div></div>
       <div class="resumen-box" style="flex:1;"><div class="num">${historialRep.length}</div><div class="lbl">Reparaciones</div></div>
+      <div class="resumen-box" style="flex:1;"><div class="num">${historialDan.length}</div><div class="lbl">Veces dañada</div></div>
     </div>
     ${enCurso ? `<div style="background:#FFF3CD;border:1px solid #F0C85A;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#7A5C00;font-weight:700;">🔄 Ahora mismo está prestada a ${esc(enCurso.tipo==="persona"?enCurso.persona:enCurso.obraDestino)}</div>` : ""}
     ${h.estado==="reparacion" && h.reparacion ? `<div style="background:#FBD5D5;border:1px solid #E58A8A;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#7A1E1E;font-weight:700;">🔧 Ahora mismo está en reparación${h.reparacion.motivo?": "+esc(h.reparacion.motivo):""}</div>` : ""}
@@ -13139,6 +13182,13 @@ function abrirHistorialHerramienta(id){
         <div class="ef-info">
           <div class="ef-desc">${esc(r.motivo||"(sin motivo)")}</div>
           <div class="ef-meta">Enviada ${r.fechaEnvio?fechaAR(r.fechaEnvio):"-"} · Volvió ${r.fechaVuelta?fechaAR(r.fechaVuelta):"-"}</div>
+        </div>
+      </div>`).join("")}` : ""}
+    ${historialDan.length>0 ? `<h4 style="margin:14px 0 6px;font-size:12px;">⚠ Daños registrados</h4>${[...historialDan].reverse().map(d=>`
+      <div class="entrega-fila">
+        <div class="ef-info">
+          <div class="ef-desc">${esc(d.motivo||"(sin motivo)")}</div>
+          <div class="ef-meta">${d.fecha?fechaAR(d.fecha):"-"}${d.usuario?" · "+esc(d.usuario):""}</div>
         </div>
       </div>`).join("")}` : ""}
     <button class="btn btn-outline" style="width:100%;margin-top:12px;" onclick="cerrarModalHerramienta()">Cerrar</button>`;
