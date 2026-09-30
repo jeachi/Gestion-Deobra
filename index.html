@@ -9995,6 +9995,37 @@ function anteriorRendicionDe(r){
     .filter(x=>claveDuenoCaja(x.usuario)===clave && x.numero<r.numero)
     .reduce((max,x)=> (!max || x.numero>max.numero) ? x : max, null);
 }
+// Cada rendición guarda "saldoAnterior" como una FOTO copiada de la diferencia de la anterior, no
+// como una referencia viva. Si se edita o se borra una rendición vieja y su "diferencia" cambia, las
+// rendiciones POSTERIORES de la misma caja quedan con el "saldoAnterior" viejo para siempre -- el
+// saldo disponible que muestran Dashboard/Lista/NEXO (que toma la diferencia de la ÚLTIMA rendición)
+// queda desactualizado hasta que alguien reabra manualmente cada una en la cadena y acepte la
+// sugerencia de `actualizarSugerenciaSaldoAnteriorEditar`. Se reencadena automáticamente, mismo
+// criterio que ya usa el Presupuesto para sus meses posteriores.
+async function reencadenarSaldoRendicionesPosteriores(usuarioDueno){
+  const clave = claveDuenoCaja(usuarioDueno);
+  const cadena = rendicionesIndex
+    .filter(r=>claveDuenoCaja(r.usuario)===clave)
+    .sort((a,b)=>a.numero-b.numero);
+  let cambiaron = 0;
+  for(let i=1;i<cadena.length;i++){
+    const anterior = cadena[i-1];
+    const actual = cadena[i];
+    const saldoEsperado = anterior.diferencia||0;
+    const detalle = await cargarRendicionDetalle(actual.id);
+    if(!detalle) continue;
+    if(Math.abs((detalle.saldoAnterior||0)-saldoEsperado)<1) continue; // ya está bien encadenada
+    detalle.saldoAnterior = saldoEsperado;
+    detalle.totalCaja = saldoEsperado + (detalle.fondo||[]).reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
+    detalle.diferencia = detalle.totalCaja - detalle.totalGastos;
+    await guardarRendicionDetalle(detalle);
+    actual.totalCaja = detalle.totalCaja;
+    actual.diferencia = detalle.diferencia;
+    cambiaron++;
+  }
+  if(cambiaron>0) await guardarRendicionesIndex();
+  return cambiaron;
+}
 function estaRendicionCerrada(r){
   // Se cierra sola cuando la diferencia queda en $0 o A FAVOR (positiva) — esa plata de más no
   // hace falta perseguirla. Si queda EN CONTRA (negativa), se deja abierta a propósito hasta que
@@ -10011,6 +10042,13 @@ async function guardarRendicion(){
   const obra = document.getElementById("rc-obra").value;
   const responsable = document.getElementById("rc-responsable").value.trim();
   if(!obra || !responsable){ showToast("Elegí obra y cargá el responsable"); return; }
+  // Aviso (no bloqueante, igual criterio que el retroceso de % en Certificados) si algún gasto
+  // quedó con fecha futura -- típico error de tipeo en el <input type="date"> que antes pasaba
+  // completamente desapercibido: se guardaba, se sumaba al total y al gráfico por categoría sin
+  // ninguna señal de que algo no cierra.
+  const hoy = hoyISO();
+  const gastosFuturos = rcGastos.filter(g=>g.fecha && g.fecha>hoy && (g.observaciones||g.monto||g.tipoCosto)).length;
+  if(gastosFuturos>0) showToast(`⚠ Guardado con ${gastosFuturos} gasto(s) con fecha futura -- revisá que no sea un error de tipeo`);
   const saldoAnterior = parseFloat(document.getElementById("rc-saldo-anterior").value)||0;
   const totalGastos = rcGastos.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
   const totalCaja = saldoAnterior + rcFondo.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
@@ -10078,6 +10116,7 @@ async function guardarRendicion(){
     // Si se corrigió el N° a mano a un valor que pisaría al próximo correlativo automático,
     // lo corremos para adelante para que la próxima rendición nueva no choque con este número.
     if(numeroFinal>=correlativoCajaSiguiente){ correlativoCajaSiguiente = numeroFinal+1; await guardarCorrelativoCaja(); }
+    await reencadenarSaldoRendicionesPosteriores(rendicion.usuario);
     await propagarCierreCajaChica([rendicion.usuario]);
     rendicionEditandoId = null;
     nexoAvisoFlotante("guardado", "Rendición N° "+numeroFormateado(rendicion.numero)+" actualizada ✓");
@@ -10336,6 +10375,10 @@ async function eliminarRendicion(){
       correlativoCajaSiguiente = eliminada.numero;
       await guardarCorrelativoCaja();
     }
+    // La rendición que quedó inmediatamente después de la borrada tenía su "saldoAnterior" copiado
+    // de la ahora eliminada -- ese valor queda huérfano (no corresponde a ninguna rendición real) y
+    // hay que reencadenarlo contra la que ahora queda antes en la secuencia.
+    await reencadenarSaldoRendicionesPosteriores(eliminada.usuario);
     await propagarCierreCajaChica([eliminada.usuario]);
   }
 
@@ -10347,23 +10390,37 @@ async function eliminarRendicion(){
 /* ---------------- PDF de la rendición (formato oficial, vertical) ---------------- */
 function construirHtmlRendicion(rendicion){
   const N_FILAS_LEDGER = 37; // A6:F42 en el Excel original
-  let filasLedger = "";
-  for(let i=0; i<N_FILAS_LEDGER; i++){
-    const g = rendicion.gastos[i];
-    if(g){
-      filasLedger += `<tr>
-        <td class="dato-fecha">${g.fecha?fechaAR(g.fecha):""}</td>
-        <td class="dato-txt">${esc(g.ticket||"")}</td>
-        <td class="dato-txt">${esc(g.tipoCosto||"")}</td>
-        <td class="dato-txt">${esc(g.observaciones||"")}</td>
-        <td class="dato-txt">${esc(g.centroCosto||"")}</td>
-        <td class="dato-monto">${g.monto? formatoMoneda(g.monto) : ""}</td>
-      </tr>`;
-    }else{
-      // Fila vacía: se conserva igual que en la planilla original (renglón en blanco pero con el recuadro).
-      filasLedger += `<tr class="fila-vacia"><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+  const gastos = rendicion.gastos || [];
+  // Antes este límite era ABSOLUTO: con más de 37 gastos, los que sobraban (índice 37 en adelante)
+  // directamente desaparecían del PDF -- ni se cortaban a una hoja siguiente ni avisaban de nada --
+  // mientras el TOTAL y el desglose por tipo de costo (calculados sobre TODOS los gastos, más abajo)
+  // sí los seguían sumando. El PDF quedaba con menos filas visibles que lo que decía el total, sin
+  // ninguna señal de que "sigue en otra hoja". Ahora se generan tantas hojas de ledger como hagan
+  // falta, y el total/resumen/firmas van solo en la última (mismo criterio que Nómina/Presupuesto).
+  const totalPaginasLedger = Math.max(1, Math.ceil(gastos.length / N_FILAS_LEDGER));
+  const construirFilasLedgerDePagina = (pag)=>{
+    const desde = pag*N_FILAS_LEDGER;
+    const esUltimaLedger = pag===totalPaginasLedger-1;
+    let html = "";
+    for(let i=0; i<N_FILAS_LEDGER; i++){
+      const g = gastos[desde+i];
+      if(g){
+        html += `<tr>
+          <td class="dato-fecha">${g.fecha?fechaAR(g.fecha):""}</td>
+          <td class="dato-txt">${esc(g.ticket||"")}</td>
+          <td class="dato-txt">${esc(g.tipoCosto||"")}</td>
+          <td class="dato-txt">${esc(g.observaciones||"")}</td>
+          <td class="dato-txt">${esc(g.centroCosto||"")}</td>
+          <td class="dato-monto">${g.monto? formatoMoneda(g.monto) : ""}</td>
+        </tr>`;
+      }else if(esUltimaLedger){
+        // Fila vacía: se conserva igual que en la planilla original (renglón en blanco pero con el
+        // recuadro) -- solo en la última hoja, las anteriores siempre están completas (37 filas).
+        html += `<tr class="fila-vacia"><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+      }
     }
-  }
+    return html;
+  };
   // "Etiquetas de fila / SUM of Monto" — resumen de gastos SIN tipo de costo asignado,
   // igual que en la planilla original (ahí se calcula bien, a diferencia de la fórmula
   // rota del Excel viejo que apuntaba a un rango incorrecto).
@@ -10390,8 +10447,12 @@ function construirHtmlRendicion(rendicion){
   const filasDesglose = Object.keys(desglose).map(k=>
     `<tr><td>${esc(k)}</td><td class="monto">${formatoMoneda(desglose[k])}</td></tr>`
   ).join("");
-  return `<div class="print-page rc-page">
-    ${construirEncabezadoReportePDF(`RENDICION DE CAJA CHICA Y GASTOS`)}
+  let htmlPaginas = "";
+  for(let pag=0; pag<totalPaginasLedger; pag++){
+    const esUltima = pag===totalPaginasLedger-1;
+    const tituloHoja = `RENDICION DE CAJA CHICA Y GASTOS${totalPaginasLedger>1?` — Hoja ${pag+1} de ${totalPaginasLedger}`:""}`;
+    htmlPaginas += `<div class="print-page rc-page">
+    ${construirEncabezadoReportePDF(tituloHoja)}
     <div class="rc-semana-row">Semana: ${esc(rendicion.semana||"")} &nbsp;&nbsp;&nbsp; obra &nbsp;&nbsp; ${esc(rendicion.obra)} &nbsp;&nbsp;&nbsp; N° ${numeroFormateado(rendicion.numero)}</div>
     <table class="rc-form" width="700" cellspacing="0" cellpadding="0">
       <tr>
@@ -10414,13 +10475,14 @@ function construirHtmlRendicion(rendicion){
         <td class="th-corp">Centro de costo</td>
         <td class="th-corp">Monto</td>
       </tr>
-      ${filasLedger}
-      <tr>
+      ${construirFilasLedgerDePagina(pag)}
+      ${esUltima ? `<tr>
         <td colspan="4" style="border:none;"></td>
         <td class="total-label">TOTAL</td>
         <td class="total-monto">${formatoMoneda(rendicion.totalGastos)}</td>
-      </tr>
+      </tr>` : ""}
     </table>
+    ${esUltima ? `
     <table class="rc-bottom-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
       <td class="rc-fondo-td" width="380">
         <table class="rc-pivot-tabla" width="370" cellspacing="0" cellpadding="0">
@@ -10445,8 +10507,10 @@ function construirHtmlRendicion(rendicion){
       <td width="175">Firma Coordinador</td>
       <td width="175">Firma Direccion</td>
       <td width="175">Firma Administracion</td>
-    </tr></table>
+    </tr></table>` : `<p class="tiny" style="margin-top:8px;color:var(--tinta-suave);">Continúa en la hoja ${pag+2} de ${totalPaginasLedger}…</p>`}
   </div>`;
+  }
+  return htmlPaginas;
 }
 function descargarPDFRendicion(){
   const rendicion = rendicionesCache[rendicionAbiertoId];
