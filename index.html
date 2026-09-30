@@ -5537,8 +5537,17 @@ function claseCodigo(val){
   return "";
 }
 function esBajaVigente(t){ return t.estado==="Baja"; }
+// Si el mes que se está mostrando ("YYYY-MM") es ANTERIOR al mes de la baja, la baja todavía no
+// existía en ese momento -- sin este chequeo, reimprimir la Nómina de un mes viejo (donde el
+// trabajador seguía activo) pisaba la nota real cargada ese mes con "BAJA - fecha", ocultándola para
+// siempre en cualquier reporte de un mes anterior a la baja (mismo criterio que ya usa
+// filasParaMes() para decidir a partir de qué mes deja de aparecer solo).
+function bajaAfectaElMes(t, mes){
+  if(!esBajaVigente(t)) return false;
+  if(mes && t.fechaBaja && mes < t.fechaBaja.slice(0,7)) return false;
+  return true;
+}
 function notaBaja(t){
-  if(!esBajaVigente(t)) return "";
   let f = t.fechaBaja ? fechaAR(t.fechaBaja) : "";
   return "BAJA"+(f?" - "+f:"")+(t.obs?" - "+t.obs:"");
 }
@@ -5635,7 +5644,7 @@ async function renderAsistencia(){
         onchange="setDia('${f.id}',${d},this.value)"></td>`;
     });
     const notaKey = quincenaActual===1 ? "notaQ1" : "notaQ2";
-    const obsVal = baja ? notaBaja(t) : (reg[notaKey]||"");
+    const obsVal = t && bajaAfectaElMes(t, mesActual) ? notaBaja(t) : (reg[notaKey]||"");
     const total = totalHorasRango(reg.days, desde, hasta);
     return `<tr class="${baja?'fila-baja':''}">
       <td class="sticky-col col-n">${i+1}</td>
@@ -5691,6 +5700,11 @@ async function confirmarCopiarSemanaAnterior(){
     Object.keys(dataOrigen).forEach(workerId=>{
       const valorOrigen = dataOrigen[workerId] && dataOrigen[workerId].days ? dataOrigen[workerId].days[diaOrigen] : undefined;
       if(valorOrigen===undefined || valorOrigen===""){ return; }
+      // Sin este chequeo, un trabajador dado de baja A MITAD de la semana origen (o ya borrado) se
+      // copiaba igual a la semana destino, generando horas trabajadas "fantasma" después de su baja
+      // -- mismo criterio que ya usa aplicarLluviaClimaDia() para no tocar a un trabajador de baja.
+      const trabajador = trabajadores.find(t=>t.id===workerId);
+      if(!trabajador || esBajaVigente(trabajador)) return;
       if(!dataDestino[workerId]) dataDestino[workerId] = {obra: dataOrigen[workerId].obra, days:{}};
       dataDestino[workerId].days[diaDestino] = valorOrigen;
       copiados++;
@@ -5717,7 +5731,11 @@ function registrarActividadAsistenciaDebounced(){
 function setDia(filaId, dia, valor){
   const val = (valor||"").trim();
   const trabajador = trabajadores.find(t=>t.id===filaId);
-  if(trabajador && trabajador.categoria==="SERENO" && val!==""){
+  // Match laxo (sin importar mayúsculas/variantes), igual criterio que ya usa el resto de la
+  // pantalla (renderVistaDia/aplicarLluviaClimaDia) para detectar Sereno -- antes acá se comparaba
+  // categoria==="SERENO" EXACTO, así que alcanzaba con cargar la categoría como "Sereno" (con
+  // minúsculas, texto libre sin normalizar) para saltarse esta restricción por completo.
+  if(trabajador && (trabajador.categoria||"").toLowerCase().includes("sereno") && val!==""){
     const valUpper = val.toUpperCase();
     if(valUpper!=="PN" && valUpper!=="PD"){
       showToast("Para Sereno solo se puede cargar Pn (presente noche) o Pd (presente día)");
@@ -17249,7 +17267,8 @@ function construirHtmlQuincena(anio, mes, q){
       const cls=[finde?"weekend":"",claseCodigo(val)].filter(Boolean).join(" ");
       diasHtml += `<td class="${cls}">${esc(String(val))}</td>`;
     });
-    const obs = baja ? notaBaja(t) : (reg[q===1?"notaQ1":"notaQ2"]||"");
+    const mesISO = `${anio}-${String(mes).padStart(2,"0")}`;
+    const obs = t && bajaAfectaElMes(t, mesISO) ? notaBaja(t) : (reg[q===1?"notaQ1":"notaQ2"]||"");
     return `<tr class="${baja?'baja':''}">
       <td>${i+1}</td>
       <td class="nombre">${t?esc(t.nombre):""}</td>
@@ -17307,17 +17326,24 @@ function descargarExcelNomina(){
     const [anio, mesNum] = mesActual.split("-").map(Number);
     const diasEnMes = new Date(anio, mesNum, 0).getDate();
     const data = asistenciaCache[mesActual] || {};
-    const filas = filasParaMes(mesActual).filter(f=>f.trabajador);
+    // Mismo filtro que ya usa el PDF de la quincena/mes (construirHtmlQuincena): una fila "extra"
+    // sin trabajador asignado todavía, pero con horas ya cargadas, se incluye igual -- antes acá se
+    // excluía cualquier fila sin f.trabajador sin importar si tenía datos, así que esas horas
+    // aparecían en el PDF (sumadas al total general) pero desaparecían del Excel del mismo mes.
+    const filas = filasParaMes(mesActual).filter(f=>{
+      const reg = data[f.id];
+      return f.trabajador || (reg && reg.days && Object.values(reg.days).some(v=>v!==""&&v!==undefined));
+    });
     const encabezado = ["Nombre","Categoría","Obra", ...Array.from({length:diasEnMes},(_,i)=>String(i+1)), "Total horas"];
     const filasExcel = filas.map(f=>{
       const t = f.trabajador;
-      const reg = data[t.id] || {days:{}};
+      const reg = data[f.id] || {days:{}};
       const dias = Array.from({length:diasEnMes},(_,i)=>{
         const v = (reg.days||{})[String(i+1)];
         return v===undefined || v===null ? "" : v;
       });
       const total = totalHorasRango(reg.days||{}, 1, diasEnMes);
-      return [t.nombre, t.categoria||"", t.obra||"", ...dias, total];
+      return [t?t.nombre:"", t?(t.categoria||""):"", t?(t.obra||""):(reg.obra||""), ...dias, total];
     });
     const ws = XLSX.utils.aoa_to_sheet([encabezado, ...filasExcel]);
     ws["!cols"] = [{wch:22},{wch:14},{wch:12}, ...Array.from({length:diasEnMes},()=>({wch:5})), {wch:11}];
