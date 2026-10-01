@@ -5537,8 +5537,17 @@ function claseCodigo(val){
   return "";
 }
 function esBajaVigente(t){ return t.estado==="Baja"; }
+// Si el mes que se está mostrando ("YYYY-MM") es ANTERIOR al mes de la baja, la baja todavía no
+// existía en ese momento -- sin este chequeo, reimprimir la Nómina de un mes viejo (donde el
+// trabajador seguía activo) pisaba la nota real cargada ese mes con "BAJA - fecha", ocultándola para
+// siempre en cualquier reporte de un mes anterior a la baja (mismo criterio que ya usa
+// filasParaMes() para decidir a partir de qué mes deja de aparecer solo).
+function bajaAfectaElMes(t, mes){
+  if(!esBajaVigente(t)) return false;
+  if(mes && t.fechaBaja && mes < t.fechaBaja.slice(0,7)) return false;
+  return true;
+}
 function notaBaja(t){
-  if(!esBajaVigente(t)) return "";
   let f = t.fechaBaja ? fechaAR(t.fechaBaja) : "";
   return "BAJA"+(f?" - "+f:"")+(t.obs?" - "+t.obs:"");
 }
@@ -5635,7 +5644,7 @@ async function renderAsistencia(){
         onchange="setDia('${f.id}',${d},this.value)"></td>`;
     });
     const notaKey = quincenaActual===1 ? "notaQ1" : "notaQ2";
-    const obsVal = baja ? notaBaja(t) : (reg[notaKey]||"");
+    const obsVal = t && bajaAfectaElMes(t, mesActual) ? notaBaja(t) : (reg[notaKey]||"");
     const total = totalHorasRango(reg.days, desde, hasta);
     return `<tr class="${baja?'fila-baja':''}">
       <td class="sticky-col col-n">${i+1}</td>
@@ -5691,6 +5700,11 @@ async function confirmarCopiarSemanaAnterior(){
     Object.keys(dataOrigen).forEach(workerId=>{
       const valorOrigen = dataOrigen[workerId] && dataOrigen[workerId].days ? dataOrigen[workerId].days[diaOrigen] : undefined;
       if(valorOrigen===undefined || valorOrigen===""){ return; }
+      // Sin este chequeo, un trabajador dado de baja A MITAD de la semana origen (o ya borrado) se
+      // copiaba igual a la semana destino, generando horas trabajadas "fantasma" después de su baja
+      // -- mismo criterio que ya usa aplicarLluviaClimaDia() para no tocar a un trabajador de baja.
+      const trabajador = trabajadores.find(t=>t.id===workerId);
+      if(!trabajador || esBajaVigente(trabajador)) return;
       if(!dataDestino[workerId]) dataDestino[workerId] = {obra: dataOrigen[workerId].obra, days:{}};
       dataDestino[workerId].days[diaDestino] = valorOrigen;
       copiados++;
@@ -5717,7 +5731,11 @@ function registrarActividadAsistenciaDebounced(){
 function setDia(filaId, dia, valor){
   const val = (valor||"").trim();
   const trabajador = trabajadores.find(t=>t.id===filaId);
-  if(trabajador && trabajador.categoria==="SERENO" && val!==""){
+  // Match laxo (sin importar mayúsculas/variantes), igual criterio que ya usa el resto de la
+  // pantalla (renderVistaDia/aplicarLluviaClimaDia) para detectar Sereno -- antes acá se comparaba
+  // categoria==="SERENO" EXACTO, así que alcanzaba con cargar la categoría como "Sereno" (con
+  // minúsculas, texto libre sin normalizar) para saltarse esta restricción por completo.
+  if(trabajador && (trabajador.categoria||"").toLowerCase().includes("sereno") && val!==""){
     const valUpper = val.toUpperCase();
     if(valUpper!=="PN" && valUpper!=="PD"){
       showToast("Para Sereno solo se puede cargar Pn (presente noche) o Pd (presente día)");
@@ -8051,6 +8069,13 @@ function renderTablaItemsPedido(){
   `).join("");
 }
 function quitarFilaItem(i){
+  const it = npItems[i];
+  // Editar un pedido no muestra entregado/cerrado por fila -- sin este aviso, se podía borrar de un
+  // toque un ítem con entregas ya registradas (o cerrado a mano) sin ninguna señal de que se estaba
+  // por perder ese historial para siempre al guardar (guardarPedido solo mapea lo que queda en npItems).
+  if(it && ((parseFloat(it.entregado)||0)>0 || it.cerrado)){
+    if(!window.confirm(`Este ítem ya tiene ${it.entregado||0} ${it.un||""} entregado(s) registrado(s)${it.cerrado?" y está cerrado":""} -- si lo quitás, esa entrega se pierde para siempre. ¿Seguro?`)) return;
+  }
   npItems.splice(i,1);
   renderTablaItemsPedido();
 }
@@ -8783,7 +8808,10 @@ function toggleCierreItem(idx){
 function actualizarEntrega(idx, valor){
   const pedido = pedidosCache[pedidoAbiertoId];
   if(!pedido) return;
-  pedido.items[idx].entregado = valor;
+  // Sin esto, un valor negativo tipeado a mano quedaba guardado tal cual: calcularEstadoPedido()
+  // filtra entregado>0, así que un ítem en -10 dejaba de contar como entregado, pudiendo retroceder
+  // el estado del pedido de "Parcial" a "Pendiente" sin que nadie lo note.
+  pedido.items[idx].entregado = Math.max(0, parseFloat(valor)||0);
   // refresco visual liviano del renglón sin recargar toda la vista
   const estado = calcularEstadoPedido(pedido);
   const badge = document.querySelector("#detalle-pedido-content .estado-badge");
@@ -8932,7 +8960,8 @@ async function procesarRemito(imagenData, documentoPDF){
       pendientes.push(linea);
       return;
     }
-    aplicarLineaRemito(pedido, itemPedido, linea, cantidad);
+    const avisoUnidad = aplicarLineaRemito(pedido, itemPedido, linea, cantidad);
+    if(avisoUnidad) avisosVarios.push(avisoUnidad);
     coincidieron++;
   });
 
@@ -8955,14 +8984,21 @@ async function procesarRemito(imagenData, documentoPDF){
 // Suma la cantidad recibida al ítem del pedido que corresponda, convirtiendo la unidad con la
 // tabla de Equivalencias si el remito la menciona en una unidad distinta a la del pedido (ej:
 // el remito dice "2 Pallet" pero el pedido se controla en Bolsa).
+// Devuelve un aviso (string) si la unidad del remito no coincide con la del pedido y no hay
+// ninguna Equivalencia cargada para convertir -- sin esto, se sumaba la cantidad CRUDA como si
+// fueran unidades del pedido sin ningún aviso (ej: remito "3 Pallet" con pedido en "Bolsa" sin
+// equivalencia cargada sumaba "3" como si fueran 3 bolsas), o null si no hizo falta convertir nada.
 function aplicarLineaRemito(pedido, itemPedido, linea, cantidad){
   let cantidadFinal = cantidad;
+  let aviso = null;
   if(linea.unidadRemito && itemPedido.un && linea.unidadRemito.trim().toLowerCase()!==itemPedido.un.trim().toLowerCase()){
     const equiv = buscarEquivalencia(itemPedido.desc, linea.unidadRemito);
     if(equiv) cantidadFinal = cantidad * equiv.cantChica;
+    else aviso = `"${itemPedido.desc}": el remito dice "${linea.unidadRemito}" pero el pedido está en "${itemPedido.un}" y no hay ninguna Equivalencia cargada para convertir -- se sumó ${cantidad} tal cual, revisalo.`;
   }
   const entregadoActual = parseFloat(pedido.items[itemPedido.idx].entregado)||0;
   pedido.items[itemPedido.idx].entregado = entregadoActual + cantidadFinal;
+  return aviso;
 }
 function renderConfirmacionesRemitoPendientes(){
   const cont = document.getElementById("remito-confirmaciones-pendientes");
@@ -8986,12 +9022,12 @@ async function confirmarAliasRemito(indicePendiente, idxItemPedido){
   const itemPedido = linea.itemsPedido.find(it=>it.idx===idxItemPedido);
   if(!pedido || !itemPedido) return;
   const cantidad = parseFloat(String(linea.cantidadRecibida).replace(",","."))||0;
-  aplicarLineaRemito(pedido, itemPedido, linea, cantidad);
+  const avisoUnidad = aplicarLineaRemito(pedido, itemPedido, linea, cantidad);
   await guardarNuevoAlias(linea.descRemito, itemPedido.desc);
   registrarActividad(`enseñó que "${esc(linea.descRemito)}" es "${esc(itemPedido.desc)}" para próximos remitos`);
   remitoLineasPendientes.splice(indicePendiente,1);
   renderDetallePedido(pedido);
-  showToast("✓ Sumado, y recordado para la próxima vez");
+  showToast(avisoUnidad ? `⚠ ${avisoUnidad}` : "✓ Sumado, y recordado para la próxima vez");
   renderConfirmacionesRemitoPendientes();
 }
 function descartarLineaRemito(indicePendiente){
@@ -9150,9 +9186,14 @@ function descargarPDFPedido(){
 
 /* ---------------- Reporte de pendientes por entregar ---------------- */
 function construirHtmlPendientes(pedido){
+  // Mismo filtro que calcularFaltantes() (el reporte GENERAL de pendientes, botón de la lista de
+  // pedidos): un ítem cerrado a mano ("no llega el resto") no cuenta como pendiente ahí -- acá no
+  // se filtraba, así que el reporte individual de ESTE MISMO pedido podía listar "FALTA: 40" en
+  // rojo para un ítem que el reporte general ya daba por cerrado, dando información contradictoria
+  // sobre el mismo pedido según desde qué botón se generara el PDF.
   const filas = pedido.items
     .map((it,i)=>({...it, idx:i+1}))
-    .filter(it=>it.desc && it.desc.trim()!=="")
+    .filter(it=>it.desc && it.desc.trim()!=="" && !it.cerrado)
     .map(it=>{
       const cant = parseFloat(it.cant)||0;
       const entregado = parseFloat(it.entregado)||0;
@@ -9995,6 +10036,37 @@ function anteriorRendicionDe(r){
     .filter(x=>claveDuenoCaja(x.usuario)===clave && x.numero<r.numero)
     .reduce((max,x)=> (!max || x.numero>max.numero) ? x : max, null);
 }
+// Cada rendición guarda "saldoAnterior" como una FOTO copiada de la diferencia de la anterior, no
+// como una referencia viva. Si se edita o se borra una rendición vieja y su "diferencia" cambia, las
+// rendiciones POSTERIORES de la misma caja quedan con el "saldoAnterior" viejo para siempre -- el
+// saldo disponible que muestran Dashboard/Lista/NEXO (que toma la diferencia de la ÚLTIMA rendición)
+// queda desactualizado hasta que alguien reabra manualmente cada una en la cadena y acepte la
+// sugerencia de `actualizarSugerenciaSaldoAnteriorEditar`. Se reencadena automáticamente, mismo
+// criterio que ya usa el Presupuesto para sus meses posteriores.
+async function reencadenarSaldoRendicionesPosteriores(usuarioDueno){
+  const clave = claveDuenoCaja(usuarioDueno);
+  const cadena = rendicionesIndex
+    .filter(r=>claveDuenoCaja(r.usuario)===clave)
+    .sort((a,b)=>a.numero-b.numero);
+  let cambiaron = 0;
+  for(let i=1;i<cadena.length;i++){
+    const anterior = cadena[i-1];
+    const actual = cadena[i];
+    const saldoEsperado = anterior.diferencia||0;
+    const detalle = await cargarRendicionDetalle(actual.id);
+    if(!detalle) continue;
+    if(Math.abs((detalle.saldoAnterior||0)-saldoEsperado)<1) continue; // ya está bien encadenada
+    detalle.saldoAnterior = saldoEsperado;
+    detalle.totalCaja = saldoEsperado + (detalle.fondo||[]).reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
+    detalle.diferencia = detalle.totalCaja - detalle.totalGastos;
+    await guardarRendicionDetalle(detalle);
+    actual.totalCaja = detalle.totalCaja;
+    actual.diferencia = detalle.diferencia;
+    cambiaron++;
+  }
+  if(cambiaron>0) await guardarRendicionesIndex();
+  return cambiaron;
+}
 function estaRendicionCerrada(r){
   // Se cierra sola cuando la diferencia queda en $0 o A FAVOR (positiva) — esa plata de más no
   // hace falta perseguirla. Si queda EN CONTRA (negativa), se deja abierta a propósito hasta que
@@ -10011,6 +10083,13 @@ async function guardarRendicion(){
   const obra = document.getElementById("rc-obra").value;
   const responsable = document.getElementById("rc-responsable").value.trim();
   if(!obra || !responsable){ showToast("Elegí obra y cargá el responsable"); return; }
+  // Aviso (no bloqueante, igual criterio que el retroceso de % en Certificados) si algún gasto
+  // quedó con fecha futura -- típico error de tipeo en el <input type="date"> que antes pasaba
+  // completamente desapercibido: se guardaba, se sumaba al total y al gráfico por categoría sin
+  // ninguna señal de que algo no cierra.
+  const hoy = hoyISO();
+  const gastosFuturos = rcGastos.filter(g=>g.fecha && g.fecha>hoy && (g.observaciones||g.monto||g.tipoCosto)).length;
+  if(gastosFuturos>0) showToast(`⚠ Guardado con ${gastosFuturos} gasto(s) con fecha futura -- revisá que no sea un error de tipeo`);
   const saldoAnterior = parseFloat(document.getElementById("rc-saldo-anterior").value)||0;
   const totalGastos = rcGastos.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
   const totalCaja = saldoAnterior + rcFondo.reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
@@ -10078,6 +10157,7 @@ async function guardarRendicion(){
     // Si se corrigió el N° a mano a un valor que pisaría al próximo correlativo automático,
     // lo corremos para adelante para que la próxima rendición nueva no choque con este número.
     if(numeroFinal>=correlativoCajaSiguiente){ correlativoCajaSiguiente = numeroFinal+1; await guardarCorrelativoCaja(); }
+    await reencadenarSaldoRendicionesPosteriores(rendicion.usuario);
     await propagarCierreCajaChica([rendicion.usuario]);
     rendicionEditandoId = null;
     nexoAvisoFlotante("guardado", "Rendición N° "+numeroFormateado(rendicion.numero)+" actualizada ✓");
@@ -10336,6 +10416,10 @@ async function eliminarRendicion(){
       correlativoCajaSiguiente = eliminada.numero;
       await guardarCorrelativoCaja();
     }
+    // La rendición que quedó inmediatamente después de la borrada tenía su "saldoAnterior" copiado
+    // de la ahora eliminada -- ese valor queda huérfano (no corresponde a ninguna rendición real) y
+    // hay que reencadenarlo contra la que ahora queda antes en la secuencia.
+    await reencadenarSaldoRendicionesPosteriores(eliminada.usuario);
     await propagarCierreCajaChica([eliminada.usuario]);
   }
 
@@ -10347,23 +10431,37 @@ async function eliminarRendicion(){
 /* ---------------- PDF de la rendición (formato oficial, vertical) ---------------- */
 function construirHtmlRendicion(rendicion){
   const N_FILAS_LEDGER = 37; // A6:F42 en el Excel original
-  let filasLedger = "";
-  for(let i=0; i<N_FILAS_LEDGER; i++){
-    const g = rendicion.gastos[i];
-    if(g){
-      filasLedger += `<tr>
-        <td class="dato-fecha">${g.fecha?fechaAR(g.fecha):""}</td>
-        <td class="dato-txt">${esc(g.ticket||"")}</td>
-        <td class="dato-txt">${esc(g.tipoCosto||"")}</td>
-        <td class="dato-txt">${esc(g.observaciones||"")}</td>
-        <td class="dato-txt">${esc(g.centroCosto||"")}</td>
-        <td class="dato-monto">${g.monto? formatoMoneda(g.monto) : ""}</td>
-      </tr>`;
-    }else{
-      // Fila vacía: se conserva igual que en la planilla original (renglón en blanco pero con el recuadro).
-      filasLedger += `<tr class="fila-vacia"><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+  const gastos = rendicion.gastos || [];
+  // Antes este límite era ABSOLUTO: con más de 37 gastos, los que sobraban (índice 37 en adelante)
+  // directamente desaparecían del PDF -- ni se cortaban a una hoja siguiente ni avisaban de nada --
+  // mientras el TOTAL y el desglose por tipo de costo (calculados sobre TODOS los gastos, más abajo)
+  // sí los seguían sumando. El PDF quedaba con menos filas visibles que lo que decía el total, sin
+  // ninguna señal de que "sigue en otra hoja". Ahora se generan tantas hojas de ledger como hagan
+  // falta, y el total/resumen/firmas van solo en la última (mismo criterio que Nómina/Presupuesto).
+  const totalPaginasLedger = Math.max(1, Math.ceil(gastos.length / N_FILAS_LEDGER));
+  const construirFilasLedgerDePagina = (pag)=>{
+    const desde = pag*N_FILAS_LEDGER;
+    const esUltimaLedger = pag===totalPaginasLedger-1;
+    let html = "";
+    for(let i=0; i<N_FILAS_LEDGER; i++){
+      const g = gastos[desde+i];
+      if(g){
+        html += `<tr>
+          <td class="dato-fecha">${g.fecha?fechaAR(g.fecha):""}</td>
+          <td class="dato-txt">${esc(g.ticket||"")}</td>
+          <td class="dato-txt">${esc(g.tipoCosto||"")}</td>
+          <td class="dato-txt">${esc(g.observaciones||"")}</td>
+          <td class="dato-txt">${esc(g.centroCosto||"")}</td>
+          <td class="dato-monto">${g.monto? formatoMoneda(g.monto) : ""}</td>
+        </tr>`;
+      }else if(esUltimaLedger){
+        // Fila vacía: se conserva igual que en la planilla original (renglón en blanco pero con el
+        // recuadro) -- solo en la última hoja, las anteriores siempre están completas (37 filas).
+        html += `<tr class="fila-vacia"><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+      }
     }
-  }
+    return html;
+  };
   // "Etiquetas de fila / SUM of Monto" — resumen de gastos SIN tipo de costo asignado,
   // igual que en la planilla original (ahí se calcula bien, a diferencia de la fórmula
   // rota del Excel viejo que apuntaba a un rango incorrecto).
@@ -10390,8 +10488,12 @@ function construirHtmlRendicion(rendicion){
   const filasDesglose = Object.keys(desglose).map(k=>
     `<tr><td>${esc(k)}</td><td class="monto">${formatoMoneda(desglose[k])}</td></tr>`
   ).join("");
-  return `<div class="print-page rc-page">
-    ${construirEncabezadoReportePDF(`RENDICION DE CAJA CHICA Y GASTOS`)}
+  let htmlPaginas = "";
+  for(let pag=0; pag<totalPaginasLedger; pag++){
+    const esUltima = pag===totalPaginasLedger-1;
+    const tituloHoja = `RENDICION DE CAJA CHICA Y GASTOS${totalPaginasLedger>1?` — Hoja ${pag+1} de ${totalPaginasLedger}`:""}`;
+    htmlPaginas += `<div class="print-page rc-page">
+    ${construirEncabezadoReportePDF(tituloHoja)}
     <div class="rc-semana-row">Semana: ${esc(rendicion.semana||"")} &nbsp;&nbsp;&nbsp; obra &nbsp;&nbsp; ${esc(rendicion.obra)} &nbsp;&nbsp;&nbsp; N° ${numeroFormateado(rendicion.numero)}</div>
     <table class="rc-form" width="700" cellspacing="0" cellpadding="0">
       <tr>
@@ -10414,13 +10516,14 @@ function construirHtmlRendicion(rendicion){
         <td class="th-corp">Centro de costo</td>
         <td class="th-corp">Monto</td>
       </tr>
-      ${filasLedger}
-      <tr>
+      ${construirFilasLedgerDePagina(pag)}
+      ${esUltima ? `<tr>
         <td colspan="4" style="border:none;"></td>
         <td class="total-label">TOTAL</td>
         <td class="total-monto">${formatoMoneda(rendicion.totalGastos)}</td>
-      </tr>
+      </tr>` : ""}
     </table>
+    ${esUltima ? `
     <table class="rc-bottom-tabla" width="700" cellspacing="0" cellpadding="0"><tr>
       <td class="rc-fondo-td" width="380">
         <table class="rc-pivot-tabla" width="370" cellspacing="0" cellpadding="0">
@@ -10445,8 +10548,10 @@ function construirHtmlRendicion(rendicion){
       <td width="175">Firma Coordinador</td>
       <td width="175">Firma Direccion</td>
       <td width="175">Firma Administracion</td>
-    </tr></table>
+    </tr></table>` : `<p class="tiny" style="margin-top:8px;color:var(--tinta-suave);">Continúa en la hoja ${pag+2} de ${totalPaginasLedger}…</p>`}
   </div>`;
+  }
+  return htmlPaginas;
 }
 function descargarPDFRendicion(){
   const rendicion = rendicionesCache[rendicionAbiertoId];
@@ -13834,7 +13939,7 @@ function renderListaRecordatorios(){
       <div class="rec-botones">
         <button class="btn btn-outline btn-sm" style="color:#0A4A8A;border-color:#5B9BD5;" onclick="editarRecordatorio('${r.id}')">✏️ Editar</button>
         ${r.estado==="pendiente" ? `<button class="btn btn-outline btn-sm" onclick="marcarRecordatorioHecho('${r.id}')">✓ Marcar hecho</button>` : `<button class="btn btn-outline btn-sm" onclick="reabrirRecordatorio('${r.id}')">↺ Reabrir</button>`}
-        <button class="btn btn-outline btn-sm" style="color:var(--texto-alerta);border-color:#DC5A5A;" onclick="eliminarRecordatorio('${r.id}')">🗑 Eliminar</button>
+        ${sesionActual && sesionActual.role==="admin" ? `<button class="btn btn-outline btn-sm" style="color:var(--texto-alerta);border-color:#DC5A5A;" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarRecordatorio('${r.id}'))">🗑 Eliminar</button>` : ``}
       </div>
     </div>`;
   }).join("") || `<p class="empty-msg">No hay recordatorios ${recFiltroEstado==="pendiente"?"pendientes":"hechos"}.</p>`;
@@ -13855,12 +13960,16 @@ async function reabrirRecordatorio(id){
   if(!ok){ r.estado="hecho"; return; }
   renderListaRecordatorios();
 }
+// Mismo resguardo que ya tiene eliminarObservacion() (misma pantalla, mismo permiso de "Pendientes")
+// -- antes cualquier usuario con acceso a esta pestaña podía borrar el recordatorio de cualquier
+// otro con un solo confirm() nativo, y no quedaba ningún rastro en el registro de Actividad.
 async function eliminarRecordatorio(id){
-  if(!confirm("¿Eliminar este recordatorio?")) return;
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const respaldo = recordatorios.find(x=>x.id===id);
   recordatorios = recordatorios.filter(x=>x.id!==id);
   const ok = await guardarRecordatoriosIndex();
   if(!ok){ if(respaldo) recordatorios.unshift(respaldo); return; }
+  if(respaldo) registrarActividad(`eliminó el recordatorio "${esc(respaldo.titulo)}"`);
   showToast("Recordatorio eliminado");
   renderListaRecordatorios();
   renderDashboard();
@@ -13943,8 +14052,14 @@ async function abrirResumenSemanal(){
 }
 async function generarTextoResumenSemanal(){
   const hoy = hoyISO();
+  // hoyISO() calcula en horario LOCAL -- antes acá se usaba .toISOString() (UTC) para "hace7ISO" y
+  // para cada día del rango, lo que se desalinea con "hoy" entre las ~21:00 y las 23:59 hora
+  // Argentina (UTC-3): el día de HOY quedaba excluido del resumen (fechaISO en UTC ya caía en el
+  // día calendario siguiente, mayor a "hoy"), y "hace7ISO" quedaba un día más tarde de lo real,
+  // subestimando lluvia/gastos/pedidos de la ventana de 7 días. Ahora todo se calcula en local,
+  // igual que hoyISO().
   const hace7 = new Date(); hace7.setDate(hace7.getDate()-7);
-  const hace7ISO = hace7.toISOString().slice(0,10);
+  const hace7ISO = hace7.getFullYear()+"-"+pad2(hace7.getMonth()+1)+"-"+pad2(hace7.getDate());
   const mesHoy = mesHoyISO();
 
   // Asistencia: cuántos días hubo actividad y cuántos trabajadores en promedio por día trabajado.
@@ -13952,7 +14067,7 @@ async function generarTextoResumenSemanal(){
   let diasConGente = 0, sumaPresentes = 0;
   for(let i=0;i<7;i++){
     const d = new Date(); d.setDate(d.getDate()-i);
-    const fechaISO = d.toISOString().slice(0,10);
+    const fechaISO = d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
     if(fechaISO<hace7ISO || fechaISO>hoy) continue;
     const dia = String(Number(fechaISO.slice(8,10)));
     let presentesEseDia = 0;
@@ -17162,7 +17277,8 @@ function construirHtmlQuincena(anio, mes, q){
       const cls=[finde?"weekend":"",claseCodigo(val)].filter(Boolean).join(" ");
       diasHtml += `<td class="${cls}">${esc(String(val))}</td>`;
     });
-    const obs = baja ? notaBaja(t) : (reg[q===1?"notaQ1":"notaQ2"]||"");
+    const mesISO = `${anio}-${String(mes).padStart(2,"0")}`;
+    const obs = t && bajaAfectaElMes(t, mesISO) ? notaBaja(t) : (reg[q===1?"notaQ1":"notaQ2"]||"");
     return `<tr class="${baja?'baja':''}">
       <td>${i+1}</td>
       <td class="nombre">${t?esc(t.nombre):""}</td>
@@ -17220,17 +17336,24 @@ function descargarExcelNomina(){
     const [anio, mesNum] = mesActual.split("-").map(Number);
     const diasEnMes = new Date(anio, mesNum, 0).getDate();
     const data = asistenciaCache[mesActual] || {};
-    const filas = filasParaMes(mesActual).filter(f=>f.trabajador);
+    // Mismo filtro que ya usa el PDF de la quincena/mes (construirHtmlQuincena): una fila "extra"
+    // sin trabajador asignado todavía, pero con horas ya cargadas, se incluye igual -- antes acá se
+    // excluía cualquier fila sin f.trabajador sin importar si tenía datos, así que esas horas
+    // aparecían en el PDF (sumadas al total general) pero desaparecían del Excel del mismo mes.
+    const filas = filasParaMes(mesActual).filter(f=>{
+      const reg = data[f.id];
+      return f.trabajador || (reg && reg.days && Object.values(reg.days).some(v=>v!==""&&v!==undefined));
+    });
     const encabezado = ["Nombre","Categoría","Obra", ...Array.from({length:diasEnMes},(_,i)=>String(i+1)), "Total horas"];
     const filasExcel = filas.map(f=>{
       const t = f.trabajador;
-      const reg = data[t.id] || {days:{}};
+      const reg = data[f.id] || {days:{}};
       const dias = Array.from({length:diasEnMes},(_,i)=>{
         const v = (reg.days||{})[String(i+1)];
         return v===undefined || v===null ? "" : v;
       });
       const total = totalHorasRango(reg.days||{}, 1, diasEnMes);
-      return [t.nombre, t.categoria||"", t.obra||"", ...dias, total];
+      return [t?t.nombre:"", t?(t.categoria||""):"", t?(t.obra||""):(reg.obra||""), ...dias, total];
     });
     const ws = XLSX.utils.aoa_to_sheet([encabezado, ...filasExcel]);
     ws["!cols"] = [{wch:22},{wch:14},{wch:12}, ...Array.from({length:diasEnMes},()=>({wch:5})), {wch:11}];
@@ -18499,8 +18622,12 @@ const NEXO_TOOLS = {
     tipo:"escritura",
     descripcionConfirmacion: (params)=> `Crear un recordatorio: "${params.titulo}"${params.fecha?` para el ${fechaAR(params.fecha)}`:""}.`,
     ejecutar: async ({titulo, fecha})=>{
-      await guardarRecordatorioDirecto(titulo, fecha||null, "media");
-      return `Listo, creé el recordatorio "${titulo}".`;
+      // guardarRecordatorioDirecto() devuelve false (y muestra su propio aviso) si no hay obra
+      // activa o si falló el guardado -- sin revisar el resultado, esta burbuja de chat siempre
+      // decía "Listo, creé..." aunque el recordatorio nunca se hubiera guardado de verdad, y ese
+      // texto además se lee en voz alta (nexoHablar), agravando el engaño en modo manos libres.
+      const ok = await guardarRecordatorioDirecto(titulo, fecha||null, "media");
+      return ok ? `Listo, creé el recordatorio "${titulo}".` : `No pude crear el recordatorio "${titulo}" -- revisá que haya una obra activa elegida.`;
     }
   },
   recordarPreferencia: {
@@ -20478,6 +20605,16 @@ function eliminarPlano(id, btn){
       (cont.certificados||[]).forEach(cert=>{ if(cert.planoId===id){ cert.planoId = null; tocado = true; } });
       if(tocado) await guardarContratistaDetalle(cont);
     }
+    // Mismo motivo que arriba, pero para los pines de Plano Maestro: un pin con una capa de ESTE
+    // plano vinculada (capasVinculadas) quedaba con un planoId muerto -- al reabrirlo, la lectura de
+    // los polígonos de ese plano fallaba en silencio y el vínculo pasaba a mostrar "sin marcar
+    // todavía" para siempre, como si nunca se hubiese dibujado nada.
+    await conTodosLosPinesMaestro(obra, pin=>{
+      if(!pin.capasVinculadas || pin.capasVinculadas.length===0) return false;
+      const antes = pin.capasVinculadas.length;
+      pin.capasVinculadas = pin.capasVinculadas.filter(v=>v.planoId!==id);
+      return pin.capasVinculadas.length!==antes;
+    });
     if(planoActualId===id){
       planoActualId = null;
       imagenPlano = null;
@@ -21995,8 +22132,18 @@ function siguienteNumeroParaTipo(tipo){
 function elegirTipoAmbientePin(tipo){
   const pin = pinesMaestro.find(p=>p.id===pinAbiertoId);
   if(!pin) return;
-  pin.tipoAmbiente = tipo;
   const plantilla = plantillasChecklistPin[tipo] || [];
+  const checklistPrevio = pin.checklist || [];
+  // Elegir un tipo de ambiente SIEMPRE reemplazaba el checklist entero por la plantilla en blanco,
+  // sin fusionar ni preguntar -- ni tildes (hecho:true) ni ítems agregados a mano (que no forman
+  // parte de ninguna plantilla) sobrevivían. Alcanzaba con volver a tocar "cambiar tipo" y elegir el
+  // MISMO tipo (para corregir el nombre, por ejemplo) para perder todo el progreso sin darse cuenta.
+  const hayTildes = checklistPrevio.some(it=>it.hecho);
+  const hayCustom = checklistPrevio.some(it=>!plantilla.includes(it.texto));
+  if((hayTildes || hayCustom) && !window.confirm(
+    `Este pin ya tiene ${checklistPrevio.filter(it=>it.hecho).length} ítem(s) tildado(s)${hayCustom?" y/o ítems agregados a mano":""} -- cambiar el tipo de ambiente reemplaza TODO el checklist por la plantilla en blanco de "${tipo}", perdiendo ese progreso. ¿Seguro?`
+  )) return;
+  pin.tipoAmbiente = tipo;
   pin.checklist = plantilla.map(texto=>({texto, hecho:false, urgente:false}));
   if(!pin.nombre || !pin.nombre.trim()){
     pin.nombre = `${tipo} ${siguienteNumeroParaTipo(tipo)}`;
@@ -22261,6 +22408,48 @@ function desvincularCapaPin(i){
   pin.capasVinculadas.splice(i,1);
   guardarPinesMaestro();
   renderAvancePin(pin);
+}
+// Recorre los pines de TODOS los Planos Maestro de la obra (el que esté abierto en memoria, y el
+// resto directo de storage) y les aplica "mutador" -- que debe devolver true si tocó algo, para
+// saber si hace falta volver a guardar ese Maestro. Usado para mantener capasVinculadas sincronizada
+// cuando se borra un plano o se renombra una capa/actividad, porque capasVinculadas guarda
+// planoId+nombreCompleto como una COPIA (no una referencia viva): sin este barrido, un pin vinculado
+// a algo borrado o renombrado queda mostrando "sin marcar todavía" para siempre, en silencio.
+async function conTodosLosPinesMaestro(obra, mutador){
+  const maestros = planosIndex.filter(p=>p.obra===obra && p.tipo==="maestro");
+  for(const m of maestros){
+    const esActual = m.id===planoActualId;
+    let pines;
+    if(esActual){
+      pines = pinesMaestro;
+    }else{
+      try{
+        const r = await window.storage.get(`plano_maestro_pines_${obra}_${m.id}`, true);
+        pines = r && r.value ? JSON.parse(r.value) : [];
+      }catch(e){ continue; }
+    }
+    let tocado = false;
+    pines.forEach(pin=>{ if(mutador(pin)) tocado = true; });
+    if(!tocado) continue;
+    if(esActual) await guardarPinesMaestro();
+    else await guardarClave(`plano_maestro_pines_${obra}_${m.id}`, JSON.stringify(pines));
+  }
+}
+// "mapeoNombres" es {nombreCompletoViejo: nombreCompletoNuevo} -- ver conTodosLosPinesMaestro().
+async function actualizarVinculosPinesPorRenombreCapa(mapeoNombres){
+  if(!mapeoNombres || Object.keys(mapeoNombres).length===0) return;
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return;
+  await conTodosLosPinesMaestro(obra, pin=>{
+    let tocado = false;
+    (pin.capasVinculadas||[]).forEach(v=>{
+      if((v.tipo||"capa")==="capa" && v.planoId===planoActualId && mapeoNombres[v.nombreCompleto]!==undefined){
+        v.nombreCompleto = mapeoNombres[v.nombreCompleto];
+        tocado = true;
+      }
+    });
+    return tocado;
+  });
 }
 function eliminarPinMaestro(btn){
   if(btn.dataset.confirmando==="1"){
@@ -25327,11 +25516,12 @@ function confirmarEstiloCapaNuevaDestino(idx, nuevaCapa){
   cerrarFotoAvanceOverlay();
   aplicarCambioCapaPieza(idx, nuevaCapa, color, patron);
 }
-function aplicarCambioCapaPieza(idx, nuevaCapa, color, patron){
+async function aplicarCambioCapaPieza(idx, nuevaCapa, color, patron){
   const p = poligonos[idx];
   if(!p) return;
   cerrarFotoAvanceOverlay(); // por si se llega directo desde el selector (con estilo ya de referencia), sin pasar por el picker de estilo -- inofensivo si ya estaba cerrado
   guardarEnHistorial();
+  const nombreViejo = p.nombreCompleto;
   p.capa = nuevaCapa || null;
   p.nombreCompleto = nuevaCapa ? `${p.nombreBase} - ${nuevaCapa}` : p.nombreBase;
   p.color = color;
@@ -25340,7 +25530,10 @@ function aplicarCambioCapaPieza(idx, nuevaCapa, color, patron){
   renderSelectorActividades();
   renderActividades();
   renderPorcentajesFlotantes();
-  guardarPlanoAvancePoligonos();
+  await guardarPlanoAvancePoligonos();
+  // Mismo motivo que confirmarPromptRenombrarCapa(): sin esto, un pin vinculado a la capa vieja
+  // quedaba buscando un nombreCompleto que ya no existe en ningún polígono.
+  if(nombreViejo!==p.nombreCompleto) await actualizarVinculosPinesPorRenombreCapa({[nombreViejo]: p.nombreCompleto});
   showToast(`✓ Pasada a "${p.nombreCompleto}"`);
 }
 // ================= FUSIÓN VISUAL DE CONTORNOS UNIFICADOS =================
@@ -26230,6 +26423,17 @@ async function confirmarPromptRenombrarCapa(){
     const yaExiste = poligonos.some(p=>p.nombreBase===nuevoNombre);
     if(yaExiste && !confirm(`Ya existe una actividad "${nuevoNombre}" en este plano -- si seguís, TODO (área total y capas) se va a sumar/mezclar con esa. ¿Continuar?`)) return;
     guardarEnHistorial();
+    // capasVinculadas de los pines del Plano Maestro guarda "nombreCompleto" como texto COPIADO, no
+    // como una referencia -- si no se actualiza acá, un pin vinculado a una de estas capas queda
+    // buscando el nombre VIEJO para siempre y pasa a mostrar "sin marcar todavía" en silencio.
+    const mapeoNombres = {};
+    poligonos.forEach(p=>{
+      if(p.nombreBase===nombreBase){
+        const nombreViejo = p.nombreCompleto;
+        const nombreNuevo = p.capa ? `${nuevoNombre} - ${p.capa}` : nuevoNombre;
+        if(nombreViejo!==nombreNuevo) mapeoNombres[nombreViejo] = nombreNuevo;
+      }
+    });
     poligonos.forEach(p=>{
       if(p.nombreBase===nombreBase){
         p.nombreBase = nuevoNombre;
@@ -26242,6 +26446,7 @@ async function confirmarPromptRenombrarCapa(){
     redibujar();
     renderPorcentajesFlotantes();
     await guardarPlanoAvancePoligonos();
+    await actualizarVinculosPinesPorRenombreCapa(mapeoNombres);
     showToast(`✓ Actividad renombrada a "${nuevoNombre}"`);
     return;
   }
@@ -26250,6 +26455,7 @@ async function confirmarPromptRenombrarCapa(){
   const yaExiste = poligonos.some(p=>p.nombreBase===nombreBase && p.capa===nuevoNombre);
   if(yaExiste && !confirm(`Ya existe una capa "${nuevoNombre}" en esta actividad -- si seguís, se van a sumar juntas. ¿Continuar?`)) return;
   guardarEnHistorial();
+  const mapeoNombresCapa = {[`${nombreBase} - ${nombreCapaActual}`]: `${nombreBase} - ${nuevoNombre}`};
   poligonos.forEach(p=>{
     if(p.nombreBase===nombreBase && p.capa===nombreCapaActual){
       p.capa = nuevoNombre;
@@ -26262,6 +26468,7 @@ async function confirmarPromptRenombrarCapa(){
   redibujar();
   renderPorcentajesFlotantes();
   await guardarPlanoAvancePoligonos();
+  await actualizarVinculosPinesPorRenombreCapa(mapeoNombresCapa);
   showToast(`✓ Renombrada a "${nuevoNombre}"`);
 }
 function duplicarComoNuevaCapa(idx){
