@@ -5360,12 +5360,13 @@ function actualizarTrabajador(id, campo, valor){
   if(!t) return;
   const obraAnterior = t.obra;
   t[campo] = valor;
-  // Al reactivar (Baja -> Activo) hay que limpiar fechaBaja -- si no, queda la fecha de la baja
-  // VIEJA cargada (el campo está deshabilitado mientras está Activo, así que nadie la puede borrar
-  // a mano) y si esta persona se vuelve a dar de baja más adelante sin que alguien note que hay
-  // que corregirla, filasParaMes() sigue usando esa fecha vieja para decidir desde qué mes ocultar
-  // la fila -- esconde de la grilla/PDF/Excel los meses en el medio donde en realidad trabajó.
-  if(campo==="estado" && valor==="Activo") t.fechaBaja = "";
+  // Al reactivar (Baja/Transferido -> Activo) hay que limpiar la fecha de corte correspondiente --
+  // si no, queda la fecha VIEJA cargada (el campo está deshabilitado mientras no corresponde, así
+  // que nadie la puede borrar a mano) y si esta persona vuelve a cambiar de estado más adelante sin
+  // que alguien note que hay que corregirla, filasParaMes() sigue usando esa fecha vieja para
+  // decidir desde qué mes ocultar la fila -- esconde de la grilla/PDF/Excel los meses en el medio
+  // donde en realidad trabajó.
+  if(campo==="estado" && valor==="Activo"){ t.fechaBaja = ""; t.fechaTransferido = ""; }
   guardarTrabajadores();
   // Cambiar la obra es una TRANSFERENCIA -- queda un registro más claro que el genérico de abajo.
   // No reescribe nada de lo ya cargado en Asistencia: cada mes guarda su propia obra "congelada"
@@ -5376,6 +5377,59 @@ function actualizarTrabajador(id, campo, valor){
   }else{
     registrarActividad(`modificó "${campo}" de "${esc(t.nombre)}" en la nómina`);
   }
+}
+// El <select> de Estado llama acá en vez de ir directo a actualizarTrabajador() -- elegir
+// "Transferido" necesita pedir a qué obra se va y desde cuándo, no es un simple cambio de campo.
+function cambiarEstadoTrabajador(id, valor){
+  if(valor==="Transferido"){
+    abrirPromptTransferirTrabajador(id);
+    renderTrabajadores(); // el <select> vuelve a mostrar el estado real hasta que se confirme
+    return;
+  }
+  actualizarTrabajador(id, "estado", valor);
+  renderTrabajadores();
+  renderAsistencia();
+  renderVistaDia();
+}
+// "Transferido" es un estado intermedio entre Activo y Baja: igual que una baja, deja de aparecer
+// solo en la Asistencia/Nómina de la obra vieja a partir del mes elegido -- pero a diferencia de una
+// baja, sigue activo de verdad (ahora en otra obra, que puede no ser la que vos manejás). Si vuelve
+// un día puntual, se lo puede seguir cargando como préstamo desde "+ Agregar fila" en Asistencia.
+function abrirPromptTransferirTrabajador(id){
+  const t = trabajadores.find(x=>x.id===id);
+  if(!t) return;
+  const opciones = [...new Set(obrasActivas())].filter(o=>o!==t.obra);
+  if(opciones.length===0){ showToast("No hay otra obra activa cargada todavía -- agregá la obra de destino en Configuración primero."); return; }
+  const html = `
+    <h2 style="margin-top:0;">🔁 Transferir a otra obra</h2>
+    <p class="helper">"${esc(t.nombre)}" va a dejar de aparecer en la Asistencia/Nómina de "${esc(t.obra||'(sin obra)')}" a partir del mes que elijas -- igual que una baja, pero sigue activo, ahora en la obra nueva. Los meses ya cargados no se tocan. Si vuelve algún día puntual, lo podés cargar igual como préstamo desde "+ Agregar fila".</p>
+    <div class="field"><label>Obra a la que se transfiere</label>
+      <select id="transf-obra-destino">${opciones.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}</select>
+    </div>
+    <div class="field"><label>Desde cuándo deja de verse en la obra vieja</label>
+      <input type="date" id="transf-fecha" value="${hoyISO()}">
+    </div>
+    <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="confirmarTransferirTrabajador('${id}')">✓ Confirmar transferencia</button>
+    <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico(); renderTrabajadores();">Cancelar</button>`;
+  abrirPromptGenerico(html);
+}
+async function confirmarTransferirTrabajador(id){
+  const t = trabajadores.find(x=>x.id===id);
+  if(!t) return;
+  const nuevaObra = document.getElementById("transf-obra-destino").value;
+  const fecha = document.getElementById("transf-fecha").value || hoyISO();
+  if(!nuevaObra){ showToast("Elegí la obra de destino"); return; }
+  const obraAnterior = t.obra || "(sin obra)";
+  t.estado = "Transferido";
+  t.fechaTransferido = fecha;
+  t.obra = nuevaObra;
+  await guardarTrabajadores();
+  registrarActividad(`transfirió a "${esc(t.nombre)}" de "${esc(obraAnterior)}" a "${esc(nuevaObra)}" (deja de verse en ${esc(obraAnterior)} desde ${fechaAR(fecha)})`);
+  cerrarPromptGenerico();
+  renderTrabajadores();
+  renderAsistencia();
+  renderVistaDia();
+  showToast(`✓ Transferido a ${nuevaObra}`);
 }
 async function eliminarTrabajador(id){
   const t = trabajadores.find(x=>x.id===id);
@@ -5445,12 +5499,15 @@ function renderTrabajadores(){
             <option value="">—</option>${optsObra}
           </select></td>
       <td>
-        <select onchange="actualizarTrabajador('${t.id}','estado',this.value); renderTrabajadores(); renderAsistencia(); renderVistaDia();">
+        <select onchange="cambiarEstadoTrabajador('${t.id}', this.value)">
           <option value="Activo" ${t.estado==='Activo'?'selected':''}>Activo</option>
           <option value="Baja" ${t.estado==='Baja'?'selected':''}>Baja</option>
+          <option value="Transferido" ${t.estado==='Transferido'?'selected':''}>Transferido${t.estado==='Transferido'&&t.obra?` (${esc(t.obra)})`:''}</option>
         </select>
       </td>
-      <td><input type="date" value="${t.fechaBaja||''}" onchange="actualizarTrabajador('${t.id}','fechaBaja',this.value); renderAsistencia(); renderVistaDia();" ${t.estado!=='Baja'?'disabled':''}></td>
+      <td><input type="date" value="${t.estado==='Transferido'?(t.fechaTransferido||''):(t.fechaBaja||'')}"
+        onchange="actualizarTrabajador('${t.id}', '${t.estado==='Transferido'?'fechaTransferido':'fechaBaja'}', this.value); renderAsistencia(); renderVistaDia();"
+        ${(t.estado!=='Baja'&&t.estado!=='Transferido')?'disabled':''}></td>
       <td><input value="${esc(t.obs)}" placeholder="Ej: renunció" onchange="actualizarTrabajador('${t.id}','obs',this.value); renderAsistencia(); renderVistaDia();"></td>
       <td><button class="btn btn-danger btn-sm" onclick="confirmarDoble(this,'¿Seguro?',()=>eliminarTrabajador('${t.id}'))">Quitar</button></td>
     </tr>
@@ -5623,6 +5680,15 @@ function filasParaMes(mes){
     if(t.estado==="Baja" && t.fechaBaja){
       const mesBaja = t.fechaBaja.slice(0,7);
       if(mes > mesBaja) return false;
+    }
+    // "Transferido" funciona como una baja PARA LA OBRA VIEJA: deja de aparecer solo a partir del
+    // mes de la transferencia, incluso sin ningún filtro de obra puesto ("Todas las obras" ya no
+    // debería seguir mostrándolo como si siguiera siendo de acá). La excepción es filtrar justo por
+    // la obra a la que fue transferido (t.obra ya quedó actualizado a esa obra) -- ahí sí es
+    // personal activo de verdad, solo que de otro capataz, y tiene que poder seguir viéndose.
+    if(t.estado==="Transferido" && t.fechaTransferido){
+      const mesTransferido = t.fechaTransferido.slice(0,7);
+      if(mes > mesTransferido && filtroObra!==t.obra) return false;
     }
     // Si hay un filtro de obra activo, solo se muestra a quien pertenezca a esa obra este mes
     // (reg.obra, que puede haber sido corregido a mano y manda por sobre t.obra) -- un trabajador
