@@ -4962,7 +4962,16 @@ async function cargarTrabajadores(){
 // función no asume el tipo, solo lo pasa a window.storage.set. Devuelve true/false para que quien
 // llama pueda cortar el flujo si hace falta (ej: no seguir con un paso posterior si falló).
 async function guardarClave(clave, valor, msgError){
-  try{ await window.storage.set(clave, valor, true); return true; }
+  try{
+    const r = await window.storage.set(clave, valor, true);
+    // window.storage.set NUNCA rechaza -- si no hay señal (o el documento no entra en Firestore),
+    // encola en localStorage y devuelve {pendiente:true} en vez de tirar una excepción. Antes esta
+    // función ignoraba ese resultado y siempre devolvía true salvo una excepción real: todos los
+    // módulos que confían en este valor (Observaciones, Recordatorios, Pedidos, Caja Chica, Minutas,
+    // etc.) quedaban ciegos justo al caso más común de guardado fallido.
+    if(r && r.pendiente){ showToast(msgError || "⚠ Guardado pendiente de sincronizar (revisá la conexión)"); return false; }
+    return true;
+  }
   catch(e){ showToast(msgError || "No se pudo guardar (revisá conexión)"); return false; }
 }
 async function guardarTrabajadores(){
@@ -14535,7 +14544,7 @@ async function cargarMinutasIndex(){
   }catch(e){ minutasIndex = []; }
 }
 async function guardarMinutasIndex(){
-  await guardarClave("minutas_index", JSON.stringify(minutasIndex));
+  return guardarClave("minutas_index", JSON.stringify(minutasIndex));
 }
 async function cargarCorrelativoMinuta(){
   try{
@@ -14544,7 +14553,7 @@ async function cargarCorrelativoMinuta(){
   }catch(e){ correlativoMinutaSiguiente = 1; }
 }
 async function guardarCorrelativoMinuta(){
-  try{ await window.storage.set("correlativo_minuta", String(correlativoMinutaSiguiente), true); }catch(e){}
+  return guardarClave("correlativo_minuta", String(correlativoMinutaSiguiente));
 }
 
 /* ---------------- Dashboard: chips de clima ---------------- */
@@ -17253,7 +17262,19 @@ async function generarMinutaPDF(){
   const esEdicion = !!minutaEditandoId;
   const id = esEdicion ? minutaEditandoId : uid();
   const numero = esEdicion ? minutasIndex.find(m=>m.id===id).numero : correlativoMinutaSiguiente;
-  const minuta = {id, numero, obra, fecha, contenido, firmas, creadoPor: sesionActual?sesionActual.username:"", timestamp:new Date().toISOString()};
+  // Si es una edición, se intenta conservar quién y cuándo se creó la minuta ORIGINAL -- antes se
+  // pisaba siempre con el usuario y la hora de la edición, perdiendo para siempre la autoría real
+  // del acta (quién estuvo en la reunión y la redactó, no quién corrigió después un typo).
+  let creadoPor = sesionActual?sesionActual.username:"", timestampCreacion = new Date().toISOString();
+  if(esEdicion){
+    try{
+      const rOriginal = await window.storage.get("minuta_"+id, true);
+      const original = rOriginal && rOriginal.value ? JSON.parse(rOriginal.value) : null;
+      if(original){ creadoPor = original.creadoPor||creadoPor; timestampCreacion = original.timestamp||timestampCreacion; }
+    }catch(e){}
+  }
+  const minuta = {id, numero, obra, fecha, contenido, firmas, creadoPor, timestamp: timestampCreacion};
+  if(esEdicion){ minuta.editadoPor = sesionActual?sesionActual.username:""; minuta.timestampEdicion = new Date().toISOString(); }
   nexoAvisoFlotante("guardando");
   let r;
   try{ r = await window.storage.set("minuta_"+id, JSON.stringify(minuta), true); }catch(e){ nexoAvisoFlotante("error", "No se pudo guardar la minuta ⚠"); return; }
@@ -17268,13 +17289,26 @@ async function generarMinutaPDF(){
   }
   if(esEdicion){
     const idx = minutasIndex.findIndex(m=>m.id===id);
+    const respaldo = idx>-1 ? {...minutasIndex[idx]} : null;
     if(idx>-1) minutasIndex[idx] = {id, numero, obra, fecha};
-    await guardarMinutasIndex();
+    const okIndice = await guardarMinutasIndex();
+    if(!okIndice){
+      if(respaldo && idx>-1) minutasIndex[idx] = respaldo;
+      nexoAvisoFlotante("error", "⚠ La minuta se guardó, pero no se pudo actualizar la lista (revisá conexión)");
+      renderListaMinutas();
+      return;
+    }
     registrarActividad(`editó la Minuta N° ${numero} de ${esc(obra)}`);
     nexoAvisoFlotante("guardado", "Minuta actualizada ✓");
   }else{
     minutasIndex.unshift({id, numero, obra, fecha});
-    await guardarMinutasIndex();
+    const okIndice = await guardarMinutasIndex();
+    if(!okIndice){
+      minutasIndex.shift();
+      nexoAvisoFlotante("error", "⚠ La minuta se guardó, pero no se pudo agregar a la lista (revisá conexión)");
+      renderListaMinutas();
+      return;
+    }
     correlativoMinutaSiguiente++;
     await guardarCorrelativoMinuta();
     registrarActividad(`cargó la Minuta N° ${numero} de ${esc(obra)}`);
@@ -17301,7 +17335,7 @@ function construirHtmlMinuta(minuta){
       <td style="font-family:Arial;font-size:12px;color:#444;"><b style="font-size:15px;color:#0A2540;display:block;">Gestión de Obra</b>Minuta de reunión</td>
       <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}" style="height:46px;"></td>
     </tr></table>
-    <div style="text-align:center;font-size:22px;font-weight:700;text-decoration:underline;letter-spacing:.05em;margin:10px 0 4px;">MINUTA</div>
+    <div style="text-align:center;font-size:22px;font-weight:700;text-decoration:underline;letter-spacing:.05em;margin:10px 0 4px;">MINUTA N° ${minuta.numero}</div>
     <div style="text-align:center;font-family:Arial;font-size:12px;color:#444;margin-bottom:24px;">${fechaTxt}</div>
     <div style="font-family:Arial;font-size:12.5px;margin-bottom:20px;line-height:1.8;">
       <b style="color:#0A2540;">Obra:</b> ${esc(minuta.obra)} &nbsp;&nbsp;&nbsp; <b style="color:#0A2540;">Fecha:</b> ${minuta.fecha ? fechaAR(minuta.fecha) : ""}
@@ -17331,18 +17365,31 @@ function renderListaMinutas(){
 }
 async function eliminarMinuta(id){
   const m = minutasIndex.find(x=>x.id===id);
+  const respaldo = m;
   minutasIndex = minutasIndex.filter(x=>x.id!==id);
-  await guardarMinutasIndex();
-  try{ await window.storage.delete("minuta_"+id, true); }catch(e){}
+  const okIndice = await guardarMinutasIndex();
+  if(!okIndice){
+    if(respaldo) minutasIndex.unshift(respaldo);
+    showToast("⚠ No se pudo quitar de la lista (revisá conexión) -- no se borró nada todavía");
+    return;
+  }
+  // window.storage.delete() -- a diferencia de .get/.set -- NO tiene cola offline ni reintento: si
+  // no hay conexión en este momento preciso, se pierde para siempre y el documento "minuta_<id>"
+  // queda huérfano en Firestore (invisible en el índice, pero ocupando su mismo N°). Por eso NO se
+  // puede reciclar el correlativo ni avisar éxito sin saber si este borrado puntual funcionó de verdad.
+  let okBorrado = true;
+  try{ await window.storage.delete("minuta_"+id, true); }
+  catch(e){ okBorrado = false; }
   if(m) registrarActividad(`eliminó la Minuta N° ${m.numero} de ${esc(m.obra)}`);
   // Si era la última minuta numerada (nadie más usa ese número ni uno mayor), liberamos el
   // correlativo para que la próxima no deje un hueco en la numeración -- mismo arreglo ya hecho
-  // para Caja Chica.
-  if(m && m.numero===correlativoMinutaSiguiente-1 && !minutasIndex.some(x=>x.numero>=m.numero)){
+  // para Caja Chica. Solo si el borrado remoto funcionó: si no, ese N° sigue "ocupado" por el
+  // documento huérfano y reciclarlo igual arriesgaría una Minuta nueva con el mismo N°.
+  if(okBorrado && m && m.numero===correlativoMinutaSiguiente-1 && !minutasIndex.some(x=>x.numero>=m.numero)){
     correlativoMinutaSiguiente = m.numero;
     await guardarCorrelativoMinuta();
   }
-  showToast("Minuta eliminada");
+  showToast(okBorrado ? "Minuta eliminada" : "⚠ Se quitó de la lista, pero no se pudo borrar el contenido en la nube (revisá conexión)");
   renderListaMinutas();
 }
 // Corregir a mano el N° de una minuta ya creada (ej: quedó mal numerada porque se borró una
@@ -17366,16 +17413,30 @@ async function guardarNumeroMinutaCorregido(id){
     showToast(`Ya existe la Minuta N° ${nuevoNumero} — elegí otro número`);
     return;
   }
+  const numeroAnterior = m.numero;
   m.numero = nuevoNumero;
-  await guardarMinutasIndex();
+  const okIndice = await guardarMinutasIndex();
+  if(!okIndice){
+    m.numero = numeroAnterior;
+    showToast("⚠ No se pudo guardar el nuevo N° (revisá conexión)");
+    return;
+  }
+  let okDetalle = true;
   try{
     const r = await window.storage.get("minuta_"+id, true);
     const detalle = r && r.value ? JSON.parse(r.value) : null;
-    if(detalle){ detalle.numero = nuevoNumero; await window.storage.set("minuta_"+id, JSON.stringify(detalle), true); }
-  }catch(e){}
+    if(detalle){
+      detalle.numero = nuevoNumero;
+      const rSet = await window.storage.set("minuta_"+id, JSON.stringify(detalle), true);
+      if(rSet && rSet.pendiente) okDetalle = false;
+    }
+  }catch(e){ okDetalle = false; }
   if(nuevoNumero>=correlativoMinutaSiguiente){ correlativoMinutaSiguiente = nuevoNumero+1; await guardarCorrelativoMinuta(); }
   registrarActividad(`corrigió el N° de una Minuta de ${esc(m.obra)} a N° ${nuevoNumero}`);
-  showToast("N° corregido ✓");
+  // El índice (lo que se ve en la lista) ya quedó con el N° nuevo -- si el detalle completo (el que
+  // usa verMinutaPDF/el PDF) no llegó a actualizarse, avisamos en vez de decir "✓" sin más: por
+  // separado podrían mostrar N° distintos hasta que se reintente.
+  showToast(okDetalle ? "N° corregido ✓" : "⚠ Se corrigió en la lista, pero no en el PDF guardado (revisá conexión y volvé a intentar)");
   cerrarPromptGenerico();
   renderListaMinutas();
 }
