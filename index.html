@@ -5690,12 +5690,21 @@ function filasParaMes(mes){
     }
     // "Transferido" funciona como una baja PARA LA OBRA VIEJA: deja de aparecer solo a partir del
     // mes de la transferencia, incluso sin ningún filtro de obra puesto ("Todas las obras" ya no
-    // debería seguir mostrándolo como si siguiera siendo de acá). La excepción es filtrar justo por
-    // la obra a la que fue transferido (t.obra ya quedó actualizado a esa obra) -- ahí sí es
-    // personal activo de verdad, solo que de otro capataz, y tiene que poder seguir viéndose.
+    // debería seguir mostrándolo como si siguiera siendo de acá). Hay DOS excepciones: 1) filtrar
+    // justo por la obra a la que fue transferido (t.obra ya quedó actualizado a esa obra) -- ahí sí
+    // es personal activo de verdad, solo que de otro capataz; 2) volvió como préstamo puntual a OTRA
+    // obra (ni la vieja ni la nueva) -- ej. lo transfirieron a Lanús pero viene 2 días a Varela --
+    // marcado en reg.diasObra al usar "Agregar trabajador prestado" con el filtro de esa obra
+    // activo. Sin este chequeo acá, este bloqueo cortaba antes de que el de más abajo (que sí sabe
+    // de diasObra) llegara a correr, y el préstamo quedaba guardado pero invisible en cualquier
+    // vista -- no aparecía la fila ni la "×" para sacarlo después.
     if(t.estado==="Transferido" && t.fechaTransferido){
       const mesTransferido = t.fechaTransferido.slice(0,7);
-      if(mes > mesTransferido && filtroObra!==t.obra) return false;
+      if(mes > mesTransferido && filtroObra!==t.obra){
+        const reg = data[t.id];
+        const tienePrestamoEnEstaObra = !!(filtroObra && reg && reg.diasObra && Object.values(reg.diasObra).includes(filtroObra));
+        if(!tienePrestamoEnEstaObra) return false;
+      }
     }
     // Si hay un filtro de obra activo, solo se muestra a quien pertenezca a esa obra este mes
     // (reg.obra, que puede haber sido corregido a mano y manda por sobre t.obra) -- un trabajador
