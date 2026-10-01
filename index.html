@@ -18137,7 +18137,14 @@ function dibujarGrillaNominaPaginada(pdf, pagina, tabla, factor, orient, PX_A_PT
   const theadCeldas = [...thead.querySelectorAll("th")];
   const theadTop = thead.getBoundingClientRect().top;
   const altoThead = thead.getBoundingClientRect().height*PX;
-  const filas = [...tabla.querySelectorAll("tbody tr")];
+  // OJO: esta tabla queda anidada dentro de OTRA tabla (print-page > tr > td > print-grid), y se
+  // arma con document.write() dentro de un iframe aislado (ver enviarPorWhatsapp) -- en esa
+  // combinación puntual, el motor de selectores de Chrome tiene un bug conocido donde
+  // "tabla.querySelectorAll('tbody tr')" devuelve TAMBIÉN la fila del <thead> (como si no supiera
+  // distinguir thead de tbody en una tabla anidada así). Usando directamente los hijos del <tbody>
+  // (sin volver a buscar por selector) se evita el problema de raíz.
+  const tbody = tabla.querySelector("tbody");
+  const filas = [...tbody.children];
 
   const titulo = pagina.querySelector(".p-title");
   const sub = pagina.querySelector(".p-sub");
