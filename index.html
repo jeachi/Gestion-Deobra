@@ -5904,7 +5904,7 @@ function setNota(filaId, key, valor){
   reg[key] = valor;
   guardarAsistenciaMes(mesActual);
 }
-function asignarTrabajadorAFila(filaTempId, trabajadorId){
+function asignarTrabajadorAFila(filaTempId, trabajadorId, diaForzado){
   if(!trabajadorId) return;
   const data = asistenciaCache[mesActual];
   const reg = data[filaTempId] || {obra:"",days:{},notaQ1:"",notaQ2:""};
@@ -5919,6 +5919,11 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId){
   const filtroEl = document.getElementById("asis-filtro-obra");
   const filtroActivo = filtroEl ? filtroEl.value : "";
   const diasNuevos = Object.keys(reg.days||{});
+  // Desde la Carga por día se pasa el día que se está viendo (diaForzado) aunque todavía no se
+  // haya tipeado ningún valor ahí -- si no, elegir a alguien de otra obra marcaba el préstamo con
+  // una lista de días vacía (nada tipeado todavía), filasParaMes() lo excluía al toque por no
+  // coincidir con el filtro, y la fila desaparecía antes de poder escribirle el valor del día.
+  if(diaForzado!==undefined && diaForzado!==null && !diasNuevos.includes(String(diaForzado))) diasNuevos.push(String(diaForzado));
   // Préstamo: si ya hay una obra cargada este mes para este trabajador y es DISTINTA a la que se
   // está viendo ahora (filtro activo), es alguien que volvió un día puntual a esta obra -- se
   // marcan SOLO los días recién tipeados en la fila extra como "de esta obra" (diasObra), sin
@@ -5936,7 +5941,25 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId){
   guardarAsistenciaMes(mesActual);
   renderAsistencia();
   renderVistaDia();
-  if(esPrestamo) showToast(`✓ Cargado como préstamo a esta obra -- el resto del mes de ${trabajadores.find(t=>t.id===trabajadorId)?.nombre||"esta persona"} sigue en ${existente.obra}`);
+  if(esPrestamo) showToast(`✓ ${trabajadores.find(t=>t.id===trabajadorId)?.nombre||"Esta persona"} queda como préstamo a esta obra -- el resto del mes sigue en ${existente.obra}`);
+}
+// Desde la Carga por día, el campo de "elegir trabajador" de una fila nueva acepta texto libre --
+// si coincide con alguien ya cargado (sin importar mayúsculas/espacios) se usa ese, y si no, se da
+// de alta de una sola vez (sin tener que ir primero a la pestaña Trabajadores) para no frenar la
+// carga de asistencia de alguien que todavía no está en el listado.
+async function asignarOCrearTrabajadorAFila(filaId, nombreTexto, dia){
+  const nombre = (nombreTexto||"").trim();
+  if(!nombre) return;
+  const existente = trabajadores.find(t=>t.nombre.trim().toLowerCase()===nombre.toLowerCase());
+  if(existente){
+    asignarTrabajadorAFila(filaId, existente.id, dia);
+    return;
+  }
+  const filtroEl = document.getElementById("asis-filtro-obra");
+  const filtroActivo = filtroEl ? filtroEl.value : "";
+  await agregarTrabajadorConfirmado(nombre, "", filtroActivo || obraPredeterminada || "");
+  const nuevo = trabajadores.find(t=>t.nombre.trim().toLowerCase()===nombre.toLowerCase());
+  if(nuevo) asignarTrabajadorAFila(filaId, nuevo.id, dia);
 }
 function agregarFilaAsistencia(){
   filasExtra++;
@@ -6065,7 +6088,10 @@ function renderVistaDia(){
       <span>🌧️ Clima marcó que no se trabajó en ${obrasLluviaHoy.map(esc).join(", ")} este día</span>
       <button type="button" onclick="aplicarLluviaClimaDia()" style="background:#3B82F6;color:#fff;border:none;border-radius:7px;padding:6px 10px;font-size:11px;font-weight:800;">Marcar "LL" en los vacíos</button>
     </div>` : "";
-  let html = avisoFaltas + avisoLluvia + `<div class="dia-header-banner ${finde?'weekend':''}"><span>${nombreFecha}${finde?' · Fin de semana':''}</span><span>${filas.length} persona(s)</span></div>`;
+  // Datalist compartido por todas las filas sin trabajador asignado todavía -- sugiere los nombres
+  // ya cargados (para elegir rápido) pero el campo acepta cualquier otro nombre escrito a mano.
+  const datalistNombres = `<datalist id="lista-dia-nombres-trabajadores">${trabajadores.map(tt=>`<option value="${esc(tt.nombre)}">`).join("")}</datalist>`;
+  let html = datalistNombres + avisoFaltas + avisoLluvia + `<div class="dia-header-banner ${finde?'weekend':''}"><span>${nombreFecha}${finde?' · Fin de semana':''}</span><span>${filas.length} persona(s)</span></div>`;
   html += filas.map(f=>{
     const t = f.trabajador;
     const reg = data[f.id] || {obra:(t?t.obra:""), days:{}, notaQ1:"", notaQ2:""};
@@ -6075,13 +6101,14 @@ function renderVistaDia(){
     const cls = claseCodigo(val);
     const esSereno = t && (t.categoria||"").toLowerCase().includes("sereno");
     // La fila recién creada con "Agregar trabajador prestado" (sin trabajador elegido todavía)
-    // lleva una "×" al lado para sacarla de encima sin tener que ir a la Grilla completa -- antes,
-    // si te arrepentías o la agregabas de más, no había forma de borrarla desde la Carga por día.
+    // es un campo de TEXTO LIBRE, no un <select> -- con el datalist de arriba sugiere los nombres
+    // ya cargados para elegir rápido, pero también se puede escribir el nombre de alguien que
+    // todavía no está en el listado (se da de alta de una sola vez, sin ir antes a Trabajadores).
+    // Al lado lleva una "×" para sacarla de encima sin tener que ir a la Grilla completa.
     const nombreHtml = t ? esc(t.nombre) : `<div style="display:flex;align-items:center;gap:6px;">
-        <select onchange="asignarTrabajadorAFila('${f.id}', this.value)" style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;flex:1;min-width:0;">
-          <option value="">— elegir trabajador —</option>
-          ${trabajadores.map(tt=>`<option value="${tt.id}">${esc(tt.nombre)}</option>`).join("")}
-        </select>
+        <input type="text" list="lista-dia-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
+          onchange="asignarOCrearTrabajadorAFila('${f.id}', this.value, ${diaS})" autocomplete="off"
+          style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;flex:1;min-width:0;">
         <button type="button" onclick="quitarFila('${f.id}')" title="Quitar esta fila" style="flex-shrink:0;width:26px;height:26px;border-radius:50%;border:1px solid var(--borde);background:#fff;color:#B42318;font-weight:800;font-size:14px;line-height:1;">×</button>
       </div>`;
     // Serenos solo trabajan por turno (día/noche) — no tiene sentido ofrecerles horas numéricas
