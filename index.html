@@ -5934,13 +5934,23 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId, diaForzado){
   // una lista de días vacía (nada tipeado todavía), filasParaMes() lo excluía al toque por no
   // coincidir con el filtro, y la fila desaparecía antes de poder escribirle el valor del día.
   if(diaForzado!==undefined && diaForzado!==null && !diasNuevos.includes(String(diaForzado))) diasNuevos.push(String(diaForzado));
-  // Préstamo: si ya hay una obra cargada este mes para este trabajador y es DISTINTA a la que se
-  // está viendo ahora (filtro activo), es alguien que volvió un día puntual a esta obra -- se
-  // marcan SOLO los días recién tipeados en la fila extra como "de esta obra" (diasObra), sin
+  // Préstamo: si ya hay una obra cargada este mes para este trabajador (existente.obra) o, si
+  // todavía no tocó nada este mes bajo este filtro (el caso más común -- nadie renderizó su fila
+  // antes con esta obra puesta), su obra ACTUAL de la ficha (t.obra), y esa obra es DISTINTA a la
+  // que se está viendo ahora (filtro activo), es alguien que volvió un día puntual a esta obra --
+  // se marcan SOLO los días recién tipeados en la fila extra como "de esta obra" (diasObra), sin
   // pisar la obra del resto del mes ni los días que ya tenía cargados en la obra de base.
-  const esPrestamo = !!(filtroActivo && existente.obra && existente.obra!==filtroActivo);
+  // OJO: antes se miraba SOLO existente.obra -- si nadie había tocado su asistencia este mes bajo
+  // este filtro todavía (lo más común, justo el caso de "lo elijo recién ahora"), existente.obra
+  // venía vacío y esto nunca se marcaba como préstamo por más que la persona fuera, de verdad, de
+  // otra obra: no aparecía el aviso "Trabajador prestado", no tenía la "×", y encima le pisaba la
+  // obra del mes entero con la del filtro (en vez de solo ese día).
+  const trabajadorDeLaFila = trabajadores.find(tt=>tt.id===trabajadorId);
+  const obraBaseDeEsteMes = existente.obra || (trabajadorDeLaFila ? trabajadorDeLaFila.obra : "") || "";
+  const esPrestamo = !!(filtroActivo && obraBaseDeEsteMes && obraBaseDeEsteMes!==filtroActivo);
   if(esPrestamo){
     diasNuevos.forEach(d=>{ existente.diasObra[d] = filtroActivo; });
+    if(!existente.obra) existente.obra = obraBaseDeEsteMes;
   }else if(!existente.obra){
     existente.obra = reg.obra || filtroActivo || "";
   }
@@ -5951,7 +5961,7 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId, diaForzado){
   guardarAsistenciaMes(mesActual);
   renderAsistencia();
   renderVistaDia();
-  if(esPrestamo) showToast(`✓ ${trabajadores.find(t=>t.id===trabajadorId)?.nombre||"Esta persona"} queda como préstamo a esta obra -- el resto del mes sigue en ${existente.obra}`);
+  if(esPrestamo) showToast(`✓ ${trabajadorDeLaFila?trabajadorDeLaFila.nombre:"Esta persona"} queda como préstamo a esta obra -- el resto del mes sigue en ${existente.obra}`);
 }
 // Desde la Carga por día, el campo de "elegir trabajador" de una fila nueva acepta texto libre --
 // si coincide con alguien ya cargado (sin importar mayúsculas/espacios) se usa ese, y si no, se da
