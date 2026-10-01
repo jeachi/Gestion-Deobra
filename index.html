@@ -5957,6 +5957,11 @@ function desactivarPrestamoDia(filaId, dia){
 }
 function quitarFila(filaId){
   delete asistenciaCache[mesActual][filaId];
+  // Las filas "extra" (agregarFilaAsistencia) no tienen identidad propia más allá de cuántas hay --
+  // filasParaMes() siempre genera "extra_0".."extra_(filasExtra-1)". Sin bajar el contador acá, una
+  // fila extra recién creada (todavía sin trabajador elegido) no se iba de la lista al tocar "×":
+  // el siguiente render volvía a pedir la misma cantidad de filas extra y la recreaba en blanco.
+  if(String(filaId).startsWith("extra_") && filasExtra>0) filasExtra--;
   guardarAsistenciaMes(mesActual);
   renderAsistencia();
   renderVistaDia();
@@ -6069,10 +6074,16 @@ function renderVistaDia(){
     const val = reg.days[diaS] || "";
     const cls = claseCodigo(val);
     const esSereno = t && (t.categoria||"").toLowerCase().includes("sereno");
-    const nombreHtml = t ? esc(t.nombre) : `<select onchange="asignarTrabajadorAFila('${f.id}', this.value)" style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;width:100%;">
-        <option value="">— elegir trabajador —</option>
-        ${trabajadores.map(tt=>`<option value="${tt.id}">${esc(tt.nombre)}</option>`).join("")}
-      </select>`;
+    // La fila recién creada con "Agregar trabajador prestado" (sin trabajador elegido todavía)
+    // lleva una "×" al lado para sacarla de encima sin tener que ir a la Grilla completa -- antes,
+    // si te arrepentías o la agregabas de más, no había forma de borrarla desde la Carga por día.
+    const nombreHtml = t ? esc(t.nombre) : `<div style="display:flex;align-items:center;gap:6px;">
+        <select onchange="asignarTrabajadorAFila('${f.id}', this.value)" style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;flex:1;min-width:0;">
+          <option value="">— elegir trabajador —</option>
+          ${trabajadores.map(tt=>`<option value="${tt.id}">${esc(tt.nombre)}</option>`).join("")}
+        </select>
+        <button type="button" onclick="quitarFila('${f.id}')" title="Quitar esta fila" style="flex-shrink:0;width:26px;height:26px;border-radius:50%;border:1px solid var(--borde);background:#fff;color:#B42318;font-weight:800;font-size:14px;line-height:1;">×</button>
+      </div>`;
     // Serenos solo trabajan por turno (día/noche) — no tiene sentido ofrecerles horas numéricas
     // ni feriado/lluvia como al resto, así que su fila de atajos queda más corta.
     const chips = esSereno
