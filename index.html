@@ -9398,7 +9398,14 @@ async function agregarAvisosDeEstaSemana(estaSemana){
   const presuVisible = obraPresu && obrasActivas().includes(obraPresu) && (!dashboardObraFiltro || obraPresu===dashboardObraFiltro);
   if(presupuestoItems && presupuestoItems.length>0 && presuVisible){
     const n = mesActualPresupuesto();
-    const yaGenerado = (presupuestoItems[0].historialMeses||[]).some(m=>m.n===n && (m.enElMes>0 || m.acumulado>0));
+    // Antes miraba SOLO presupuestoItems[0] -- si ese ítem puntual ya estaba al 100% (no recibe
+    // más entradas nunca más), el aviso quedaba para siempre aunque el resto de los ~150 ítems sí
+    // se hubiera cargado ese mes; y al revés, si solo ESE ítem tenía una carga suelta del mes, el
+    // aviso desaparecía sin que el mes estuviera realmente cargado. Ahora se exige que TODOS los
+    // ítems tengan ya su entrada de este mes (o que ya estén al 100%, esos no reciben más entradas).
+    const yaGenerado = presupuestoItems.every(it=>
+      (it.historialMeses||[]).some(m=>m.n===n && (m.enElMes>0 || m.acumulado>0)) || ultimoMesConDatos(it).acumulado>=1
+    );
     if(!yaGenerado){
       estaSemana.push({ico:"📊", texto:`Mes ${n} del Presupuesto sin cargar todavía${!dashboardObraFiltro?` (${obraPresu})`:""}`, detalle:"Revisalo antes de que se acumule con el que sigue", view:"presupuesto"});
     }
@@ -15374,12 +15381,21 @@ async function onExcelPresupuestoSeleccionado(input){
       return isNaN(n) ? 0 : n;
     };
     let coeficiente = 1;
+    let coeficienteEncontrado = false;
     for(let r=0; r<8; r++){
       const f = fila(r);
       for(let c=0; c<f.length; c++){
-        if(String(f[c]||"").toUpperCase().includes("COEFICIENTE")) coeficiente = num(f[c+1]) || 1;
+        if(String(f[c]||"").toUpperCase().includes("COEFICIENTE")){
+          coeficienteEncontrado = true;
+          coeficiente = num(f[c+1]) || 1;
+        }
       }
     }
+    // Si no se encontró la celda (o no se pudo leer como número), coeficiente queda en 1 igual --
+    // pero SIN avisar, eso quedaba guardado como si fuera un coeficiente "vigente" real de verdad
+    // en 1.000 y no "no se encontró ninguno todavía", algo bien distinto para una obra que de
+    // verdad tiene redeterminación de precios.
+    if(!coeficienteEncontrado) showToast("⚠ No encontré el coeficiente en el Excel -- quedó en 1.000, revisalo en ⚙️ Coeficiente");
     let filaMeses = -1;
     for(let r=0; r<10; r++){
       if(fila(r).some(c=>/^MES\s*1$/i.test(String(c||"").trim()))){ filaMeses = r; break; }
