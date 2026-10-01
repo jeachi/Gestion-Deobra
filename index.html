@@ -2833,6 +2833,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <button class="btn btn-outline btn-sm" onclick="moverDia(-1)">‹ Anterior</button>
         <button class="btn btn-outline btn-sm" onclick="moverDia(1)">Siguiente ›</button>
         <button class="btn btn-outline btn-sm" onclick="abrirCopiarSemanaAnterior()">📋 Copiar semana anterior</button>
+        <button class="btn btn-outline btn-sm" onclick="agregarFilaAsistencia()">🔁 Agregar trabajador prestado</button>
       </div>
       <div class="legend-inline">
         <span class="legend-chip"><i style="background:var(--feriado)"></i>F feriado</span>
@@ -5942,6 +5943,18 @@ function agregarFilaAsistencia(){
   renderAsistencia();
   renderVistaDia();
 }
+// Saca la marca de préstamo de UN día puntual (reg.diasObra), sin tocar el valor ya cargado ese
+// día ni el resto del mes -- el día vuelve a contarle a la obra de base del trabajador. Si se está
+// filtrando la vista por la obra que lo había recibido, la fila directamente deja de aparecer.
+function desactivarPrestamoDia(filaId, dia){
+  const reg = asistenciaCache[mesActual] && asistenciaCache[mesActual][filaId];
+  if(!reg || !reg.diasObra || !reg.diasObra[dia]) return;
+  delete reg.diasObra[dia];
+  guardarAsistenciaMes(mesActual);
+  renderAsistencia();
+  renderVistaDia();
+  showToast("Préstamo desactivado para ese día");
+}
 function quitarFila(filaId){
   delete asistenciaCache[mesActual][filaId];
   guardarAsistenciaMes(mesActual);
@@ -6065,12 +6078,22 @@ function renderVistaDia(){
     const chips = esSereno
       ? [["PN","code-PDPN"],["PD","code-PDPN"],["A","code-A"],["E","code-E"]]
       : [["9","" ],["8",""],["F","code-F"],["V","code-V"],["E","code-E"],["A","code-A"],["LL","code-LL"]];
+    // Si este día puntual quedó marcado como préstamo (reg.diasObra, ver asignarTrabajadorAFila),
+    // se muestra un aviso con un botón para desactivarlo sin salir de la vista por día -- al
+    // desactivarlo, el día deja de contarle a la obra que lo recibió (vuelve a su obra de base) y,
+    // si se está filtrando por esa obra, la fila directamente deja de aparecer.
+    const obraPrestamoHoy = reg.diasObra && reg.diasObra[diaS];
+    const avisoPrestamo = obraPrestamoHoy ? `<div class="dia-meta" style="color:#8B5CF6;font-weight:700;">
+        🔁 Préstamo a ${esc(obraPrestamoHoy)} este día
+        <button type="button" onclick="desactivarPrestamoDia('${f.id}',${diaS})" style="margin-left:6px;background:none;border:1px solid #8B5CF6;color:#8B5CF6;border-radius:6px;padding:2px 7px;font-size:10.5px;font-weight:800;">Desactivar</button>
+      </div>` : "";
     return `<div class="dia-fila-v2 ${baja?'fila-baja':''} ${finde?'weekend':''}">
       <div class="dia-fila-top">
         <div class="avatar-mini ${esSereno?'sereno':''}"></div>
         <div class="dia-info">
           <div class="dia-nombre">${nombreHtml}</div>
           <div class="dia-meta">${t?esc(t.categoria||""):""}${t&&t.obra?" · "+esc(t.obra):""}${baja?" · BAJA":""}${t&&val===""&&climaNoLaborable(inp.value,reg.obra||t.obra)?" · 🌧️ Lluvia (Clima)":""}</div>
+          ${avisoPrestamo}
         </div>
         <input class="dia-valor ${cls}" id="dia-input-${f.id}" value="${esc(String(val))}" ${baja?"disabled":""}
           onchange="setDia('${f.id}',${diaS},this.value); actualizarClaseDiaInput('${f.id}'); enfocarSiguienteDia('${f.id}');"
