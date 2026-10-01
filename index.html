@@ -5909,6 +5909,16 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId, diaForzado){
   const data = asistenciaCache[mesActual];
   const reg = data[filaTempId] || {obra:"",days:{},notaQ1:"",notaQ2:""};
   delete data[filaTempId];
+  // Al asignar alguien a la ÚLTIMA fila extra agregada (la más reciente, "Agregar trabajador
+  // prestado"), se baja el cupo -- si no, esa misma fila se volvía a crear en blanco al toque en
+  // el siguiente render (filasParaMes() siempre arma "extra_0".."extra_(filasExtra-1)"), dejando
+  // una celda vacía con el campo de nombre colgada después de haber elegido a alguien. Si hay más
+  // de una fila extra pendiente a la vez y se asigna una que NO es la última, se deja el cupo
+  // como está -- bajarlo ahí correría los índices de las otras filas extra todavía sin usar.
+  if(String(filaTempId).startsWith("extra_")){
+    const idx = parseInt(String(filaTempId).split("_")[1], 10);
+    if(idx === filasExtra-1 && filasExtra>0) filasExtra--;
+  }
   // OJO: cada trabajador visible en el mes ya tiene su propia entrada auto-creada al renderizar
   // (aunque esté vacía) -- un objeto vacío sigue siendo "truthy" en JS, así que "data[trabajadorId]
   // || reg" siempre se quedaba con esa entrada vieja (vacía) y descartaba EN SILENCIO lo recién
