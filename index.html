@@ -15279,9 +15279,20 @@ async function eliminarPresupuestoObra(){
   if(!obra) return;
   presupuestoItems = [];
   presupuestoCoeficiente = {valor:1, fecha:null};
+  // Faltaba borrar también la config (monto del contrato, mes actual elegido) y la copia del Excel
+  // original -- sin esto, "Eliminar presupuesto y volver a importar" dejaba esos dos datos vivos en
+  // Firestore, y la reimportación los volvía a traer en silencio mezclados con los ítems nuevos
+  // (el monto del contrato y el "Mes actual" quedaban comparando/apuntando a la versión borrada).
+  presupuestoMontoContrato = 0;
+  presupuestoMesActual = null;
+  presupuestoMesesColsExcel = [];
+  presupuestoExcelOriginalBase64 = null;
+  presupuestoExcelOriginalHoja = null;
   try{
     await window.storage.delete(`presupuesto_items_${obra}`, true);
     await window.storage.delete(`presupuesto_coeficiente_${obra}`, true);
+    await window.storage.delete(`presupuesto_config_${obra}`, true);
+    await window.storage.delete(`presupuesto_excel_original_${obra}`, true);
   }catch(e){}
   showToast("✓ Presupuesto eliminado");
   prepararVistaPresupuesto();
@@ -15356,13 +15367,19 @@ async function onExcelPresupuestoSeleccionado(input){
         }
         continue;
       }
+      // El Excel de "Cómputo y Presupuesto" suele traer un bloque de 4 columnas por CADA mes
+      // previsto del CONTRATO completo (ej. 24 meses), no solo los que ya tienen datos reales --
+      // los meses futuros vienen con las 4 celdas vacías/0. Antes se creaba una entrada en
+      // historialMeses por cada columna de mes detectada, aunque estuviera toda en blanco: eso
+      // inflaba maxMesCargado()/mesActualPresupuesto() al último mes de la plantilla (ej. 24) en
+      // vez del mes real en curso (ej. 2), apenas terminaba de importarse.
       const historialMeses = mesesCols.map((colIdx,mi)=>({
         n: mi+1,
         anterior: num(f[colIdx], true),
         enElMes: num(f[colIdx+1], true),
         acumulado: num(f[colIdx+2], true),
         monto: num(f[colIdx+3])
-      }));
+      })).filter(m=>m.anterior>0 || m.enElMes>0 || m.acumulado>0 || m.monto>0);
       items.push({
         rubro: rubroActual, rubroNombre: rubroNombreActual,
         nombre: String(d).trim(), unidad: String(e).trim(),
@@ -15556,7 +15573,11 @@ async function confirmarNuevoMesPresupuesto(mesN){
     const it = presupuestoItems[idx];
     if(!it) return;
     const anterior = ultimoMesConDatos(it).acumulado;
-    const enElMes = valor/100;
+    // El input tiene un "max" en el HTML (100 menos lo que ya lleva acumulado), pero eso es solo
+    // una sugerencia visual -- si se tipea un valor más alto igual, antes "acumulado" quedaba bien
+    // clampeado a 100% pero "enElMes" (y el monto que se certifica ese mes) se guardaba SIN
+    // clampear, sobreestimando cuánto se certificó realmente este mes.
+    const enElMes = Math.min(valor/100, Math.max(0, 1-anterior));
     const acumulado = Math.min(1, anterior+enElMes);
     it.historialMeses = it.historialMeses || [];
     it.historialMeses.push({n:mesN, anterior, enElMes, acumulado, monto: enElMes*it.precioConCoef});
