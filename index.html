@@ -18102,7 +18102,15 @@ function dibujarGrillaNominaPaginada(pdf, pagina, tabla, factor, orient, PX_A_PT
       pdf.setFontSize(6.5*factor);
       const col = parseColor(cs.color) || [0,0,0];
       pdf.setTextColor(col[0],col[1],col[2]);
-      const lineas = pdf.splitTextToSize(texto.replace(/\s+/g," ").trim(), Math.max(4,p.w-3*factor));
+      // El encabezado de cada día (headerDia) viene armado como "abrev\nDD/MM" para mostrarse en
+      // DOS líneas (día de semana arriba, fecha abajo) -- sin este chequeo, "\s" en el reemplazo de
+      // abajo también matchea el salto de línea y lo aplastaba en una sola línea "abrev DD/MM".
+      let lineas;
+      if(texto.includes("\n")){
+        lineas = texto.split("\n").map(t=>t.replace(/\s+/g," ").trim()).filter(Boolean);
+      }else{
+        lineas = pdf.splitTextToSize(texto.replace(/\s+/g," ").trim(), Math.max(4,p.w-3*factor));
+      }
       const lh = 6.5*factor*1.15;
       let ty = p.y + p.h/2 - (lineas.length-1)*lh/2 + 6.5*factor*0.35;
       lineas.forEach(l=>{
@@ -18159,8 +18167,21 @@ function dibujarGrillaNominaPaginada(pdf, pagina, tabla, factor, orient, PX_A_PT
         const r = img.getBoundingClientRect();
         try{ pdf.addImage(img.src, "PNG", (r.left-rectTabla.left)*PX+MARGEN, y, r.width*PX, r.height*PX); }catch(e){}
       }
-      if(titulo){ pdf.setFont("helvetica","bold"); pdf.setFontSize(13*factor); pdf.setTextColor(10,37,64); pdf.text(titulo.textContent.trim(), MARGEN+130*PX, y+10*factor); }
-      if(sub){ pdf.setFont("helvetica","normal"); pdf.setFontSize(8*factor); pdf.setTextColor(75,85,99); pdf.text(sub.textContent.trim(), MARGEN+130*PX, y+22*factor); }
+      // El título/subtítulo arrancaban en una posición X fija a ojo (130px de ancho de logo
+      // supuesto) en vez de medir dónde está de verdad el título en pantalla -- el logo real mide
+      // bastante más que eso, así que el texto terminaba empezando ADENTRO del logo ("se monta en
+      // el logo"). Ahora se mide la posición real del título/subtítulo, igual que se hace con
+      // cualquier otra celda de la hoja.
+      if(titulo){
+        const rt = titulo.getBoundingClientRect();
+        pdf.setFont("helvetica","bold"); pdf.setFontSize(13*factor); pdf.setTextColor(10,37,64);
+        pdf.text(titulo.textContent.trim(), (rt.left-rectTabla.left)*PX+MARGEN, y+10*factor);
+      }
+      if(sub){
+        const rs = sub.getBoundingClientRect();
+        pdf.setFont("helvetica","normal"); pdf.setFontSize(8*factor); pdf.setTextColor(75,85,99);
+        pdf.text(sub.textContent.trim(), (rs.left-rectTabla.left)*PX+MARGEN, y+22*factor);
+      }
       y += Math.max(img ? img.getBoundingClientRect().height*PX : 0, 32*factor) + 4;
     }
     dibujarFila(theadCeldas, theadTop, y);
