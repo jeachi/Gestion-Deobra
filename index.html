@@ -6128,14 +6128,24 @@ function renderVistaDia(){
       ? [["PN","code-PDPN"],["PD","code-PDPN"],["A","code-A"],["E","code-E"]]
       : [["9","" ],["8",""],["F","code-F"],["V","code-V"],["E","code-E"],["A","code-A"],["LL","code-LL"]];
     // Si este día puntual quedó marcado como préstamo (reg.diasObra, ver asignarTrabajadorAFila),
-    // se muestra un aviso con un botón para desactivarlo sin salir de la vista por día -- al
-    // desactivarlo, el día deja de contarle a la obra que lo recibió (vuelve a su obra de base) y,
-    // si se está filtrando por esa obra, la fila directamente deja de aparecer.
+    // se muestra una línea aparte "Trabajador prestado" con un botón para desactivarlo sin salir
+    // de la vista por día -- al desactivarlo, el día deja de contarle a la obra que lo recibió
+    // (vuelve a su obra de base) y, si se está filtrando por esa obra, la fila deja de aparecer.
     const obraPrestamoHoy = reg.diasObra && reg.diasObra[diaS];
     const avisoPrestamo = obraPrestamoHoy ? `<div class="dia-meta" style="color:#8B5CF6;font-weight:700;">
-        🔁 Préstamo a ${esc(obraPrestamoHoy)} este día
+        🔁 Trabajador prestado — hoy cuenta para ${esc(obraPrestamoHoy)}
         <button type="button" onclick="desactivarPrestamoDia('${f.id}',${diaS})" style="margin-left:6px;background:none;border:1px solid #8B5CF6;color:#8B5CF6;border-radius:6px;padding:2px 7px;font-size:10.5px;font-weight:800;">Desactivar</button>
       </div>` : "";
+    // La "×" para sacar la fila del todo (sin ir a la Grilla completa) solo tiene sentido acá en
+    // dos casos: 1) la fila todavía no tiene a nadie elegido (f.trabajador null, recién agregada
+    // con "Agregar trabajador prestado"), o 2) ya tiene a alguien pero quedó marcado como préstamo
+    // hoy. Para el resto del plantel (gente de la obra de toda la vida) no se ofrece acá -- borra
+    // asistencia real del mes y el riesgo de tocarla sin querer en la carga diaria no vale la pena;
+    // esa gente se sigue sacando desde la Grilla completa como siempre.
+    const puedeQuitarseDesdeAca = !t || obraPrestamoHoy;
+    const botonQuitar = puedeQuitarseDesdeAca
+      ? `<button type="button" onclick="quitarFila('${f.id}')" title="Quitar esta fila del mes" style="flex-shrink:0;width:26px;height:26px;border-radius:50%;border:1px solid var(--borde);background:#fff;color:#B42318;font-weight:800;font-size:14px;line-height:1;">×</button>`
+      : "";
     return `<div class="dia-fila-v2 ${baja?'fila-baja':''} ${finde?'weekend':''}">
       <div class="dia-fila-top">
         <div class="avatar-mini ${esSereno?'sereno':''}"></div>
@@ -6147,7 +6157,7 @@ function renderVistaDia(){
         <input class="dia-valor ${cls}" id="dia-input-${f.id}" value="${esc(String(val))}" ${baja?"disabled":""}
           onchange="setDia('${f.id}',${diaS},this.value); actualizarClaseDiaInput('${f.id}'); enfocarSiguienteDia('${f.id}');"
           onkeydown="if(event.key==='Enter'){ this.blur(); }">
-        <button type="button" onclick="quitarFila('${f.id}')" title="Quitar esta fila del mes" style="flex-shrink:0;width:26px;height:26px;border-radius:50%;border:1px solid var(--borde);background:#fff;color:#B42318;font-weight:800;font-size:14px;line-height:1;">×</button>
+        ${botonQuitar}
       </div>
       ${baja?"":`<div class="chips-rapidos-dia">
         ${chips.map(([lbl,c])=>`<div class="chip-rapido-dia" onclick="aplicarChipDia('${f.id}',${diaS},'${lbl}')">${lbl}</div>`).join("")}
