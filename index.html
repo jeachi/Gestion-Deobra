@@ -2810,7 +2810,12 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <label>Mes</label>
           <input type="month" id="sel-mes">
         </div>
+        <div class="field">
+          <label>Obra</label>
+          <select class="filtro-obra-input" id="asis-filtro-obra" onchange="actualizarAyudaFiltroObraAsistencia(); renderAsistencia(); renderVistaDia();"><option value="">Todas las obras</option></select>
+        </div>
       </div>
+      <p class="helper" id="asis-filtro-obra-ayuda" style="display:none;">Mostrando solo el personal de esta obra. Si alguien transferido a otra obra vuelve un día puntual (préstamo), usá "+ Agregar fila" y elegilo del listado -- va a quedar cargado para esta obra sin tocar el resto de su mes.</p>
       <div class="quincena-toggle" id="subtabs-asistencia">
         <button id="btn-vista-dia" class="active" onclick="cambiarVista('dia')"><span class="ico-subtab" data-subtab="asis-dia" data-emoji="📅">📅</span> Por día (fácil)</button>
         <button id="btn-vista-grilla" onclick="cambiarVista('grilla')"><span class="ico-subtab" data-subtab="asis-grilla" data-emoji="🗂">🗂</span> Grilla completa</button>
@@ -5353,6 +5358,7 @@ async function agregarTrabajadorConfirmado(nombre, categoria, obra){
 function actualizarTrabajador(id, campo, valor){
   const t = trabajadores.find(x=>x.id===id);
   if(!t) return;
+  const obraAnterior = t.obra;
   t[campo] = valor;
   // Al reactivar (Baja -> Activo) hay que limpiar fechaBaja -- si no, queda la fecha de la baja
   // VIEJA cargada (el campo está deshabilitado mientras está Activo, así que nadie la puede borrar
@@ -5361,7 +5367,15 @@ function actualizarTrabajador(id, campo, valor){
   // la fila -- esconde de la grilla/PDF/Excel los meses en el medio donde en realidad trabajó.
   if(campo==="estado" && valor==="Activo") t.fechaBaja = "";
   guardarTrabajadores();
-  registrarActividad(`modificó "${campo}" de "${esc(t.nombre)}" en la nómina`);
+  // Cambiar la obra es una TRANSFERENCIA -- queda un registro más claro que el genérico de abajo.
+  // No reescribe nada de lo ya cargado en Asistencia: cada mes guarda su propia obra "congelada"
+  // (ver filasParaMes/reg.obra), así que los meses anteriores a la transferencia no se ven
+  // afectados, y de ahí en más deja de aparecer para quien filtre por la obra vieja en Asistencia.
+  if(campo==="obra" && obraAnterior && valor && obraAnterior!==valor){
+    registrarActividad(`transfirió a "${esc(t.nombre)}" de "${esc(obraAnterior)}" a "${esc(valor)}"`);
+  }else{
+    registrarActividad(`modificó "${campo}" de "${esc(t.nombre)}" en la nómina`);
+  }
 }
 async function eliminarTrabajador(id){
   const t = trabajadores.find(x=>x.id===id);
@@ -5592,8 +5606,15 @@ function totalHorasRango(dias, desde, hasta){
 }
 
 /* ---------------- Render grilla de asistencia ---------------- */
+function actualizarAyudaFiltroObraAsistencia(){
+  const filtroEl = document.getElementById("asis-filtro-obra");
+  const ayuda = document.getElementById("asis-filtro-obra-ayuda");
+  if(filtroEl && ayuda) ayuda.style.display = filtroEl.value ? "block" : "none";
+}
 function filasParaMes(mes){
   const data = asistenciaCache[mes] || {};
+  const filtroEl = document.getElementById("asis-filtro-obra");
+  const filtroObra = filtroEl ? filtroEl.value : "";
   // Un trabajador dado de baja sigue apareciendo (con sus horas intactas) en los meses en que
   // todavía trabajaba — pero deja de aparecer solo, sin tocar nada, a partir del mes siguiente a
   // su baja. Así no hace falta "Eliminar" a nadie para dejar de verlo en los meses nuevos (eso
@@ -5602,6 +5623,17 @@ function filasParaMes(mes){
     if(t.estado==="Baja" && t.fechaBaja){
       const mesBaja = t.fechaBaja.slice(0,7);
       if(mes > mesBaja) return false;
+    }
+    // Si hay un filtro de obra activo, solo se muestra a quien pertenezca a esa obra este mes
+    // (reg.obra, que puede haber sido corregido a mano y manda por sobre t.obra) -- un trabajador
+    // TRANSFERIDO a otra obra deja de aparecer acá de ahí en más. La excepción es un "préstamo": si
+    // volvió un día puntual a esta obra (marcado en reg.diasObra al usar "+ Agregar fila" con este
+    // mismo filtro activo), sigue apareciendo para poder seguir viendo/editando ese día cargado.
+    if(filtroObra){
+      const reg = data[t.id];
+      const obraDeEsteMes = (reg && reg.obra) || t.obra || "";
+      const tienePrestamoEnEstaObra = !!(reg && reg.diasObra && Object.values(reg.diasObra).includes(filtroObra));
+      if(obraDeEsteMes!==filtroObra && !tienePrestamoEnEstaObra) return false;
     }
     return true;
   });
@@ -5810,15 +5842,28 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId){
   // tipeado en la fila extra. Ahora se mezclan los días de las dos (los de la fila extra ganan si
   // hay choque, por ser la acción explícita que se acaba de confirmar).
   const existente = data[trabajadorId] || {obra:"",days:{},notaQ1:"",notaQ2:""};
-  data[trabajadorId] = {
-    obra: existente.obra || reg.obra || "",
-    days: {...(existente.days||{}), ...(reg.days||{})},
-    notaQ1: existente.notaQ1 || reg.notaQ1 || "",
-    notaQ2: existente.notaQ2 || reg.notaQ2 || "",
-  };
+  if(!existente.diasObra) existente.diasObra = {};
+  const filtroEl = document.getElementById("asis-filtro-obra");
+  const filtroActivo = filtroEl ? filtroEl.value : "";
+  const diasNuevos = Object.keys(reg.days||{});
+  // Préstamo: si ya hay una obra cargada este mes para este trabajador y es DISTINTA a la que se
+  // está viendo ahora (filtro activo), es alguien que volvió un día puntual a esta obra -- se
+  // marcan SOLO los días recién tipeados en la fila extra como "de esta obra" (diasObra), sin
+  // pisar la obra del resto del mes ni los días que ya tenía cargados en la obra de base.
+  const esPrestamo = !!(filtroActivo && existente.obra && existente.obra!==filtroActivo);
+  if(esPrestamo){
+    diasNuevos.forEach(d=>{ existente.diasObra[d] = filtroActivo; });
+  }else if(!existente.obra){
+    existente.obra = reg.obra || filtroActivo || "";
+  }
+  existente.days = {...(existente.days||{}), ...(reg.days||{})};
+  existente.notaQ1 = existente.notaQ1 || reg.notaQ1 || "";
+  existente.notaQ2 = existente.notaQ2 || reg.notaQ2 || "";
+  data[trabajadorId] = existente;
   guardarAsistenciaMes(mesActual);
   renderAsistencia();
   renderVistaDia();
+  if(esPrestamo) showToast(`✓ Cargado como préstamo a esta obra -- el resto del mes de ${trabajadores.find(t=>t.id===trabajadorId)?.nombre||"esta persona"} sigue en ${existente.obra}`);
 }
 function agregarFilaAsistencia(){
   filasExtra++;
@@ -12634,6 +12679,11 @@ function irA(view){
   if(view==="certificados") renderListaContratistas();
   if(view==="presupuesto") prepararVistaPresupuesto();
   if(view==="asistencia"){
+    const filtroAsis = document.getElementById("asis-filtro-obra");
+    const valorFiltroAsis = filtroAsis.value;
+    poblarSelectFiltroObras(filtroAsis);
+    filtroAsis.value = valorFiltroAsis;
+    actualizarAyudaFiltroObraAsistencia();
     cargarAsistenciaMes(mesActual).then(()=>{ renderAsistencia(); renderVistaDia(); });
   }
   if(view==="minutas") prepararVistaMinutas();
