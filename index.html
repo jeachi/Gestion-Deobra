@@ -17167,7 +17167,17 @@ async function generarMinutaPDF(){
   const numero = esEdicion ? minutasIndex.find(m=>m.id===id).numero : correlativoMinutaSiguiente;
   const minuta = {id, numero, obra, fecha, contenido, firmas, creadoPor: sesionActual?sesionActual.username:"", timestamp:new Date().toISOString()};
   nexoAvisoFlotante("guardando");
-  try{ await window.storage.set("minuta_"+id, JSON.stringify(minuta), true); }catch(e){ nexoAvisoFlotante("error", "No se pudo guardar la minuta ⚠"); return; }
+  let r;
+  try{ r = await window.storage.set("minuta_"+id, JSON.stringify(minuta), true); }catch(e){ nexoAvisoFlotante("error", "No se pudo guardar la minuta ⚠"); return; }
+  // window.storage.set nunca rechaza (ni siquiera si el documento no entra en Firestore por el
+  // límite de 1 MiB, algo que acá es un riesgo real con varias firmas dibujadas como imagen) -- solo
+  // encola en localStorage y devuelve {pendiente:true}. Sin este chequeo se mostraba "Minuta
+  // guardada ✓" igual, aunque jamás fuera a llegar a la nube (el reintento automático de esa cola
+  // vuelve a fallar para siempre con un documento que es demasiado grande).
+  if(r && r.pendiente){
+    nexoAvisoFlotante("error", "⚠ No se pudo subir la minuta a la nube (quedó pendiente) — si tiene muchas firmas dibujadas, puede ser demasiado pesada. Probá con menos firmas o revisá la conexión.");
+    return;
+  }
   if(esEdicion){
     const idx = minutasIndex.findIndex(m=>m.id===id);
     if(idx>-1) minutasIndex[idx] = {id, numero, obra, fecha};
