@@ -15206,6 +15206,17 @@ async function guardarPctInlinePresupuesto(inputEl){
   entrada.acumulado = nuevoAcum;
   entrada.enElMes = Math.max(0, nuevoAcum-anterior);
   entrada.monto = entrada.enElMes*it.precioConCoef;
+  // Si este ítem ya tenía meses POSTERIORES cargados, hay que reencadenar su "anterior"/"acumulado"
+  // a partir de este cambio -- mismo criterio que guardarAjustesMesPresupuesto/
+  // confirmarInspeccionPresupuesto, si no quedan con el "anterior" viejo (de antes de esta edición
+  // inline) para siempre.
+  let encadenado = nuevoAcum;
+  it.historialMeses.filter(m=>m.n>n).sort((a,b)=>a.n-b.n).forEach(m=>{
+    m.anterior = encadenado;
+    m.acumulado = Math.min(1, m.anterior + m.enElMes);
+    m.monto = m.enElMes*it.precioConCoef;
+    encadenado = m.acumulado;
+  });
   await guardarPresupuestoObra();
   actualizarResumenPresupuesto();
   renderListaPresupuesto();
