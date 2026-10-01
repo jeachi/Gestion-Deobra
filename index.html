@@ -5979,6 +5979,14 @@ function desactivarPrestamoDia(filaId, dia){
   showToast("Préstamo desactivado para ese día");
 }
 function quitarFila(filaId){
+  const reg = asistenciaCache[mesActual] && asistenciaCache[mesActual][filaId];
+  // Una fila "extra" recién creada, todavía sin ningún día tipeado, se saca al toque (no hay nada
+  // que perder). Cualquier otra -- un trabajador de verdad, o una fila extra a la que ya se le
+  // cargó algún día -- borra asistencia real de este mes, así que primero se confirma: ahora que
+  // la "×" está disponible también desde la Carga por día (antes solo estaba en la Grilla
+  // completa), es más fácil tocarla sin querer en medio de la carga diaria.
+  const esFilaVacia = String(filaId).startsWith("extra_") && (!reg || Object.values(reg.days||{}).every(v=>String(v||"").trim()===""));
+  if(!esFilaVacia && !confirm("¿Seguro que querés quitar esta fila? Se va a borrar toda la asistencia cargada este mes para esta persona.")) return;
   delete asistenciaCache[mesActual][filaId];
   // Las filas "extra" (agregarFilaAsistencia) no tienen identidad propia más allá de cuántas hay --
   // filasParaMes() siempre genera "extra_0".."extra_(filasExtra-1)". Sin bajar el contador acá, una
@@ -6104,13 +6112,16 @@ function renderVistaDia(){
     // es un campo de TEXTO LIBRE, no un <select> -- con el datalist de arriba sugiere los nombres
     // ya cargados para elegir rápido, pero también se puede escribir el nombre de alguien que
     // todavía no está en el listado (se da de alta de una sola vez, sin ir antes a Trabajadores).
-    // Al lado lleva una "×" para sacarla de encima sin tener que ir a la Grilla completa.
-    const nombreHtml = t ? esc(t.nombre) : `<div style="display:flex;align-items:center;gap:6px;">
-        <input type="text" list="lista-dia-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
+    // OJO: elegir una sugerencia del datalist con el mouse dispara "input" pero NO "change" hasta
+    // que el campo pierde el foco (comportamiento de los navegadores) -- quedaba la sensación de
+    // que "no aplicaba" porque había que tocar afuera para que surtiera efecto. Por eso además de
+    // "onchange" (cubre cuando se termina de escribir un nombre nuevo y se sale del campo) se
+    // chequea en cada tecleo ("oninput") si el texto ya coincide EXACTO con alguien del listado --
+    // si coincide, se aplica al toque, igual que si fuera un <select>.
+    const nombreHtml = t ? esc(t.nombre) : `<input type="text" list="lista-dia-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
+          oninput="if(trabajadores.some(tt=>tt.nombre.trim().toLowerCase()===this.value.trim().toLowerCase())) asignarOCrearTrabajadorAFila('${f.id}', this.value, ${diaS})"
           onchange="asignarOCrearTrabajadorAFila('${f.id}', this.value, ${diaS})" autocomplete="off"
-          style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;flex:1;min-width:0;">
-        <button type="button" onclick="quitarFila('${f.id}')" title="Quitar esta fila" style="flex-shrink:0;width:26px;height:26px;border-radius:50%;border:1px solid var(--borde);background:#fff;color:#B42318;font-weight:800;font-size:14px;line-height:1;">×</button>
-      </div>`;
+          style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;width:100%;">`;
     // Serenos solo trabajan por turno (día/noche) — no tiene sentido ofrecerles horas numéricas
     // ni feriado/lluvia como al resto, así que su fila de atajos queda más corta.
     const chips = esSereno
@@ -6136,6 +6147,7 @@ function renderVistaDia(){
         <input class="dia-valor ${cls}" id="dia-input-${f.id}" value="${esc(String(val))}" ${baja?"disabled":""}
           onchange="setDia('${f.id}',${diaS},this.value); actualizarClaseDiaInput('${f.id}'); enfocarSiguienteDia('${f.id}');"
           onkeydown="if(event.key==='Enter'){ this.blur(); }">
+        <button type="button" onclick="quitarFila('${f.id}')" title="Quitar esta fila del mes" style="flex-shrink:0;width:26px;height:26px;border-radius:50%;border:1px solid var(--borde);background:#fff;color:#B42318;font-weight:800;font-size:14px;line-height:1;">×</button>
       </div>
       ${baja?"":`<div class="chips-rapidos-dia">
         ${chips.map(([lbl,c])=>`<div class="chip-rapido-dia" onclick="aplicarChipDia('${f.id}',${diaS},'${lbl}')">${lbl}</div>`).join("")}
