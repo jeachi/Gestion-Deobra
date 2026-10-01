@@ -5266,6 +5266,7 @@ function renderSelectsCatalogo(){
   }
 }
 async function agregarCategoria(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const inp = document.getElementById("nueva-categoria");
   const val = inp.value.trim();
   if(!val){ return; }
@@ -5273,13 +5274,18 @@ async function agregarCategoria(){
   inp.value = "";
   await guardarCategorias();
   renderCatalogos();
+  registrarActividad(`agregó la categoría "${esc(val)}"`);
 }
 async function quitarCategoria(i){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const val = categorias[i];
   categorias.splice(i,1);
   await guardarCategorias();
   renderCatalogos();
+  registrarActividad(`eliminó la categoría "${esc(val)}"`);
 }
 async function agregarObra(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const inp = document.getElementById("nueva-obra");
   const val = inp.value.trim();
   if(!val){ return; }
@@ -5287,11 +5293,14 @@ async function agregarObra(){
   inp.value = "";
   await guardarObras();
   renderCatalogos();
+  registrarActividad(`agregó la obra "${esc(val)}"`);
 }
 async function quitarObra(i){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const o = obras[i];
   obras.splice(i,1);
   await guardarObras();
+  registrarActividad(`eliminó la obra "${esc(o)}"`);
   if(obrasFinalizadas.includes(o)){
     obrasFinalizadas = obrasFinalizadas.filter(x=>x!==o);
     await guardarObrasFinalizadas();
@@ -6383,6 +6392,7 @@ function renderEquivalencias(){
   `).join("") || `<span class="tiny">Sin equivalencias cargadas.</span>`;
 }
 async function agregarEquivalencia(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const material = document.getElementById("eq-material").value.trim();
   const unidadGrande = document.getElementById("eq-un-grande").value.trim();
   const cantChica = parseFloat(document.getElementById("eq-cant-chica").value);
@@ -6406,9 +6416,12 @@ async function agregarEquivalencia(){
   renderEquivalencias();
 }
 async function quitarEquivalencia(i){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const eq = equivalenciasMateriales[i];
   equivalenciasMateriales.splice(i,1);
   await guardarEquivalenciasIndex();
   renderEquivalencias();
+  if(eq) registrarActividad(`eliminó la equivalencia "1 ${esc(eq.unidadGrande)} de ${esc(eq.material)} = ${eq.cantChica} ${esc(eq.unidadChica)}"`);
 }
 // Busca una equivalencia por nombre de material + unidad grande (case-insensitive), para
 // convertir "2 pallets" a la unidad chica que se usa en el pedido.
@@ -6668,6 +6681,7 @@ async function generarReporteRecibidosPDF(){
   mostrarModalPDF(html, "portrait", `Materiales_Recibidos_${nombreArchivoSeguro(obraSel||"Todas")}.pdf`);
 }
 async function editarPedido(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const pedido = await cargarPedidoDetalle(id);
   if(!pedido){ showToast("No se pudo abrir el pedido"); return; }
   cambiarVistaPedidos("nuevo", pedido);
@@ -8287,6 +8301,7 @@ async function eliminarPlantillaPedido(id){
   abrirSelectorPlantillaPedido();
 }
 async function guardarPedido(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const obra = document.getElementById("np-obra").value;
   const rubro = document.getElementById("np-rubro").value;
   if(!obra || !rubro){ showToast("Elegí obra y rubro"); return; }
@@ -9071,6 +9086,7 @@ async function pegarRemito(){
   }
 }
 async function eliminarPedido(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const p = pedidosIndex.find(x=>x.id===pedidoAbiertoId);
   const numeroTxt = p ? numeroFormateado(p.numero) : "";
   pedidosIndex = pedidosIndex.filter(p=>p.id!==pedidoAbiertoId);
@@ -9759,14 +9775,23 @@ async function guardarTiposCosto(){
   await guardarClave("tipos_costo", JSON.stringify(tiposCosto));
 }
 async function agregarTipoCosto(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const inp = document.getElementById("nuevo-tipo-costo");
   const val = inp.value.trim(); if(!val) return;
   if(!tiposCosto.includes(val)) tiposCosto.push(val);
   inp.value = "";
   await guardarTiposCosto();
   renderCatalogoCaja();
+  registrarActividad(`agregó el tipo de costo "${esc(val)}"`);
 }
-async function quitarTipoCosto(i){ tiposCosto.splice(i,1); await guardarTiposCosto(); renderCatalogoCaja(); }
+async function quitarTipoCosto(i){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const val = tiposCosto[i];
+  tiposCosto.splice(i,1);
+  await guardarTiposCosto();
+  renderCatalogoCaja();
+  registrarActividad(`eliminó el tipo de costo "${esc(val)}"`);
+}
 function renderCatalogoCaja(){
   document.getElementById("lista-tipos-costo").innerHTML = tiposCosto.map((t,i)=>
     `<span class="catalogo-chip">${esc(t)}<button onclick="quitarTipoCosto(${i})">✕</button></span>`
@@ -9845,6 +9870,15 @@ async function cargarRendicionDetalle(id){
   }catch(e){ rendicionesCache[id] = null; }
   return rendicionesCache[id];
 }
+// Mismo criterio de "es mía" que ya usa renderListaRendiciones() para decidir qué mostrar en la
+// lista -- acá se usa para IMPEDIR abrir/editar/borrar la Caja Chica de otro usuario llamando
+// directo a las funciones (antes solo estaban "escondidas" porque no aparecían en la lista propia).
+function puedeVerRendicion(rendicion){
+  if(!rendicion || !sesionActual) return false;
+  if(rendicion.usuario===sesionActual.username) return true;
+  const esAdmin = sesionActual.role==="admin";
+  return esAdmin && !rendicion.usuario;
+}
 async function guardarRendicionDetalle(rendicion){
   rendicionesCache[rendicion.id] = rendicion;
   await guardarClave("rendicion_"+rendicion.id, JSON.stringify(rendicion));
@@ -9869,6 +9903,7 @@ function cambiarVistaCaja(v, rendicionParaEditar){
 async function editarRendicion(id){
   const rendicion = await cargarRendicionDetalle(id);
   if(!rendicion){ showToast("No se pudo abrir la rendición"); return; }
+  if(!puedeVerRendicion(rendicion)){ showToast("Esa rendición no es tuya"); return; }
   cambiarVistaCaja("nueva", rendicion);
 }
 
@@ -10344,6 +10379,7 @@ function renderListaRendiciones(){
 async function abrirRendicion(id){
   const rendicion = await cargarRendicionDetalle(id);
   if(!rendicion){ showToast("No se pudo abrir la rendición"); return; }
+  if(!puedeVerRendicion(rendicion)){ showToast("Esa rendición no es tuya"); return; }
   rendicionAbiertoId = id;
   cambiarVistaCaja("detalle");
   renderDetalleRendicion(rendicion);
@@ -10417,6 +10453,10 @@ function graficoGastoPorCategoria(gastos){
   return `<div class="card" style="margin-bottom:14px;background:var(--fondo);"><h2 style="margin-bottom:10px;">📊 Gasto por categoría</h2>${barras}</div>`;
 }
 async function eliminarRendicion(){
+  // rendicionAbiertoId se podría setear directo desde la consola sin pasar por abrirRendicion() --
+  // se repite acá el mismo chequeo de dueño, no alcanza con que abrirRendicion() ya lo valide.
+  const paraBorrar = rendicionesCache[rendicionAbiertoId] || rendicionesIndex.find(r=>r.id===rendicionAbiertoId);
+  if(!puedeVerRendicion(paraBorrar)){ showToast("Esa rendición no es tuya"); return; }
   const eliminada = rendicionesCache[rendicionAbiertoId];
   rendicionesIndex = rendicionesIndex.filter(r=>r.id!==rendicionAbiertoId);
   await guardarRendicionesIndex();
@@ -13184,6 +13224,7 @@ function abrirModalDanada(id){
 // Deja el paso a "dañada" registrado en su propio historial (historialDanios) -- mismo criterio que
 // ya usan préstamos y reparaciones, para poder ver más adelante cuándo y por qué se dañó cada vez.
 async function guardarDanadaHerramienta(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const h = herramientas.find(x=>x.id===id);
   if(!h) return;
   const fecha = document.getElementById("modal-dan-fecha").value || hoyISO();
@@ -13214,6 +13255,7 @@ function abrirModalReparacion(id){
   document.getElementById("herr-modal-overlay").style.display = "flex";
 }
 async function guardarReparacionHerramienta(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const h = herramientas.find(x=>x.id===id);
   if(!h) return;
   h.estado = "reparacion";
@@ -13336,6 +13378,7 @@ function abrirHistorialHerramienta(id){
   document.getElementById("herr-modal-overlay").style.display = "flex";
 }
 async function guardarPrestamoHerramienta(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const h = herramientas.find(x=>x.id===id);
   if(!h) return;
   const tipo = document.querySelector("#modal-prest-tipo-row .chip-opt.sel").dataset.val;
@@ -14344,6 +14387,7 @@ async function tocarEstadoObservacion(id, i){
   renderListaObservaciones();
 }
 async function eliminarObservacion(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const o = observaciones.find(x=>x.id===id);
   observaciones = observaciones.filter(x=>x.id!==id);
   const ok = await guardarObservacionesIndex();
@@ -19193,6 +19237,11 @@ async function construirPaqueteRespaldo(){
   };
 }
 async function exportarRespaldo(){
+  // El botón que llama a esto ya está oculto para Capataz (pestaña Configuración, solo-admin), pero
+  // la función en sí no chequeaba nada -- construirPaqueteRespaldo() trae TODO (usuarios con hash de
+  // contraseña incluido, Caja Chica de todos, todas las obras), así que sin este chequeo alcanzaba
+  // con llamarla directo desde la consola para descargarse la base de datos entera.
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const info = document.getElementById("respaldo-info");
   info.textContent = "Preparando respaldo…";
   try{
@@ -19209,6 +19258,7 @@ async function exportarRespaldo(){
     setTimeout(()=>URL.revokeObjectURL(url), 5000);
     info.textContent = `Respaldo descargado ✓ (${paquete.cantidad_claves} registros, ${new Date().toLocaleString("es-AR")})`;
     showToast("Respaldo descargado ✓");
+    registrarActividad(`descargó un respaldo completo de la app (${paquete.cantidad_claves} registros)`);
   }catch(err){
     console.error(err);
     info.textContent = "";
@@ -19221,6 +19271,11 @@ function recargarTrasRestaurarRespaldo(){
   location.reload();
 }
 async function importarRespaldo(input){
+  // Restaurar un respaldo SOBRESCRIBE toda la base de datos de la app -- sin este chequeo, un
+  // Capataz podía ejecutar esto desde la consola (el botón está oculto, pero la función no
+  // validaba nada) y reemplazar los datos de todos, incluso dándose de alta como admin editando a
+  // mano el JSON antes de restaurarlo.
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const file = input.files[0];
   if(!file) return;
   // ANTES: esta línea llamaba a una función ("confirm2Simulado") que nunca existió en ningún
@@ -19246,6 +19301,7 @@ async function importarRespaldo(input){
       }
       info.textContent = "Restaurado ✓ — la página se va a recargar sola para traer los datos nuevos…";
       showToast("Respaldo restaurado ✓ — recargando…");
+      registrarActividad(`restauró un respaldo completo (${claves.length} registros)`);
       // Recarga FORZADA, no un aviso pasivo: importarRespaldo() escribe directo en Firestore pero
       // nunca actualiza las variables JS en memoria (usuarios, rubros, trabajadores, etc.). Antes
       // solo se pedía "recargá la página" en un texto chico -- si alguien seguía trabajando sin
