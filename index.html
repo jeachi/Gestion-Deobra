@@ -5999,6 +5999,36 @@ async function asignarOCrearTrabajadorAFila(filaId, nombreTexto, dia){
   const nuevo = trabajadores.find(t=>t.nombre.trim().toLowerCase()===nombre.toLowerCase());
   if(nuevo) asignarTrabajadorAFila(filaId, nuevo.id, dia);
 }
+// Bug real (reportado en Android, tanto tipeando el nombre a mano como tocando una sugerencia del
+// datalist): si alguien YA cargado tiene un nombre que es PREFIJO exacto de otro (ej. "Daniel" y
+// "Daniel Mesa"), tipear "Daniel Mesa" letra por letra pasa, a mitad de camino, por el valor exacto
+// "Daniel" -- y el chequeo de "¿ya coincide con alguien?" de abajo se disparaba en ESE instante,
+// asignando a la persona equivocada (la del nombre corto) y volviendo a dibujar toda la lista a
+// mitad de tecleo, con lo que el campo donde se seguía escribiendo "desaparecía" de golpe. Lo mismo
+// podía pasar al tocar una sugerencia si el navegador/teclado del celular dispara el evento "input"
+// más de una vez durante la selección (con un valor intermedio antes del definitivo).
+// El arreglo: en vez de aplicar la asignación apenas se detecta una coincidencia, se espera un
+// toque (debounce, reiniciado en cada tecleo) y, YA EN ESE MOMENTO, se vuelve a leer el valor actual
+// del campo y se confirma que la coincidencia SIGUE siendo exacta -- si mientras tanto se siguió
+// escribiendo (p.ej. ya dice "Daniel Mesa" y no "Daniel"), no se aplica nada todavía. Un
+// "data-asignado" en el propio campo evita además que un "input" y un "change" que lleguen los dos
+// terminen aplicando la asignación dos veces.
+const timersAsignacionNombreFilaDia = {};
+function intentarAsignarNombreFilaDia(el, filaId, dia){
+  if(el.dataset.asignado) return;
+  const valor = (el.value||"").trim().toLowerCase();
+  if(!valor || !trabajadores.some(tt=>tt.nombre.trim().toLowerCase()===valor)) return;
+  el.dataset.asignado = "1";
+  asignarOCrearTrabajadorAFila(filaId, el.value, dia);
+}
+function onInputNombreFilaDia(el, filaId, dia){
+  clearTimeout(timersAsignacionNombreFilaDia[filaId]);
+  timersAsignacionNombreFilaDia[filaId] = setTimeout(()=>intentarAsignarNombreFilaDia(el, filaId, dia), 350);
+}
+function onChangeNombreFilaDia(el, filaId, dia){
+  clearTimeout(timersAsignacionNombreFilaDia[filaId]);
+  intentarAsignarNombreFilaDia(el, filaId, dia);
+}
 function agregarFilaAsistencia(){
   filasExtra++;
   renderAsistencia();
@@ -6154,16 +6184,13 @@ function renderVistaDia(){
     // que el campo pierde el foco (comportamiento de los navegadores) -- quedaba la sensación de
     // que "no aplicaba" porque había que tocar afuera para que surtiera efecto. Por eso además de
     // "onchange" (cubre cuando se termina de escribir un nombre nuevo y se sale del campo) se
-    // chequea en cada tecleo ("oninput") si el texto ya coincide EXACTO con alguien del listado --
-    // si coincide, se aplica al toque, igual que si fuera un <select>.
-    // OJO: la asignación vuelve a renderizar TODA la lista (reemplaza el HTML, incluido este mismo
-    // <input>) -- hacerlo DENTRO del mismo evento nativo de "elegir una sugerencia" (todavía en
-    // curso en el teclado del celular) podía pisarle el valor al campo o dejarlo en blanco, porque
-    // el elemento se reemplazaba a mitad de ese evento. Con setTimeout(...,0) se espera a que el
-    // navegador termine de procesar la selección por completo antes de redibujar.
+    // chequea con cada tecleo ("oninput") si el texto ya coincide EXACTO con alguien del listado --
+    // si coincide, se aplica solo, sin tener que salir del campo. Ver intentarAsignarNombreFilaDia
+    // (más arriba) por qué esto espera un toque (debounce) y vuelve a confirmar la coincidencia
+    // recién en ese momento, en vez de aplicar apenas se detecta.
     const nombreHtml = t ? esc(t.nombre) : `<input type="text" list="lista-dia-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
-          oninput="if(trabajadores.some(tt=>tt.nombre.trim().toLowerCase()===this.value.trim().toLowerCase())){ const el=this; setTimeout(()=>asignarOCrearTrabajadorAFila('${f.id}', el.value, ${diaS}), 0); }"
-          onchange="const el=this; setTimeout(()=>asignarOCrearTrabajadorAFila('${f.id}', el.value, ${diaS}), 0);" autocomplete="off"
+          oninput="onInputNombreFilaDia(this, '${f.id}', ${diaS})"
+          onchange="onChangeNombreFilaDia(this, '${f.id}', ${diaS})" autocomplete="off"
           style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;width:100%;">`;
     // Serenos solo trabajan por turno (día/noche) — no tiene sentido ofrecerles horas numéricas
     // ni feriado/lluvia como al resto, así que su fila de atajos queda más corta.
