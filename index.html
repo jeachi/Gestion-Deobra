@@ -12074,38 +12074,44 @@ function ejecutarBusquedaGlobal(){
   const coincide = (...campos)=>campos.some(c=>normalizarBusqueda(c).includes(q));
   const TOPE = 8; // por grupo, para que la lista siga siendo leíble en el celular
   const grupos = [];
+  // Mismo criterio de permisos que aplicarRestriccionesRol() (pestañas ocultas por rol/módulo) --
+  // sin esto, un Capataz sin acceso a un módulo podía igual ENTERARSE de su contenido (nombres de
+  // ítems de Presupuesto, montos, obras de Remitos, etc.) con solo escribir en el buscador global.
+  const esAdminBusq = sesionActual && sesionActual.role==="admin";
+  const permisosBusq = (sesionActual && sesionActual.permisos) || PERMISOS_CAPATAZ_DEFAULT;
+  const puedeVerModulo = m => esAdminBusq || !!permisosBusq[m];
 
-  const trabsHit = (trabajadores||[]).filter(t=>coincide(t.nombre, t.categoria, t.obra));
+  const trabsHit = esAdminBusq ? (trabajadores||[]).filter(t=>coincide(t.nombre, t.categoria, t.obra)) : [];
   if(trabsHit.length) grupos.push({tit:"👷 Trabajadores", view:"trabajadores", items:trabsHit.map(t=>({
     t:t.nombre, s:[t.categoria, t.obra, t.estado==="baja"?"(baja)":""].filter(Boolean).join(" · ")
   }))});
 
-  const pedHit = (pedidosIndex||[]).filter(p=>coincide(p.numero, p.obra, p.rubro, p.estado));
+  const pedHit = puedeVerModulo("pedidos") ? (pedidosIndex||[]).filter(p=>coincide(p.numero, p.obra, p.rubro, p.estado)) : [];
   if(pedHit.length) grupos.push({tit:"📦 Pedidos", view:"pedidos", items:pedHit.map(p=>({
     t:`Pedido N° ${p.numero}`, s:[p.obra, p.rubro, p.estado, p.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const remHit = (remitosIndex||[]).filter(r=>coincide(r.numero, r.obra));
+  const remHit = puedeVerModulo("remitos") ? (remitosIndex||[]).filter(r=>coincide(r.numero, r.obra)) : [];
   if(remHit.length) grupos.push({tit:"🚚 Remitos", view:"remitos", items:remHit.map(r=>({
     t:`Remito N° ${r.numero}`, s:[r.obra, r.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const herrHit = (herramientas||[]).filter(h=>coincide(h.nombre, h.obra, h.estado));
+  const herrHit = puedeVerModulo("herramientas") ? (herramientas||[]).filter(h=>coincide(h.nombre, h.obra, h.estado)) : [];
   if(herrHit.length) grupos.push({tit:"🧰 Herramientas", view:"herramientas", items:herrHit.map(h=>({
     t:h.nombre, s:[h.obra, h.estado].filter(Boolean).join(" · ")
   }))});
 
-  const obsHit = (observaciones||[]).filter(o=>coincide(o.titulo, o.descripcion, o.obra, o.responsable));
+  const obsHit = puedeVerModulo("observaciones") ? (observaciones||[]).filter(o=>coincide(o.titulo, o.descripcion, o.obra, o.responsable)) : [];
   if(obsHit.length) grupos.push({tit:"📋 Observaciones", view:"observaciones", items:obsHit.map(o=>({
     t:o.titulo, s:[o.obra, o.responsable, o.prioridad, o.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const minHit = (minutasIndex||[]).filter(m=>coincide(m.numero, m.obra));
+  const minHit = puedeVerModulo("minutas") ? (minutasIndex||[]).filter(m=>coincide(m.numero, m.obra)) : [];
   if(minHit.length) grupos.push({tit:"📝 Minutas", view:"minutas", items:minHit.map(m=>({
     t:`Minuta N° ${m.numero}`, s:[m.obra, m.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const presHit = (presupuestoItems||[]).filter(i=>coincide(i.nombre, i.rubroNombre, i.rubro));
+  const presHit = puedeVerModulo("presupuesto") ? (presupuestoItems||[]).filter(i=>coincide(i.nombre, i.rubroNombre, i.rubro)) : [];
   if(presHit.length) grupos.push({tit:"📊 Presupuesto General", view:"presupuesto", items:presHit.map(i=>({
     t:i.nombre, s:[`Rubro ${i.rubro}`, i.rubroNombre, formatoMoneda(i.precioConCoef)].filter(Boolean).join(" · ")
   }))});
@@ -19065,6 +19071,7 @@ function aplicarRestriccionesRol(){
 
 /* ---------------- Gestión de usuarios (solo Administrador) ---------------- */
 async function agregarUsuario(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const user = document.getElementById("nu-user").value.trim();
   const pass = document.getElementById("nu-pass").value;
   const rol = "capataz"; // esta pantalla solo crea cuentas de Capataz; el Administrador se crea una sola vez al arrancar la app
@@ -19079,6 +19086,7 @@ async function agregarUsuario(){
   registrarActividad(`agregó al capataz "${user}"`);
 }
 async function quitarUsuario(username){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   if(sesionActual && sesionActual.username===username){ showToast("No podés eliminar tu propio usuario mientras estás conectado"); return; }
   const admins = usuarios.filter(u=>u.role==="admin");
   const objetivo = usuarios.find(u=>u.username===username);
@@ -19126,6 +19134,7 @@ function renderTablaUsuarios(){
 }
 
 async function togglePermisoUsuario(username, modulo, activo){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const u = usuarios.find(x=>x.username===username);
   if(!u) return;
   if(!u.permisos) u.permisos = {...PERMISOS_CAPATAZ_DEFAULT};
