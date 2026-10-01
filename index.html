@@ -6084,7 +6084,10 @@ async function agregarAlertaCajaPrediccion(rendicionActiva){
   const gastosRecientes = detalle.gastos.filter(g=>g.fecha && g.fecha>=hace14ISO && g.fecha<=hoy);
   const totalReciente = gastosRecientes.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
   if(totalReciente<=0) return; // sin gasto reciente no hay ritmo que proyectar — no arriesgamos una alerta falsa
-  const ritmoDiario = totalReciente/14;
+  // El filtro de arriba (fecha entre hace14ISO y hoy, AMBOS extremos incluidos) en realidad abarca
+  // 15 días calendario, no 14 -- dividir por 14 sobreestimaba el ritmo diario ~7% y adelantaba la
+  // alerta de agotamiento más de lo real.
+  const ritmoDiario = totalReciente/15;
   const saldo = rendicionActiva.diferencia||0;
   const diasRestantes = Math.floor(saldo/ritmoDiario);
   if(diasRestantes>10 || diasRestantes<0) return; // más de 10 días de margen — todavía no hace falta avisar
@@ -9362,11 +9365,17 @@ async function agregarAvisosDeEstaSemana(estaSemana){
       estaSemana.push({ico:"🌧", texto:`Mañana hay ${pron.prob}% de chance de lluvia`, detalle:"Pensalo para lo que planifiques a la intemperie", view:"clima"});
     }
   }
-  if(presupuestoItems && presupuestoItems.length>0){
+  // presupuestoItems se carga para claveObraPresupuesto() (obraPorDefecto()), un criterio
+  // INDEPENDIENTE del chip de obra del Dashboard -- sin este chequeo, si quien mira el Dashboard
+  // filtró por "Obra B" pero en algún momento de la sesión visitó Presupuesto de "Obra A", este
+  // aviso seguía mostrando el presupuesto de A sin aclarar que no es el de la obra filtrada.
+  const obraPresu = claveObraPresupuesto();
+  const presuVisible = obraPresu && obrasActivas().includes(obraPresu) && (!dashboardObraFiltro || obraPresu===dashboardObraFiltro);
+  if(presupuestoItems && presupuestoItems.length>0 && presuVisible){
     const n = mesActualPresupuesto();
     const yaGenerado = (presupuestoItems[0].historialMeses||[]).some(m=>m.n===n && (m.enElMes>0 || m.acumulado>0));
     if(!yaGenerado){
-      estaSemana.push({ico:"📊", texto:`Mes ${n} del Presupuesto sin cargar todavía`, detalle:"Revisalo antes de que se acumule con el que sigue", view:"presupuesto"});
+      estaSemana.push({ico:"📊", texto:`Mes ${n} del Presupuesto sin cargar todavía${!dashboardObraFiltro?` (${obraPresu})`:""}`, detalle:"Revisalo antes de que se acumule con el que sigue", view:"presupuesto"});
     }
   }
   return estaSemana;
@@ -9456,7 +9465,7 @@ function actualizarIconosDashCards(){
     el.innerHTML = temaIconoApp==="emoji" ? el.dataset.emoji : iconoModuloHtml(el.dataset.modulo);
   });
 }
-function renderDashboard(){
+async function renderDashboard(){
   renderAvisosImportantesDash();
   renderEstadoNominaDash();
   renderChipsObraDash();
@@ -9577,11 +9586,6 @@ function renderDashboard(){
   // se fusionaron dentro de avisosDeHoy(), que alimenta la sección "🔴 Pendiente hoy" de la
   // tarjeta "Hoy en obra" (ver renderAvisosImportantesDash). Antes hacían lo mismo por
   // duplicado, en dos tarjetas distintas con estilos distintos.
-  // Predicción de cuándo se agota la Caja Chica, según el ritmo de gasto de los últimos 14 días.
-  // Es async porque hace falta el detalle de gastos (con fecha y monto), no alcanza con el índice
-  // — por eso se agrega después, una vez que ya está el resto del Dashboard en pantalla.
-  if(masRecienteCaja && saldoCaja>0) agregarAlertaCajaPrediccion(masRecienteCaja);
-
   // Avance de contratistas: solo barra de progreso + %, sin montos — para que el Dashboard dé
   // un pantallazo visual rápido sin exponer cifras de contrato en la pantalla principal.
   // Los contratos que ya llegaron al 100% se dan por terminados y dejan de aparecer acá.
@@ -9624,7 +9628,16 @@ function renderDashboard(){
       `;
     }
   }
-  renderGraficoAsistenciaDash();
+  // Predicción de cuándo se agota la Caja Chica, según el ritmo de gasto de los últimos 14 días.
+  // Es async porque hace falta el detalle de gastos (con fecha y monto), no alcanza con el índice.
+  // OJO: se agrega DESPUÉS de esperar a renderGraficoAsistenciaDash() -- esa función, al terminar,
+  // vuelve a llamar renderAvisosImportantesDash() (para refrescar "faltas seguidas" con la
+  // asistencia recién cargada), que reemplaza TODO el innerHTML de la sección de avisos. Como este
+  // aviso de caja se inserta aparte con insertAdjacentHTML (no vive en la lista que arma
+  // avisosDeHoy()), si corría antes en paralelo, ese segundo render lo borraba en silencio sin
+  // volver a agregarlo.
+  await renderGraficoAsistenciaDash();
+  if(masRecienteCaja && saldoCaja>0) agregarAlertaCajaPrediccion(masRecienteCaja);
   actualizarClimaReferenciaReal();
   renderActividadRecienteDash();
 }
@@ -9641,14 +9654,26 @@ async function renderGraficoAsistenciaDash(){
   }
   const mesesNecesarios = [...new Set(dias.map(d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")))];
   for(const m of mesesNecesarios){ await cargarAsistenciaMes(m); }
-  renderAvisosImportantesDash(); // recién ahora está cargada la asistencia del mes -- se refresca por si el aviso de "faltas seguidas" cambió
+  // OJO: con await -- si no, esta llamada queda "flotando" y puede terminar DESPUÉS de que
+  // renderDashboard() ya haya disparado agregarAlertaCajaPrediccion() (que se agenda recién
+  // después de esperar a toda esta función), recreando la misma condición de carrera que se quiso
+  // cerrar ahí: este render reemplaza TODO el innerHTML de la sección de avisos, borrando el aviso
+  // de caja si llega después.
+  await renderAvisosImportantesDash(); // recién ahora está cargada la asistencia del mes -- se refresca por si el aviso de "faltas seguidas" cambió
+  // Mismo criterio que el resto del Dashboard (trabActivos, pedPendientes, etc.): respetar el chip
+  // de obra elegido. Antes esta tarjeta era la ÚNICA que ignoraba el filtro -- con "Obra B" elegida,
+  // el resto del Dashboard mostraba solo esa obra pero este gráfico seguía promediando TODAS las
+  // obras de la empresa, sin ningún indicio visual de que no respetaba el filtro.
+  const filtroObraAsist = dashboardObraFiltro;
+  const obraVisibleAsist = o => obrasActivas().includes(o) && (!filtroObraAsist || o===filtroObraAsist);
+  const trabajadoresAsist = trabajadores.filter(t=>t.estado==="Activo" && obraVisibleAsist(t.obra));
   const porcentajes = dias.map(d=>{
     const mes = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
     if(mesesConErrorDeCarga[mes]) return null;
     const data = asistenciaCache[mes] || {};
     const diaS = String(d.getDate());
     let presente=0, total=0;
-    trabajadores.forEach(t=>{
+    trabajadoresAsist.forEach(t=>{
       const reg = data[t.id]; if(!reg) return;
       const cat = clasificarValorDia((reg.days||{})[diaS]);
       if(cat==="presente"){ presente++; total++; }
