@@ -6156,9 +6156,14 @@ function renderVistaDia(){
     // "onchange" (cubre cuando se termina de escribir un nombre nuevo y se sale del campo) se
     // chequea en cada tecleo ("oninput") si el texto ya coincide EXACTO con alguien del listado --
     // si coincide, se aplica al toque, igual que si fuera un <select>.
+    // OJO: la asignación vuelve a renderizar TODA la lista (reemplaza el HTML, incluido este mismo
+    // <input>) -- hacerlo DENTRO del mismo evento nativo de "elegir una sugerencia" (todavía en
+    // curso en el teclado del celular) podía pisarle el valor al campo o dejarlo en blanco, porque
+    // el elemento se reemplazaba a mitad de ese evento. Con setTimeout(...,0) se espera a que el
+    // navegador termine de procesar la selección por completo antes de redibujar.
     const nombreHtml = t ? esc(t.nombre) : `<input type="text" list="lista-dia-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
-          oninput="if(trabajadores.some(tt=>tt.nombre.trim().toLowerCase()===this.value.trim().toLowerCase())) asignarOCrearTrabajadorAFila('${f.id}', this.value, ${diaS})"
-          onchange="asignarOCrearTrabajadorAFila('${f.id}', this.value, ${diaS})" autocomplete="off"
+          oninput="if(trabajadores.some(tt=>tt.nombre.trim().toLowerCase()===this.value.trim().toLowerCase())){ const el=this; setTimeout(()=>asignarOCrearTrabajadorAFila('${f.id}', el.value, ${diaS}), 0); }"
+          onchange="const el=this; setTimeout(()=>asignarOCrearTrabajadorAFila('${f.id}', el.value, ${diaS}), 0);" autocomplete="off"
           style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;width:100%;">`;
     // Serenos solo trabajan por turno (día/noche) — no tiene sentido ofrecerles horas numéricas
     // ni feriado/lluvia como al resto, así que su fila de atajos queda más corta.
