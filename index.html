@@ -9504,7 +9504,11 @@ async function renderDashboard(){
   const ultimos7 = [];
   for(let i=6;i>=0;i--){
     const d = new Date(); d.setDate(d.getDate()-i);
-    ultimos7.push(d.toISOString().slice(0,10));
+    // Fecha LOCAL, no d.toISOString() (UTC) -- con UTC, entre las ~21:00 y las 23:59 hora Argentina
+    // el día de HOY ya cae en el día calendario siguiente en UTC, y el día que debería ser "hoy" en
+    // esta lista terminaba repetido/corrido (mismo bug ya encontrado y arreglado en
+    // generarTextoResumenSemanal y en "días de atraso" de Herramientas).
+    ultimos7.push(d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()));
   }
   // Personal: cuántos trabajadores tuvieron una jornada "presente" cada uno de esos días (según
   // la grilla de asistencia). Si algún día cae en un mes que no está cargado en memoria, cuenta 0
