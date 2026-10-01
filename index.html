@@ -5686,7 +5686,16 @@ function filasParaMes(mes){
   const trabajadoresVisibles = trabajadores.filter(t=>{
     if(t.estado==="Baja" && t.fechaBaja){
       const mesBaja = t.fechaBaja.slice(0,7);
-      if(mes > mesBaja) return false;
+      // Misma excepción que para "Transferido" más abajo: si volvió como préstamo puntual a esta
+      // obra (reg.diasObra, al usar "Agregar trabajador prestado" con este filtro activo), sigue
+      // apareciendo para poder cargarle/ver ese día -- sin esto, elegirlo marcaba bien el préstamo
+      // por dentro pero la fila desaparecía igual al toque, porque este chequeo cortaba ANTES de
+      // llegar al de más abajo (que sí entiende los préstamos).
+      if(mes > mesBaja){
+        const reg = data[t.id];
+        const tienePrestamoEnEstaObra = !!(filtroObra && reg && reg.diasObra && Object.values(reg.diasObra).includes(filtroObra));
+        if(!tienePrestamoEnEstaObra) return false;
+      }
     }
     // "Transferido" funciona como una baja PARA LA OBRA VIEJA: deja de aparecer solo a partir del
     // mes de la transferencia, incluso sin ningún filtro de obra puesto ("Todas las obras" ya no
