@@ -9547,11 +9547,14 @@ async function renderDashboard(){
   const sparkCaja = ultimasRendiciones.map(r=>r.diferencia||0);
   // Pedidos: cuántos pedidos se cargaron cada uno de los últimos 7 días (fecha del pedido).
   const sparkPedidos = ultimos7.map(fechaISO=> pedidosIndex.filter(p=>p.fecha===fechaISO && (obraVisible(p.obra))).length);
-  // Clima: 1 si se trabajó ese día, 0 si no (o si no hay registro cargado todavía).
-  const sparkClima = ultimos7.map(fechaISO=>{
-    const r = climaRegistros.find(c=>c.fecha===fechaISO && (obraVisible(c.obra)));
-    return r ? (r.seTrabajo!=="no" ? 1 : 0) : 0;
-  });
+  // Clima: 1 si se trabajó en AL MENOS UNA obra visible ese día, 0 si no (o si no hay registro
+  // cargado todavía). Antes usaba .find(), que con más de una obra visible a la vez devolvía
+  // cualquiera de las dos (la que haya quedado primera en climaRegistros.unshift) sin importar si
+  // era la que trabajó o no -- el resultado dependía de en qué orden se habían cargado los
+  // registros, no de si de verdad se trabajó. Mismo criterio que ya usa diasTrabajadosMes.
+  const sparkClima = ultimos7.map(fechaISO=>
+    climaRegistros.some(c=>c.fecha===fechaISO && obraVisible(c.obra) && c.seTrabajo!=="no") ? 1 : 0
+  );
   const htmlSpark = (valores)=>{
     const max = Math.max(...valores, 1);
     const min = Math.min(...valores, 0);
@@ -14652,7 +14655,11 @@ async function obtenerPronosticoLluviaManana(){
     if(!resp.ok) throw new Error("HTTP "+resp.status);
     const data = await resp.json();
     const mañana = new Date(); mañana.setDate(mañana.getDate()+1);
-    const fechaMañana = mañana.toISOString().slice(0,10);
+    // Fecha LOCAL, no .toISOString() (UTC) -- mismo bug ya arreglado en el resumen semanal y en las
+    // tendencias del Dashboard: entre las ~21:00 y las 23:59 hora Argentina, "mañana" calculado en
+    // UTC queda un día adelantado de más, y el filtro de abajo no encuentra ningún tramo del
+    // pronóstico para esa fecha mal calculada -- el aviso de lluvia se ocultaba aunque sí fuera a llover.
+    const fechaMañana = mañana.getFullYear()+"-"+pad2(mañana.getMonth()+1)+"-"+pad2(mañana.getDate());
     const tramosDeManana = (data.list||[]).filter(t=>t.dt_txt.startsWith(fechaMañana));
     let probMax = 0, huboLluvia = false, desc = "";
     tramosDeManana.forEach(t=>{
@@ -14713,6 +14720,13 @@ async function guardarRegistroClima(){
   if(!obra){ showToast("Elegí una obra"); return; }
   if(!fecha){ showToast("Elegí una fecha"); return; }
   if(!climaCondicionSel){ showToast("Elegí la condición climática"); return; }
+  // Aviso (no bloqueante, mismo criterio que Caja Chica con gastos de fecha futura) si el registro
+  // quedó con una fecha que todavía no pasó -- típico error de tipeo de año/día en el <input
+  // type="date"> que antes pasaba desapercibido y quedaba archivado como parte del historial
+  // "oficial" de la obra, usable (incorrectamente) para justificar un atraso que no ocurrió todavía.
+  // Se suma al toast final (en vez de mostrarse aparte) porque showToast solo puede mostrar un
+  // mensaje a la vez -- uno aparte quedaría tapado enseguida por el de "guardado ✓".
+  const avisoFechaFutura = fecha>hoyISO() ? " -- ⚠ es una fecha futura, revisá que no sea un error de tipeo" : "";
   // Si ya había un registro para esta MISMA obra y fecha, lo actualizamos en vez de agregar uno
   // nuevo -- dos registros contradictorios para el mismo día (ej: "Soleado, se trabajó" y después
   // "Lluvia, no se trabajó" sin borrar el primero) hacían que climaNoLaborable() (la usa Asistencia
@@ -14728,17 +14742,26 @@ async function guardarRegistroClima(){
   else climaRegistros.unshift({id: uid(), ...datos});
   await guardarClimaRegistros();
   registrarActividad(`${existente?"actualizó":"registró"} el clima de ${esc(obra)} (${fecha}): ${climaCondicionSel}`);
-  showToast(existente ? "Registro climático actualizado ✓" : "Registro climático guardado ✓");
+  showToast((existente ? "Registro climático actualizado ✓" : "Registro climático guardado ✓")+avisoFechaFutura);
   document.getElementById("clima-observaciones").value = "";
   climaCondicionSel = null;
   document.querySelectorAll("#clima-condicion-grid .condicion-btn").forEach(b=>b.classList.remove("sel"));
+  // El selector "¿Se trabajó?" no se reseteaba como el de condición -- si se cargaban varias obras
+  // seguidas y una quedaba en "No se trabajó", el botón seguía marcado así para la obra siguiente;
+  // si esta vez solo se tocaba la condición climática (obligatoria) y no el de trabajo (que ya
+  // "parecía" tildado de antes), un día normal quedaba guardado como no laborable sin que se notara.
+  climaTrabajoSel = "si";
+  document.querySelectorAll("#clima-trabajo-row .trabajo-btn").forEach(b=>b.classList.toggle("sel", b.dataset.val==="si"));
   renderHistorialClima();
 }
 async function quitarRegistroClima(id){
-  climaRegistros = climaRegistros.filter(r=>r.id!==id);
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const r = climaRegistros.find(x=>x.id===id);
+  climaRegistros = climaRegistros.filter(x=>x.id!==id);
   await guardarClimaRegistros();
   renderHistorialClima();
   showToast("Registro eliminado");
+  if(r) registrarActividad(`eliminó el registro climático de ${esc(r.obra)} (${r.fecha})`);
 }
 const CLIMA_ICONOS = {"Soleado":"☀️","Nublado":"⛅","Lluvia":"🌧","Tormenta":"⛈","Viento":"💨"};
 function registrosClimaFiltrados(){
