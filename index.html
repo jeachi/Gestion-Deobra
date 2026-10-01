@@ -5398,13 +5398,18 @@ function cambiarEstadoTrabajador(id, valor){
 function abrirPromptTransferirTrabajador(id){
   const t = trabajadores.find(x=>x.id===id);
   if(!t) return;
-  const opciones = [...new Set(obrasActivas())].filter(o=>o!==t.obra);
-  if(opciones.length===0){ showToast("No hay otra obra activa cargada todavía -- agregá la obra de destino en Configuración primero."); return; }
+  // Campo de TEXTO LIBRE a propósito, no un <select> limitado a obrasActivas() -- la obra de
+  // destino puede ser una que este usuario ni siquiera tiene cargada (de otro capataz/empresa), y
+  // no tiene sentido obligar a agregarla antes al catálogo compartido de obras (eso la haría
+  // aparecer en TODOS los selectores de obra de la app, para todos). El <datalist> solo sugiere
+  // las propias por comodidad, pero se puede tipear cualquier otra igual.
+  const sugeridas = [...new Set(obrasActivas())].filter(o=>o!==t.obra);
   const html = `
     <h2 style="margin-top:0;">🔁 Transferir a otra obra</h2>
-    <p class="helper">"${esc(t.nombre)}" va a dejar de aparecer en la Asistencia/Nómina de "${esc(t.obra||'(sin obra)')}" a partir del mes que elijas -- igual que una baja, pero sigue activo, ahora en la obra nueva. Los meses ya cargados no se tocan. Si vuelve algún día puntual, lo podés cargar igual como préstamo desde "+ Agregar fila".</p>
+    <p class="helper">"${esc(t.nombre)}" va a dejar de aparecer en la Asistencia/Nómina de "${esc(t.obra||'(sin obra)')}" a partir del mes que elijas -- igual que una baja, pero sigue activo, ahora en la obra nueva (puede ser una obra que no sea tuya). Los meses ya cargados no se tocan. Si vuelve algún día puntual, lo podés cargar igual como préstamo desde "+ Agregar fila".</p>
     <div class="field"><label>Obra a la que se transfiere</label>
-      <select id="transf-obra-destino">${opciones.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("")}</select>
+      <input type="text" id="transf-obra-destino" list="transf-obra-sugeridas" placeholder="Escribí el nombre de la obra" autocomplete="off">
+      <datalist id="transf-obra-sugeridas">${sugeridas.map(o=>`<option value="${esc(o)}">`).join("")}</datalist>
     </div>
     <div class="field"><label>Desde cuándo deja de verse en la obra vieja</label>
       <input type="date" id="transf-fecha" value="${hoyISO()}">
@@ -5416,9 +5421,10 @@ function abrirPromptTransferirTrabajador(id){
 async function confirmarTransferirTrabajador(id){
   const t = trabajadores.find(x=>x.id===id);
   if(!t) return;
-  const nuevaObra = document.getElementById("transf-obra-destino").value;
+  const nuevaObra = document.getElementById("transf-obra-destino").value.trim();
   const fecha = document.getElementById("transf-fecha").value || hoyISO();
-  if(!nuevaObra){ showToast("Elegí la obra de destino"); return; }
+  if(!nuevaObra){ showToast("Escribí la obra de destino"); return; }
+  if(nuevaObra===t.obra){ showToast("Esa ya es su obra actual -- escribí una distinta"); return; }
   const obraAnterior = t.obra || "(sin obra)";
   t.estado = "Transferido";
   t.fechaTransferido = fecha;
