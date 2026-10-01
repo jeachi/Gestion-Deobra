@@ -2810,7 +2810,12 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <label>Mes</label>
           <input type="month" id="sel-mes">
         </div>
+        <div class="field">
+          <label>Obra</label>
+          <select class="filtro-obra-input" id="asis-filtro-obra" onchange="actualizarAyudaFiltroObraAsistencia(); renderAsistencia(); renderVistaDia();"><option value="">Todas las obras</option></select>
+        </div>
       </div>
+      <p class="helper" id="asis-filtro-obra-ayuda" style="display:none;">Mostrando solo el personal de esta obra. Si alguien transferido a otra obra vuelve un día puntual (préstamo), usá "+ Agregar fila" y elegilo del listado -- va a quedar cargado para esta obra sin tocar el resto de su mes.</p>
       <div class="quincena-toggle" id="subtabs-asistencia">
         <button id="btn-vista-dia" class="active" onclick="cambiarVista('dia')"><span class="ico-subtab" data-subtab="asis-dia" data-emoji="📅">📅</span> Por día (fácil)</button>
         <button id="btn-vista-grilla" onclick="cambiarVista('grilla')"><span class="ico-subtab" data-subtab="asis-grilla" data-emoji="🗂">🗂</span> Grilla completa</button>
@@ -4962,7 +4967,16 @@ async function cargarTrabajadores(){
 // función no asume el tipo, solo lo pasa a window.storage.set. Devuelve true/false para que quien
 // llama pueda cortar el flujo si hace falta (ej: no seguir con un paso posterior si falló).
 async function guardarClave(clave, valor, msgError){
-  try{ await window.storage.set(clave, valor, true); return true; }
+  try{
+    const r = await window.storage.set(clave, valor, true);
+    // window.storage.set NUNCA rechaza -- si no hay señal (o el documento no entra en Firestore),
+    // encola en localStorage y devuelve {pendiente:true} en vez de tirar una excepción. Antes esta
+    // función ignoraba ese resultado y siempre devolvía true salvo una excepción real: todos los
+    // módulos que confían en este valor (Observaciones, Recordatorios, Pedidos, Caja Chica, Minutas,
+    // etc.) quedaban ciegos justo al caso más común de guardado fallido.
+    if(r && r.pendiente){ showToast(msgError || "⚠ Guardado pendiente de sincronizar (revisá la conexión)"); return false; }
+    return true;
+  }
   catch(e){ showToast(msgError || "No se pudo guardar (revisá conexión)"); return false; }
 }
 async function guardarTrabajadores(){
@@ -5266,6 +5280,7 @@ function renderSelectsCatalogo(){
   }
 }
 async function agregarCategoria(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const inp = document.getElementById("nueva-categoria");
   const val = inp.value.trim();
   if(!val){ return; }
@@ -5273,13 +5288,18 @@ async function agregarCategoria(){
   inp.value = "";
   await guardarCategorias();
   renderCatalogos();
+  registrarActividad(`agregó la categoría "${esc(val)}"`);
 }
 async function quitarCategoria(i){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const val = categorias[i];
   categorias.splice(i,1);
   await guardarCategorias();
   renderCatalogos();
+  registrarActividad(`eliminó la categoría "${esc(val)}"`);
 }
 async function agregarObra(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const inp = document.getElementById("nueva-obra");
   const val = inp.value.trim();
   if(!val){ return; }
@@ -5287,11 +5307,14 @@ async function agregarObra(){
   inp.value = "";
   await guardarObras();
   renderCatalogos();
+  registrarActividad(`agregó la obra "${esc(val)}"`);
 }
 async function quitarObra(i){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const o = obras[i];
   obras.splice(i,1);
   await guardarObras();
+  registrarActividad(`eliminó la obra "${esc(o)}"`);
   if(obrasFinalizadas.includes(o)){
     obrasFinalizadas = obrasFinalizadas.filter(x=>x!==o);
     await guardarObrasFinalizadas();
@@ -5335,6 +5358,7 @@ async function agregarTrabajadorConfirmado(nombre, categoria, obra){
 function actualizarTrabajador(id, campo, valor){
   const t = trabajadores.find(x=>x.id===id);
   if(!t) return;
+  const obraAnterior = t.obra;
   t[campo] = valor;
   // Al reactivar (Baja -> Activo) hay que limpiar fechaBaja -- si no, queda la fecha de la baja
   // VIEJA cargada (el campo está deshabilitado mientras está Activo, así que nadie la puede borrar
@@ -5343,7 +5367,15 @@ function actualizarTrabajador(id, campo, valor){
   // la fila -- esconde de la grilla/PDF/Excel los meses en el medio donde en realidad trabajó.
   if(campo==="estado" && valor==="Activo") t.fechaBaja = "";
   guardarTrabajadores();
-  registrarActividad(`modificó "${campo}" de "${esc(t.nombre)}" en la nómina`);
+  // Cambiar la obra es una TRANSFERENCIA -- queda un registro más claro que el genérico de abajo.
+  // No reescribe nada de lo ya cargado en Asistencia: cada mes guarda su propia obra "congelada"
+  // (ver filasParaMes/reg.obra), así que los meses anteriores a la transferencia no se ven
+  // afectados, y de ahí en más deja de aparecer para quien filtre por la obra vieja en Asistencia.
+  if(campo==="obra" && obraAnterior && valor && obraAnterior!==valor){
+    registrarActividad(`transfirió a "${esc(t.nombre)}" de "${esc(obraAnterior)}" a "${esc(valor)}"`);
+  }else{
+    registrarActividad(`modificó "${campo}" de "${esc(t.nombre)}" en la nómina`);
+  }
 }
 async function eliminarTrabajador(id){
   const t = trabajadores.find(x=>x.id===id);
@@ -5574,8 +5606,15 @@ function totalHorasRango(dias, desde, hasta){
 }
 
 /* ---------------- Render grilla de asistencia ---------------- */
+function actualizarAyudaFiltroObraAsistencia(){
+  const filtroEl = document.getElementById("asis-filtro-obra");
+  const ayuda = document.getElementById("asis-filtro-obra-ayuda");
+  if(filtroEl && ayuda) ayuda.style.display = filtroEl.value ? "block" : "none";
+}
 function filasParaMes(mes){
   const data = asistenciaCache[mes] || {};
+  const filtroEl = document.getElementById("asis-filtro-obra");
+  const filtroObra = filtroEl ? filtroEl.value : "";
   // Un trabajador dado de baja sigue apareciendo (con sus horas intactas) en los meses en que
   // todavía trabajaba — pero deja de aparecer solo, sin tocar nada, a partir del mes siguiente a
   // su baja. Así no hace falta "Eliminar" a nadie para dejar de verlo en los meses nuevos (eso
@@ -5584,6 +5623,17 @@ function filasParaMes(mes){
     if(t.estado==="Baja" && t.fechaBaja){
       const mesBaja = t.fechaBaja.slice(0,7);
       if(mes > mesBaja) return false;
+    }
+    // Si hay un filtro de obra activo, solo se muestra a quien pertenezca a esa obra este mes
+    // (reg.obra, que puede haber sido corregido a mano y manda por sobre t.obra) -- un trabajador
+    // TRANSFERIDO a otra obra deja de aparecer acá de ahí en más. La excepción es un "préstamo": si
+    // volvió un día puntual a esta obra (marcado en reg.diasObra al usar "+ Agregar fila" con este
+    // mismo filtro activo), sigue apareciendo para poder seguir viendo/editando ese día cargado.
+    if(filtroObra){
+      const reg = data[t.id];
+      const obraDeEsteMes = (reg && reg.obra) || t.obra || "";
+      const tienePrestamoEnEstaObra = !!(reg && reg.diasObra && Object.values(reg.diasObra).includes(filtroObra));
+      if(obraDeEsteMes!==filtroObra && !tienePrestamoEnEstaObra) return false;
     }
     return true;
   });
@@ -5792,15 +5842,28 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId){
   // tipeado en la fila extra. Ahora se mezclan los días de las dos (los de la fila extra ganan si
   // hay choque, por ser la acción explícita que se acaba de confirmar).
   const existente = data[trabajadorId] || {obra:"",days:{},notaQ1:"",notaQ2:""};
-  data[trabajadorId] = {
-    obra: existente.obra || reg.obra || "",
-    days: {...(existente.days||{}), ...(reg.days||{})},
-    notaQ1: existente.notaQ1 || reg.notaQ1 || "",
-    notaQ2: existente.notaQ2 || reg.notaQ2 || "",
-  };
+  if(!existente.diasObra) existente.diasObra = {};
+  const filtroEl = document.getElementById("asis-filtro-obra");
+  const filtroActivo = filtroEl ? filtroEl.value : "";
+  const diasNuevos = Object.keys(reg.days||{});
+  // Préstamo: si ya hay una obra cargada este mes para este trabajador y es DISTINTA a la que se
+  // está viendo ahora (filtro activo), es alguien que volvió un día puntual a esta obra -- se
+  // marcan SOLO los días recién tipeados en la fila extra como "de esta obra" (diasObra), sin
+  // pisar la obra del resto del mes ni los días que ya tenía cargados en la obra de base.
+  const esPrestamo = !!(filtroActivo && existente.obra && existente.obra!==filtroActivo);
+  if(esPrestamo){
+    diasNuevos.forEach(d=>{ existente.diasObra[d] = filtroActivo; });
+  }else if(!existente.obra){
+    existente.obra = reg.obra || filtroActivo || "";
+  }
+  existente.days = {...(existente.days||{}), ...(reg.days||{})};
+  existente.notaQ1 = existente.notaQ1 || reg.notaQ1 || "";
+  existente.notaQ2 = existente.notaQ2 || reg.notaQ2 || "";
+  data[trabajadorId] = existente;
   guardarAsistenciaMes(mesActual);
   renderAsistencia();
   renderVistaDia();
+  if(esPrestamo) showToast(`✓ Cargado como préstamo a esta obra -- el resto del mes de ${trabajadores.find(t=>t.id===trabajadorId)?.nombre||"esta persona"} sigue en ${existente.obra}`);
 }
 function agregarFilaAsistencia(){
   filasExtra++;
@@ -6084,7 +6147,10 @@ async function agregarAlertaCajaPrediccion(rendicionActiva){
   const gastosRecientes = detalle.gastos.filter(g=>g.fecha && g.fecha>=hace14ISO && g.fecha<=hoy);
   const totalReciente = gastosRecientes.reduce((s,g)=>s+(parseFloat(g.monto)||0),0);
   if(totalReciente<=0) return; // sin gasto reciente no hay ritmo que proyectar — no arriesgamos una alerta falsa
-  const ritmoDiario = totalReciente/14;
+  // El filtro de arriba (fecha entre hace14ISO y hoy, AMBOS extremos incluidos) en realidad abarca
+  // 15 días calendario, no 14 -- dividir por 14 sobreestimaba el ritmo diario ~7% y adelantaba la
+  // alerta de agotamiento más de lo real.
+  const ritmoDiario = totalReciente/15;
   const saldo = rendicionActiva.diferencia||0;
   const diasRestantes = Math.floor(saldo/ritmoDiario);
   if(diasRestantes>10 || diasRestantes<0) return; // más de 10 días de margen — todavía no hace falta avisar
@@ -6380,6 +6446,7 @@ function renderEquivalencias(){
   `).join("") || `<span class="tiny">Sin equivalencias cargadas.</span>`;
 }
 async function agregarEquivalencia(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const material = document.getElementById("eq-material").value.trim();
   const unidadGrande = document.getElementById("eq-un-grande").value.trim();
   const cantChica = parseFloat(document.getElementById("eq-cant-chica").value);
@@ -6403,9 +6470,12 @@ async function agregarEquivalencia(){
   renderEquivalencias();
 }
 async function quitarEquivalencia(i){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const eq = equivalenciasMateriales[i];
   equivalenciasMateriales.splice(i,1);
   await guardarEquivalenciasIndex();
   renderEquivalencias();
+  if(eq) registrarActividad(`eliminó la equivalencia "1 ${esc(eq.unidadGrande)} de ${esc(eq.material)} = ${eq.cantChica} ${esc(eq.unidadChica)}"`);
 }
 // Busca una equivalencia por nombre de material + unidad grande (case-insensitive), para
 // convertir "2 pallets" a la unidad chica que se usa en el pedido.
@@ -6665,6 +6735,7 @@ async function generarReporteRecibidosPDF(){
   mostrarModalPDF(html, "portrait", `Materiales_Recibidos_${nombreArchivoSeguro(obraSel||"Todas")}.pdf`);
 }
 async function editarPedido(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const pedido = await cargarPedidoDetalle(id);
   if(!pedido){ showToast("No se pudo abrir el pedido"); return; }
   cambiarVistaPedidos("nuevo", pedido);
@@ -8284,6 +8355,7 @@ async function eliminarPlantillaPedido(id){
   abrirSelectorPlantillaPedido();
 }
 async function guardarPedido(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const obra = document.getElementById("np-obra").value;
   const rubro = document.getElementById("np-rubro").value;
   if(!obra || !rubro){ showToast("Elegí obra y rubro"); return; }
@@ -9068,6 +9140,7 @@ async function pegarRemito(){
   }
 }
 async function eliminarPedido(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const p = pedidosIndex.find(x=>x.id===pedidoAbiertoId);
   const numeroTxt = p ? numeroFormateado(p.numero) : "";
   pedidosIndex = pedidosIndex.filter(p=>p.id!==pedidoAbiertoId);
@@ -9362,11 +9435,24 @@ async function agregarAvisosDeEstaSemana(estaSemana){
       estaSemana.push({ico:"🌧", texto:`Mañana hay ${pron.prob}% de chance de lluvia`, detalle:"Pensalo para lo que planifiques a la intemperie", view:"clima"});
     }
   }
-  if(presupuestoItems && presupuestoItems.length>0){
+  // presupuestoItems se carga para claveObraPresupuesto() (obraPorDefecto()), un criterio
+  // INDEPENDIENTE del chip de obra del Dashboard -- sin este chequeo, si quien mira el Dashboard
+  // filtró por "Obra B" pero en algún momento de la sesión visitó Presupuesto de "Obra A", este
+  // aviso seguía mostrando el presupuesto de A sin aclarar que no es el de la obra filtrada.
+  const obraPresu = claveObraPresupuesto();
+  const presuVisible = obraPresu && obrasActivas().includes(obraPresu) && (!dashboardObraFiltro || obraPresu===dashboardObraFiltro);
+  if(presupuestoItems && presupuestoItems.length>0 && presuVisible){
     const n = mesActualPresupuesto();
-    const yaGenerado = (presupuestoItems[0].historialMeses||[]).some(m=>m.n===n && (m.enElMes>0 || m.acumulado>0));
+    // Antes miraba SOLO presupuestoItems[0] -- si ese ítem puntual ya estaba al 100% (no recibe
+    // más entradas nunca más), el aviso quedaba para siempre aunque el resto de los ~150 ítems sí
+    // se hubiera cargado ese mes; y al revés, si solo ESE ítem tenía una carga suelta del mes, el
+    // aviso desaparecía sin que el mes estuviera realmente cargado. Ahora se exige que TODOS los
+    // ítems tengan ya su entrada de este mes (o que ya estén al 100%, esos no reciben más entradas).
+    const yaGenerado = presupuestoItems.every(it=>
+      (it.historialMeses||[]).some(m=>m.n===n && (m.enElMes>0 || m.acumulado>0)) || ultimoMesConDatos(it).acumulado>=1
+    );
     if(!yaGenerado){
-      estaSemana.push({ico:"📊", texto:`Mes ${n} del Presupuesto sin cargar todavía`, detalle:"Revisalo antes de que se acumule con el que sigue", view:"presupuesto"});
+      estaSemana.push({ico:"📊", texto:`Mes ${n} del Presupuesto sin cargar todavía${!dashboardObraFiltro?` (${obraPresu})`:""}`, detalle:"Revisalo antes de que se acumule con el que sigue", view:"presupuesto"});
     }
   }
   return estaSemana;
@@ -9456,7 +9542,7 @@ function actualizarIconosDashCards(){
     el.innerHTML = temaIconoApp==="emoji" ? el.dataset.emoji : iconoModuloHtml(el.dataset.modulo);
   });
 }
-function renderDashboard(){
+async function renderDashboard(){
   renderAvisosImportantesDash();
   renderEstadoNominaDash();
   renderChipsObraDash();
@@ -9495,7 +9581,11 @@ function renderDashboard(){
   const ultimos7 = [];
   for(let i=6;i>=0;i--){
     const d = new Date(); d.setDate(d.getDate()-i);
-    ultimos7.push(d.toISOString().slice(0,10));
+    // Fecha LOCAL, no d.toISOString() (UTC) -- con UTC, entre las ~21:00 y las 23:59 hora Argentina
+    // el día de HOY ya cae en el día calendario siguiente en UTC, y el día que debería ser "hoy" en
+    // esta lista terminaba repetido/corrido (mismo bug ya encontrado y arreglado en
+    // generarTextoResumenSemanal y en "días de atraso" de Herramientas).
+    ultimos7.push(d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()));
   }
   // Personal: cuántos trabajadores tuvieron una jornada "presente" cada uno de esos días (según
   // la grilla de asistencia). Si algún día cae en un mes que no está cargado en memoria, cuenta 0
@@ -9518,11 +9608,14 @@ function renderDashboard(){
   const sparkCaja = ultimasRendiciones.map(r=>r.diferencia||0);
   // Pedidos: cuántos pedidos se cargaron cada uno de los últimos 7 días (fecha del pedido).
   const sparkPedidos = ultimos7.map(fechaISO=> pedidosIndex.filter(p=>p.fecha===fechaISO && (obraVisible(p.obra))).length);
-  // Clima: 1 si se trabajó ese día, 0 si no (o si no hay registro cargado todavía).
-  const sparkClima = ultimos7.map(fechaISO=>{
-    const r = climaRegistros.find(c=>c.fecha===fechaISO && (obraVisible(c.obra)));
-    return r ? (r.seTrabajo!=="no" ? 1 : 0) : 0;
-  });
+  // Clima: 1 si se trabajó en AL MENOS UNA obra visible ese día, 0 si no (o si no hay registro
+  // cargado todavía). Antes usaba .find(), que con más de una obra visible a la vez devolvía
+  // cualquiera de las dos (la que haya quedado primera en climaRegistros.unshift) sin importar si
+  // era la que trabajó o no -- el resultado dependía de en qué orden se habían cargado los
+  // registros, no de si de verdad se trabajó. Mismo criterio que ya usa diasTrabajadosMes.
+  const sparkClima = ultimos7.map(fechaISO=>
+    climaRegistros.some(c=>c.fecha===fechaISO && obraVisible(c.obra) && c.seTrabajo!=="no") ? 1 : 0
+  );
   const htmlSpark = (valores)=>{
     const max = Math.max(...valores, 1);
     const min = Math.min(...valores, 0);
@@ -9577,11 +9670,6 @@ function renderDashboard(){
   // se fusionaron dentro de avisosDeHoy(), que alimenta la sección "🔴 Pendiente hoy" de la
   // tarjeta "Hoy en obra" (ver renderAvisosImportantesDash). Antes hacían lo mismo por
   // duplicado, en dos tarjetas distintas con estilos distintos.
-  // Predicción de cuándo se agota la Caja Chica, según el ritmo de gasto de los últimos 14 días.
-  // Es async porque hace falta el detalle de gastos (con fecha y monto), no alcanza con el índice
-  // — por eso se agrega después, una vez que ya está el resto del Dashboard en pantalla.
-  if(masRecienteCaja && saldoCaja>0) agregarAlertaCajaPrediccion(masRecienteCaja);
-
   // Avance de contratistas: solo barra de progreso + %, sin montos — para que el Dashboard dé
   // un pantallazo visual rápido sin exponer cifras de contrato en la pantalla principal.
   // Los contratos que ya llegaron al 100% se dan por terminados y dejan de aparecer acá.
@@ -9624,7 +9712,16 @@ function renderDashboard(){
       `;
     }
   }
-  renderGraficoAsistenciaDash();
+  // Predicción de cuándo se agota la Caja Chica, según el ritmo de gasto de los últimos 14 días.
+  // Es async porque hace falta el detalle de gastos (con fecha y monto), no alcanza con el índice.
+  // OJO: se agrega DESPUÉS de esperar a renderGraficoAsistenciaDash() -- esa función, al terminar,
+  // vuelve a llamar renderAvisosImportantesDash() (para refrescar "faltas seguidas" con la
+  // asistencia recién cargada), que reemplaza TODO el innerHTML de la sección de avisos. Como este
+  // aviso de caja se inserta aparte con insertAdjacentHTML (no vive en la lista que arma
+  // avisosDeHoy()), si corría antes en paralelo, ese segundo render lo borraba en silencio sin
+  // volver a agregarlo.
+  await renderGraficoAsistenciaDash();
+  if(masRecienteCaja && saldoCaja>0) agregarAlertaCajaPrediccion(masRecienteCaja);
   actualizarClimaReferenciaReal();
   renderActividadRecienteDash();
 }
@@ -9641,14 +9738,26 @@ async function renderGraficoAsistenciaDash(){
   }
   const mesesNecesarios = [...new Set(dias.map(d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")))];
   for(const m of mesesNecesarios){ await cargarAsistenciaMes(m); }
-  renderAvisosImportantesDash(); // recién ahora está cargada la asistencia del mes -- se refresca por si el aviso de "faltas seguidas" cambió
+  // OJO: con await -- si no, esta llamada queda "flotando" y puede terminar DESPUÉS de que
+  // renderDashboard() ya haya disparado agregarAlertaCajaPrediccion() (que se agenda recién
+  // después de esperar a toda esta función), recreando la misma condición de carrera que se quiso
+  // cerrar ahí: este render reemplaza TODO el innerHTML de la sección de avisos, borrando el aviso
+  // de caja si llega después.
+  await renderAvisosImportantesDash(); // recién ahora está cargada la asistencia del mes -- se refresca por si el aviso de "faltas seguidas" cambió
+  // Mismo criterio que el resto del Dashboard (trabActivos, pedPendientes, etc.): respetar el chip
+  // de obra elegido. Antes esta tarjeta era la ÚNICA que ignoraba el filtro -- con "Obra B" elegida,
+  // el resto del Dashboard mostraba solo esa obra pero este gráfico seguía promediando TODAS las
+  // obras de la empresa, sin ningún indicio visual de que no respetaba el filtro.
+  const filtroObraAsist = dashboardObraFiltro;
+  const obraVisibleAsist = o => obrasActivas().includes(o) && (!filtroObraAsist || o===filtroObraAsist);
+  const trabajadoresAsist = trabajadores.filter(t=>t.estado==="Activo" && obraVisibleAsist(t.obra));
   const porcentajes = dias.map(d=>{
     const mes = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
     if(mesesConErrorDeCarga[mes]) return null;
     const data = asistenciaCache[mes] || {};
     const diaS = String(d.getDate());
     let presente=0, total=0;
-    trabajadores.forEach(t=>{
+    trabajadoresAsist.forEach(t=>{
       const reg = data[t.id]; if(!reg) return;
       const cat = clasificarValorDia((reg.days||{})[diaS]);
       if(cat==="presente"){ presente++; total++; }
@@ -9730,14 +9839,23 @@ async function guardarTiposCosto(){
   await guardarClave("tipos_costo", JSON.stringify(tiposCosto));
 }
 async function agregarTipoCosto(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const inp = document.getElementById("nuevo-tipo-costo");
   const val = inp.value.trim(); if(!val) return;
   if(!tiposCosto.includes(val)) tiposCosto.push(val);
   inp.value = "";
   await guardarTiposCosto();
   renderCatalogoCaja();
+  registrarActividad(`agregó el tipo de costo "${esc(val)}"`);
 }
-async function quitarTipoCosto(i){ tiposCosto.splice(i,1); await guardarTiposCosto(); renderCatalogoCaja(); }
+async function quitarTipoCosto(i){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const val = tiposCosto[i];
+  tiposCosto.splice(i,1);
+  await guardarTiposCosto();
+  renderCatalogoCaja();
+  registrarActividad(`eliminó el tipo de costo "${esc(val)}"`);
+}
 function renderCatalogoCaja(){
   document.getElementById("lista-tipos-costo").innerHTML = tiposCosto.map((t,i)=>
     `<span class="catalogo-chip">${esc(t)}<button onclick="quitarTipoCosto(${i})">✕</button></span>`
@@ -9816,6 +9934,15 @@ async function cargarRendicionDetalle(id){
   }catch(e){ rendicionesCache[id] = null; }
   return rendicionesCache[id];
 }
+// Mismo criterio de "es mía" que ya usa renderListaRendiciones() para decidir qué mostrar en la
+// lista -- acá se usa para IMPEDIR abrir/editar/borrar la Caja Chica de otro usuario llamando
+// directo a las funciones (antes solo estaban "escondidas" porque no aparecían en la lista propia).
+function puedeVerRendicion(rendicion){
+  if(!rendicion || !sesionActual) return false;
+  if(rendicion.usuario===sesionActual.username) return true;
+  const esAdmin = sesionActual.role==="admin";
+  return esAdmin && !rendicion.usuario;
+}
 async function guardarRendicionDetalle(rendicion){
   rendicionesCache[rendicion.id] = rendicion;
   await guardarClave("rendicion_"+rendicion.id, JSON.stringify(rendicion));
@@ -9840,6 +9967,7 @@ function cambiarVistaCaja(v, rendicionParaEditar){
 async function editarRendicion(id){
   const rendicion = await cargarRendicionDetalle(id);
   if(!rendicion){ showToast("No se pudo abrir la rendición"); return; }
+  if(!puedeVerRendicion(rendicion)){ showToast("Esa rendición no es tuya"); return; }
   cambiarVistaCaja("nueva", rendicion);
 }
 
@@ -10315,6 +10443,7 @@ function renderListaRendiciones(){
 async function abrirRendicion(id){
   const rendicion = await cargarRendicionDetalle(id);
   if(!rendicion){ showToast("No se pudo abrir la rendición"); return; }
+  if(!puedeVerRendicion(rendicion)){ showToast("Esa rendición no es tuya"); return; }
   rendicionAbiertoId = id;
   cambiarVistaCaja("detalle");
   renderDetalleRendicion(rendicion);
@@ -10388,6 +10517,10 @@ function graficoGastoPorCategoria(gastos){
   return `<div class="card" style="margin-bottom:14px;background:var(--fondo);"><h2 style="margin-bottom:10px;">📊 Gasto por categoría</h2>${barras}</div>`;
 }
 async function eliminarRendicion(){
+  // rendicionAbiertoId se podría setear directo desde la consola sin pasar por abrirRendicion() --
+  // se repite acá el mismo chequeo de dueño, no alcanza con que abrirRendicion() ya lo valide.
+  const paraBorrar = rendicionesCache[rendicionAbiertoId] || rendicionesIndex.find(r=>r.id===rendicionAbiertoId);
+  if(!puedeVerRendicion(paraBorrar)){ showToast("Esa rendición no es tuya"); return; }
   const eliminada = rendicionesCache[rendicionAbiertoId];
   rendicionesIndex = rendicionesIndex.filter(r=>r.id!==rendicionAbiertoId);
   await guardarRendicionesIndex();
@@ -12049,38 +12182,44 @@ function ejecutarBusquedaGlobal(){
   const coincide = (...campos)=>campos.some(c=>normalizarBusqueda(c).includes(q));
   const TOPE = 8; // por grupo, para que la lista siga siendo leíble en el celular
   const grupos = [];
+  // Mismo criterio de permisos que aplicarRestriccionesRol() (pestañas ocultas por rol/módulo) --
+  // sin esto, un Capataz sin acceso a un módulo podía igual ENTERARSE de su contenido (nombres de
+  // ítems de Presupuesto, montos, obras de Remitos, etc.) con solo escribir en el buscador global.
+  const esAdminBusq = sesionActual && sesionActual.role==="admin";
+  const permisosBusq = (sesionActual && sesionActual.permisos) || PERMISOS_CAPATAZ_DEFAULT;
+  const puedeVerModulo = m => esAdminBusq || !!permisosBusq[m];
 
-  const trabsHit = (trabajadores||[]).filter(t=>coincide(t.nombre, t.categoria, t.obra));
+  const trabsHit = esAdminBusq ? (trabajadores||[]).filter(t=>coincide(t.nombre, t.categoria, t.obra)) : [];
   if(trabsHit.length) grupos.push({tit:"👷 Trabajadores", view:"trabajadores", items:trabsHit.map(t=>({
     t:t.nombre, s:[t.categoria, t.obra, t.estado==="baja"?"(baja)":""].filter(Boolean).join(" · ")
   }))});
 
-  const pedHit = (pedidosIndex||[]).filter(p=>coincide(p.numero, p.obra, p.rubro, p.estado));
+  const pedHit = puedeVerModulo("pedidos") ? (pedidosIndex||[]).filter(p=>coincide(p.numero, p.obra, p.rubro, p.estado)) : [];
   if(pedHit.length) grupos.push({tit:"📦 Pedidos", view:"pedidos", items:pedHit.map(p=>({
     t:`Pedido N° ${p.numero}`, s:[p.obra, p.rubro, p.estado, p.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const remHit = (remitosIndex||[]).filter(r=>coincide(r.numero, r.obra));
+  const remHit = puedeVerModulo("remitos") ? (remitosIndex||[]).filter(r=>coincide(r.numero, r.obra)) : [];
   if(remHit.length) grupos.push({tit:"🚚 Remitos", view:"remitos", items:remHit.map(r=>({
     t:`Remito N° ${r.numero}`, s:[r.obra, r.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const herrHit = (herramientas||[]).filter(h=>coincide(h.nombre, h.obra, h.estado));
+  const herrHit = puedeVerModulo("herramientas") ? (herramientas||[]).filter(h=>coincide(h.nombre, h.obra, h.estado)) : [];
   if(herrHit.length) grupos.push({tit:"🧰 Herramientas", view:"herramientas", items:herrHit.map(h=>({
     t:h.nombre, s:[h.obra, h.estado].filter(Boolean).join(" · ")
   }))});
 
-  const obsHit = (observaciones||[]).filter(o=>coincide(o.titulo, o.descripcion, o.obra, o.responsable));
+  const obsHit = puedeVerModulo("observaciones") ? (observaciones||[]).filter(o=>coincide(o.titulo, o.descripcion, o.obra, o.responsable)) : [];
   if(obsHit.length) grupos.push({tit:"📋 Observaciones", view:"observaciones", items:obsHit.map(o=>({
     t:o.titulo, s:[o.obra, o.responsable, o.prioridad, o.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const minHit = (minutasIndex||[]).filter(m=>coincide(m.numero, m.obra));
+  const minHit = puedeVerModulo("minutas") ? (minutasIndex||[]).filter(m=>coincide(m.numero, m.obra)) : [];
   if(minHit.length) grupos.push({tit:"📝 Minutas", view:"minutas", items:minHit.map(m=>({
     t:`Minuta N° ${m.numero}`, s:[m.obra, m.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const presHit = (presupuestoItems||[]).filter(i=>coincide(i.nombre, i.rubroNombre, i.rubro));
+  const presHit = puedeVerModulo("presupuesto") ? (presupuestoItems||[]).filter(i=>coincide(i.nombre, i.rubroNombre, i.rubro)) : [];
   if(presHit.length) grupos.push({tit:"📊 Presupuesto General", view:"presupuesto", items:presHit.map(i=>({
     t:i.nombre, s:[`Rubro ${i.rubro}`, i.rubroNombre, formatoMoneda(i.precioConCoef)].filter(Boolean).join(" · ")
   }))});
@@ -12540,6 +12679,11 @@ function irA(view){
   if(view==="certificados") renderListaContratistas();
   if(view==="presupuesto") prepararVistaPresupuesto();
   if(view==="asistencia"){
+    const filtroAsis = document.getElementById("asis-filtro-obra");
+    const valorFiltroAsis = filtroAsis.value;
+    poblarSelectFiltroObras(filtroAsis);
+    filtroAsis.value = valorFiltroAsis;
+    actualizarAyudaFiltroObraAsistencia();
     cargarAsistenciaMes(mesActual).then(()=>{ renderAsistencia(); renderVistaDia(); });
   }
   if(view==="minutas") prepararVistaMinutas();
@@ -13149,6 +13293,7 @@ function abrirModalDanada(id){
 // Deja el paso a "dañada" registrado en su propio historial (historialDanios) -- mismo criterio que
 // ya usan préstamos y reparaciones, para poder ver más adelante cuándo y por qué se dañó cada vez.
 async function guardarDanadaHerramienta(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const h = herramientas.find(x=>x.id===id);
   if(!h) return;
   const fecha = document.getElementById("modal-dan-fecha").value || hoyISO();
@@ -13179,6 +13324,7 @@ function abrirModalReparacion(id){
   document.getElementById("herr-modal-overlay").style.display = "flex";
 }
 async function guardarReparacionHerramienta(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const h = herramientas.find(x=>x.id===id);
   if(!h) return;
   h.estado = "reparacion";
@@ -13301,6 +13447,7 @@ function abrirHistorialHerramienta(id){
   document.getElementById("herr-modal-overlay").style.display = "flex";
 }
 async function guardarPrestamoHerramienta(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const h = herramientas.find(x=>x.id===id);
   if(!h) return;
   const tipo = document.querySelector("#modal-prest-tipo-row .chip-opt.sel").dataset.val;
@@ -14309,6 +14456,7 @@ async function tocarEstadoObservacion(id, i){
   renderListaObservaciones();
 }
 async function eliminarObservacion(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const o = observaciones.find(x=>x.id===id);
   observaciones = observaciones.filter(x=>x.id!==id);
   const ok = await guardarObservacionesIndex();
@@ -14453,7 +14601,7 @@ async function cargarMinutasIndex(){
   }catch(e){ minutasIndex = []; }
 }
 async function guardarMinutasIndex(){
-  await guardarClave("minutas_index", JSON.stringify(minutasIndex));
+  return guardarClave("minutas_index", JSON.stringify(minutasIndex));
 }
 async function cargarCorrelativoMinuta(){
   try{
@@ -14462,7 +14610,7 @@ async function cargarCorrelativoMinuta(){
   }catch(e){ correlativoMinutaSiguiente = 1; }
 }
 async function guardarCorrelativoMinuta(){
-  try{ await window.storage.set("correlativo_minuta", String(correlativoMinutaSiguiente), true); }catch(e){}
+  return guardarClave("correlativo_minuta", String(correlativoMinutaSiguiente));
 }
 
 /* ---------------- Dashboard: chips de clima ---------------- */
@@ -14573,7 +14721,11 @@ async function obtenerPronosticoLluviaManana(){
     if(!resp.ok) throw new Error("HTTP "+resp.status);
     const data = await resp.json();
     const mañana = new Date(); mañana.setDate(mañana.getDate()+1);
-    const fechaMañana = mañana.toISOString().slice(0,10);
+    // Fecha LOCAL, no .toISOString() (UTC) -- mismo bug ya arreglado en el resumen semanal y en las
+    // tendencias del Dashboard: entre las ~21:00 y las 23:59 hora Argentina, "mañana" calculado en
+    // UTC queda un día adelantado de más, y el filtro de abajo no encuentra ningún tramo del
+    // pronóstico para esa fecha mal calculada -- el aviso de lluvia se ocultaba aunque sí fuera a llover.
+    const fechaMañana = mañana.getFullYear()+"-"+pad2(mañana.getMonth()+1)+"-"+pad2(mañana.getDate());
     const tramosDeManana = (data.list||[]).filter(t=>t.dt_txt.startsWith(fechaMañana));
     let probMax = 0, huboLluvia = false, desc = "";
     tramosDeManana.forEach(t=>{
@@ -14634,6 +14786,13 @@ async function guardarRegistroClima(){
   if(!obra){ showToast("Elegí una obra"); return; }
   if(!fecha){ showToast("Elegí una fecha"); return; }
   if(!climaCondicionSel){ showToast("Elegí la condición climática"); return; }
+  // Aviso (no bloqueante, mismo criterio que Caja Chica con gastos de fecha futura) si el registro
+  // quedó con una fecha que todavía no pasó -- típico error de tipeo de año/día en el <input
+  // type="date"> que antes pasaba desapercibido y quedaba archivado como parte del historial
+  // "oficial" de la obra, usable (incorrectamente) para justificar un atraso que no ocurrió todavía.
+  // Se suma al toast final (en vez de mostrarse aparte) porque showToast solo puede mostrar un
+  // mensaje a la vez -- uno aparte quedaría tapado enseguida por el de "guardado ✓".
+  const avisoFechaFutura = fecha>hoyISO() ? " -- ⚠ es una fecha futura, revisá que no sea un error de tipeo" : "";
   // Si ya había un registro para esta MISMA obra y fecha, lo actualizamos en vez de agregar uno
   // nuevo -- dos registros contradictorios para el mismo día (ej: "Soleado, se trabajó" y después
   // "Lluvia, no se trabajó" sin borrar el primero) hacían que climaNoLaborable() (la usa Asistencia
@@ -14649,17 +14808,26 @@ async function guardarRegistroClima(){
   else climaRegistros.unshift({id: uid(), ...datos});
   await guardarClimaRegistros();
   registrarActividad(`${existente?"actualizó":"registró"} el clima de ${esc(obra)} (${fecha}): ${climaCondicionSel}`);
-  showToast(existente ? "Registro climático actualizado ✓" : "Registro climático guardado ✓");
+  showToast((existente ? "Registro climático actualizado ✓" : "Registro climático guardado ✓")+avisoFechaFutura);
   document.getElementById("clima-observaciones").value = "";
   climaCondicionSel = null;
   document.querySelectorAll("#clima-condicion-grid .condicion-btn").forEach(b=>b.classList.remove("sel"));
+  // El selector "¿Se trabajó?" no se reseteaba como el de condición -- si se cargaban varias obras
+  // seguidas y una quedaba en "No se trabajó", el botón seguía marcado así para la obra siguiente;
+  // si esta vez solo se tocaba la condición climática (obligatoria) y no el de trabajo (que ya
+  // "parecía" tildado de antes), un día normal quedaba guardado como no laborable sin que se notara.
+  climaTrabajoSel = "si";
+  document.querySelectorAll("#clima-trabajo-row .trabajo-btn").forEach(b=>b.classList.toggle("sel", b.dataset.val==="si"));
   renderHistorialClima();
 }
 async function quitarRegistroClima(id){
-  climaRegistros = climaRegistros.filter(r=>r.id!==id);
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const r = climaRegistros.find(x=>x.id===id);
+  climaRegistros = climaRegistros.filter(x=>x.id!==id);
   await guardarClimaRegistros();
   renderHistorialClima();
   showToast("Registro eliminado");
+  if(r) registrarActividad(`eliminó el registro climático de ${esc(r.obra)} (${r.fecha})`);
 }
 const CLIMA_ICONOS = {"Soleado":"☀️","Nublado":"⛅","Lluvia":"🌧","Tormenta":"⛈","Viento":"💨"};
 function registrosClimaFiltrados(){
@@ -15175,6 +15343,17 @@ async function guardarPctInlinePresupuesto(inputEl){
   entrada.acumulado = nuevoAcum;
   entrada.enElMes = Math.max(0, nuevoAcum-anterior);
   entrada.monto = entrada.enElMes*it.precioConCoef;
+  // Si este ítem ya tenía meses POSTERIORES cargados, hay que reencadenar su "anterior"/"acumulado"
+  // a partir de este cambio -- mismo criterio que guardarAjustesMesPresupuesto/
+  // confirmarInspeccionPresupuesto, si no quedan con el "anterior" viejo (de antes de esta edición
+  // inline) para siempre.
+  let encadenado = nuevoAcum;
+  it.historialMeses.filter(m=>m.n>n).sort((a,b)=>a.n-b.n).forEach(m=>{
+    m.anterior = encadenado;
+    m.acumulado = Math.min(1, m.anterior + m.enElMes);
+    m.monto = m.enElMes*it.precioConCoef;
+    encadenado = m.acumulado;
+  });
   await guardarPresupuestoObra();
   actualizarResumenPresupuesto();
   renderListaPresupuesto();
@@ -15189,9 +15368,20 @@ async function eliminarPresupuestoObra(){
   if(!obra) return;
   presupuestoItems = [];
   presupuestoCoeficiente = {valor:1, fecha:null};
+  // Faltaba borrar también la config (monto del contrato, mes actual elegido) y la copia del Excel
+  // original -- sin esto, "Eliminar presupuesto y volver a importar" dejaba esos dos datos vivos en
+  // Firestore, y la reimportación los volvía a traer en silencio mezclados con los ítems nuevos
+  // (el monto del contrato y el "Mes actual" quedaban comparando/apuntando a la versión borrada).
+  presupuestoMontoContrato = 0;
+  presupuestoMesActual = null;
+  presupuestoMesesColsExcel = [];
+  presupuestoExcelOriginalBase64 = null;
+  presupuestoExcelOriginalHoja = null;
   try{
     await window.storage.delete(`presupuesto_items_${obra}`, true);
     await window.storage.delete(`presupuesto_coeficiente_${obra}`, true);
+    await window.storage.delete(`presupuesto_config_${obra}`, true);
+    await window.storage.delete(`presupuesto_excel_original_${obra}`, true);
   }catch(e){}
   showToast("✓ Presupuesto eliminado");
   prepararVistaPresupuesto();
@@ -15241,12 +15431,21 @@ async function onExcelPresupuestoSeleccionado(input){
       return isNaN(n) ? 0 : n;
     };
     let coeficiente = 1;
+    let coeficienteEncontrado = false;
     for(let r=0; r<8; r++){
       const f = fila(r);
       for(let c=0; c<f.length; c++){
-        if(String(f[c]||"").toUpperCase().includes("COEFICIENTE")) coeficiente = num(f[c+1]) || 1;
+        if(String(f[c]||"").toUpperCase().includes("COEFICIENTE")){
+          coeficienteEncontrado = true;
+          coeficiente = num(f[c+1]) || 1;
+        }
       }
     }
+    // Si no se encontró la celda (o no se pudo leer como número), coeficiente queda en 1 igual --
+    // pero SIN avisar, eso quedaba guardado como si fuera un coeficiente "vigente" real de verdad
+    // en 1.000 y no "no se encontró ninguno todavía", algo bien distinto para una obra que de
+    // verdad tiene redeterminación de precios.
+    if(!coeficienteEncontrado) showToast("⚠ No encontré el coeficiente en el Excel -- quedó en 1.000, revisalo en ⚙️ Coeficiente");
     let filaMeses = -1;
     for(let r=0; r<10; r++){
       if(fila(r).some(c=>/^MES\s*1$/i.test(String(c||"").trim()))){ filaMeses = r; break; }
@@ -15266,13 +15465,19 @@ async function onExcelPresupuestoSeleccionado(input){
         }
         continue;
       }
+      // El Excel de "Cómputo y Presupuesto" suele traer un bloque de 4 columnas por CADA mes
+      // previsto del CONTRATO completo (ej. 24 meses), no solo los que ya tienen datos reales --
+      // los meses futuros vienen con las 4 celdas vacías/0. Antes se creaba una entrada en
+      // historialMeses por cada columna de mes detectada, aunque estuviera toda en blanco: eso
+      // inflaba maxMesCargado()/mesActualPresupuesto() al último mes de la plantilla (ej. 24) en
+      // vez del mes real en curso (ej. 2), apenas terminaba de importarse.
       const historialMeses = mesesCols.map((colIdx,mi)=>({
         n: mi+1,
         anterior: num(f[colIdx], true),
         enElMes: num(f[colIdx+1], true),
         acumulado: num(f[colIdx+2], true),
         monto: num(f[colIdx+3])
-      }));
+      })).filter(m=>m.anterior>0 || m.enElMes>0 || m.acumulado>0 || m.monto>0);
       items.push({
         rubro: rubroActual, rubroNombre: rubroNombreActual,
         nombre: String(d).trim(), unidad: String(e).trim(),
@@ -15466,7 +15671,11 @@ async function confirmarNuevoMesPresupuesto(mesN){
     const it = presupuestoItems[idx];
     if(!it) return;
     const anterior = ultimoMesConDatos(it).acumulado;
-    const enElMes = valor/100;
+    // El input tiene un "max" en el HTML (100 menos lo que ya lleva acumulado), pero eso es solo
+    // una sugerencia visual -- si se tipea un valor más alto igual, antes "acumulado" quedaba bien
+    // clampeado a 100% pero "enElMes" (y el monto que se certifica ese mes) se guardaba SIN
+    // clampear, sobreestimando cuánto se certificó realmente este mes.
+    const enElMes = Math.min(valor/100, Math.max(0, 1-anterior));
     const acumulado = Math.min(1, anterior+enElMes);
     it.historialMeses = it.historialMeses || [];
     it.historialMeses.push({n:mesN, anterior, enElMes, acumulado, monto: enElMes*it.precioConCoef});
@@ -17119,18 +17328,53 @@ async function generarMinutaPDF(){
   const esEdicion = !!minutaEditandoId;
   const id = esEdicion ? minutaEditandoId : uid();
   const numero = esEdicion ? minutasIndex.find(m=>m.id===id).numero : correlativoMinutaSiguiente;
-  const minuta = {id, numero, obra, fecha, contenido, firmas, creadoPor: sesionActual?sesionActual.username:"", timestamp:new Date().toISOString()};
+  // Si es una edición, se intenta conservar quién y cuándo se creó la minuta ORIGINAL -- antes se
+  // pisaba siempre con el usuario y la hora de la edición, perdiendo para siempre la autoría real
+  // del acta (quién estuvo en la reunión y la redactó, no quién corrigió después un typo).
+  let creadoPor = sesionActual?sesionActual.username:"", timestampCreacion = new Date().toISOString();
+  if(esEdicion){
+    try{
+      const rOriginal = await window.storage.get("minuta_"+id, true);
+      const original = rOriginal && rOriginal.value ? JSON.parse(rOriginal.value) : null;
+      if(original){ creadoPor = original.creadoPor||creadoPor; timestampCreacion = original.timestamp||timestampCreacion; }
+    }catch(e){}
+  }
+  const minuta = {id, numero, obra, fecha, contenido, firmas, creadoPor, timestamp: timestampCreacion};
+  if(esEdicion){ minuta.editadoPor = sesionActual?sesionActual.username:""; minuta.timestampEdicion = new Date().toISOString(); }
   nexoAvisoFlotante("guardando");
-  try{ await window.storage.set("minuta_"+id, JSON.stringify(minuta), true); }catch(e){ nexoAvisoFlotante("error", "No se pudo guardar la minuta ⚠"); return; }
+  let r;
+  try{ r = await window.storage.set("minuta_"+id, JSON.stringify(minuta), true); }catch(e){ nexoAvisoFlotante("error", "No se pudo guardar la minuta ⚠"); return; }
+  // window.storage.set nunca rechaza (ni siquiera si el documento no entra en Firestore por el
+  // límite de 1 MiB, algo que acá es un riesgo real con varias firmas dibujadas como imagen) -- solo
+  // encola en localStorage y devuelve {pendiente:true}. Sin este chequeo se mostraba "Minuta
+  // guardada ✓" igual, aunque jamás fuera a llegar a la nube (el reintento automático de esa cola
+  // vuelve a fallar para siempre con un documento que es demasiado grande).
+  if(r && r.pendiente){
+    nexoAvisoFlotante("error", "⚠ No se pudo subir la minuta a la nube (quedó pendiente) — si tiene muchas firmas dibujadas, puede ser demasiado pesada. Probá con menos firmas o revisá la conexión.");
+    return;
+  }
   if(esEdicion){
     const idx = minutasIndex.findIndex(m=>m.id===id);
+    const respaldo = idx>-1 ? {...minutasIndex[idx]} : null;
     if(idx>-1) minutasIndex[idx] = {id, numero, obra, fecha};
-    await guardarMinutasIndex();
+    const okIndice = await guardarMinutasIndex();
+    if(!okIndice){
+      if(respaldo && idx>-1) minutasIndex[idx] = respaldo;
+      nexoAvisoFlotante("error", "⚠ La minuta se guardó, pero no se pudo actualizar la lista (revisá conexión)");
+      renderListaMinutas();
+      return;
+    }
     registrarActividad(`editó la Minuta N° ${numero} de ${esc(obra)}`);
     nexoAvisoFlotante("guardado", "Minuta actualizada ✓");
   }else{
     minutasIndex.unshift({id, numero, obra, fecha});
-    await guardarMinutasIndex();
+    const okIndice = await guardarMinutasIndex();
+    if(!okIndice){
+      minutasIndex.shift();
+      nexoAvisoFlotante("error", "⚠ La minuta se guardó, pero no se pudo agregar a la lista (revisá conexión)");
+      renderListaMinutas();
+      return;
+    }
     correlativoMinutaSiguiente++;
     await guardarCorrelativoMinuta();
     registrarActividad(`cargó la Minuta N° ${numero} de ${esc(obra)}`);
@@ -17157,7 +17401,7 @@ function construirHtmlMinuta(minuta){
       <td style="font-family:Arial;font-size:12px;color:#444;"><b style="font-size:15px;color:#0A2540;display:block;">Gestión de Obra</b>Minuta de reunión</td>
       <td width="140" align="right"><img src="data:image/png;base64,${LOGO_CYLP_B64}" style="height:46px;"></td>
     </tr></table>
-    <div style="text-align:center;font-size:22px;font-weight:700;text-decoration:underline;letter-spacing:.05em;margin:10px 0 4px;">MINUTA</div>
+    <div style="text-align:center;font-size:22px;font-weight:700;text-decoration:underline;letter-spacing:.05em;margin:10px 0 4px;">MINUTA N° ${minuta.numero}</div>
     <div style="text-align:center;font-family:Arial;font-size:12px;color:#444;margin-bottom:24px;">${fechaTxt}</div>
     <div style="font-family:Arial;font-size:12.5px;margin-bottom:20px;line-height:1.8;">
       <b style="color:#0A2540;">Obra:</b> ${esc(minuta.obra)} &nbsp;&nbsp;&nbsp; <b style="color:#0A2540;">Fecha:</b> ${minuta.fecha ? fechaAR(minuta.fecha) : ""}
@@ -17187,18 +17431,31 @@ function renderListaMinutas(){
 }
 async function eliminarMinuta(id){
   const m = minutasIndex.find(x=>x.id===id);
+  const respaldo = m;
   minutasIndex = minutasIndex.filter(x=>x.id!==id);
-  await guardarMinutasIndex();
-  try{ await window.storage.delete("minuta_"+id, true); }catch(e){}
+  const okIndice = await guardarMinutasIndex();
+  if(!okIndice){
+    if(respaldo) minutasIndex.unshift(respaldo);
+    showToast("⚠ No se pudo quitar de la lista (revisá conexión) -- no se borró nada todavía");
+    return;
+  }
+  // window.storage.delete() -- a diferencia de .get/.set -- NO tiene cola offline ni reintento: si
+  // no hay conexión en este momento preciso, se pierde para siempre y el documento "minuta_<id>"
+  // queda huérfano en Firestore (invisible en el índice, pero ocupando su mismo N°). Por eso NO se
+  // puede reciclar el correlativo ni avisar éxito sin saber si este borrado puntual funcionó de verdad.
+  let okBorrado = true;
+  try{ await window.storage.delete("minuta_"+id, true); }
+  catch(e){ okBorrado = false; }
   if(m) registrarActividad(`eliminó la Minuta N° ${m.numero} de ${esc(m.obra)}`);
   // Si era la última minuta numerada (nadie más usa ese número ni uno mayor), liberamos el
   // correlativo para que la próxima no deje un hueco en la numeración -- mismo arreglo ya hecho
-  // para Caja Chica.
-  if(m && m.numero===correlativoMinutaSiguiente-1 && !minutasIndex.some(x=>x.numero>=m.numero)){
+  // para Caja Chica. Solo si el borrado remoto funcionó: si no, ese N° sigue "ocupado" por el
+  // documento huérfano y reciclarlo igual arriesgaría una Minuta nueva con el mismo N°.
+  if(okBorrado && m && m.numero===correlativoMinutaSiguiente-1 && !minutasIndex.some(x=>x.numero>=m.numero)){
     correlativoMinutaSiguiente = m.numero;
     await guardarCorrelativoMinuta();
   }
-  showToast("Minuta eliminada");
+  showToast(okBorrado ? "Minuta eliminada" : "⚠ Se quitó de la lista, pero no se pudo borrar el contenido en la nube (revisá conexión)");
   renderListaMinutas();
 }
 // Corregir a mano el N° de una minuta ya creada (ej: quedó mal numerada porque se borró una
@@ -17222,16 +17479,30 @@ async function guardarNumeroMinutaCorregido(id){
     showToast(`Ya existe la Minuta N° ${nuevoNumero} — elegí otro número`);
     return;
   }
+  const numeroAnterior = m.numero;
   m.numero = nuevoNumero;
-  await guardarMinutasIndex();
+  const okIndice = await guardarMinutasIndex();
+  if(!okIndice){
+    m.numero = numeroAnterior;
+    showToast("⚠ No se pudo guardar el nuevo N° (revisá conexión)");
+    return;
+  }
+  let okDetalle = true;
   try{
     const r = await window.storage.get("minuta_"+id, true);
     const detalle = r && r.value ? JSON.parse(r.value) : null;
-    if(detalle){ detalle.numero = nuevoNumero; await window.storage.set("minuta_"+id, JSON.stringify(detalle), true); }
-  }catch(e){}
+    if(detalle){
+      detalle.numero = nuevoNumero;
+      const rSet = await window.storage.set("minuta_"+id, JSON.stringify(detalle), true);
+      if(rSet && rSet.pendiente) okDetalle = false;
+    }
+  }catch(e){ okDetalle = false; }
   if(nuevoNumero>=correlativoMinutaSiguiente){ correlativoMinutaSiguiente = nuevoNumero+1; await guardarCorrelativoMinuta(); }
   registrarActividad(`corrigió el N° de una Minuta de ${esc(m.obra)} a N° ${nuevoNumero}`);
-  showToast("N° corregido ✓");
+  // El índice (lo que se ve en la lista) ya quedó con el N° nuevo -- si el detalle completo (el que
+  // usa verMinutaPDF/el PDF) no llegó a actualizarse, avisamos en vez de decir "✓" sin más: por
+  // separado podrían mostrar N° distintos hasta que se reintente.
+  showToast(okDetalle ? "N° corregido ✓" : "⚠ Se corrigió en la lista, pero no en el PDF guardado (revisá conexión y volvé a intentar)");
   cerrarPromptGenerico();
   renderListaMinutas();
 }
@@ -19040,6 +19311,7 @@ function aplicarRestriccionesRol(){
 
 /* ---------------- Gestión de usuarios (solo Administrador) ---------------- */
 async function agregarUsuario(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const user = document.getElementById("nu-user").value.trim();
   const pass = document.getElementById("nu-pass").value;
   const rol = "capataz"; // esta pantalla solo crea cuentas de Capataz; el Administrador se crea una sola vez al arrancar la app
@@ -19054,6 +19326,7 @@ async function agregarUsuario(){
   registrarActividad(`agregó al capataz "${user}"`);
 }
 async function quitarUsuario(username){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   if(sesionActual && sesionActual.username===username){ showToast("No podés eliminar tu propio usuario mientras estás conectado"); return; }
   const admins = usuarios.filter(u=>u.role==="admin");
   const objetivo = usuarios.find(u=>u.username===username);
@@ -19101,6 +19374,7 @@ function renderTablaUsuarios(){
 }
 
 async function togglePermisoUsuario(username, modulo, activo){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const u = usuarios.find(x=>x.username===username);
   if(!u) return;
   if(!u.permisos) u.permisos = {...PERMISOS_CAPATAZ_DEFAULT};
@@ -19134,6 +19408,11 @@ async function construirPaqueteRespaldo(){
   };
 }
 async function exportarRespaldo(){
+  // El botón que llama a esto ya está oculto para Capataz (pestaña Configuración, solo-admin), pero
+  // la función en sí no chequeaba nada -- construirPaqueteRespaldo() trae TODO (usuarios con hash de
+  // contraseña incluido, Caja Chica de todos, todas las obras), así que sin este chequeo alcanzaba
+  // con llamarla directo desde la consola para descargarse la base de datos entera.
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const info = document.getElementById("respaldo-info");
   info.textContent = "Preparando respaldo…";
   try{
@@ -19150,6 +19429,7 @@ async function exportarRespaldo(){
     setTimeout(()=>URL.revokeObjectURL(url), 5000);
     info.textContent = `Respaldo descargado ✓ (${paquete.cantidad_claves} registros, ${new Date().toLocaleString("es-AR")})`;
     showToast("Respaldo descargado ✓");
+    registrarActividad(`descargó un respaldo completo de la app (${paquete.cantidad_claves} registros)`);
   }catch(err){
     console.error(err);
     info.textContent = "";
@@ -19162,6 +19442,11 @@ function recargarTrasRestaurarRespaldo(){
   location.reload();
 }
 async function importarRespaldo(input){
+  // Restaurar un respaldo SOBRESCRIBE toda la base de datos de la app -- sin este chequeo, un
+  // Capataz podía ejecutar esto desde la consola (el botón está oculto, pero la función no
+  // validaba nada) y reemplazar los datos de todos, incluso dándose de alta como admin editando a
+  // mano el JSON antes de restaurarlo.
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const file = input.files[0];
   if(!file) return;
   // ANTES: esta línea llamaba a una función ("confirm2Simulado") que nunca existió en ningún
@@ -19187,6 +19472,7 @@ async function importarRespaldo(input){
       }
       info.textContent = "Restaurado ✓ — la página se va a recargar sola para traer los datos nuevos…";
       showToast("Respaldo restaurado ✓ — recargando…");
+      registrarActividad(`restauró un respaldo completo (${claves.length} registros)`);
       // Recarga FORZADA, no un aviso pasivo: importarRespaldo() escribe directo en Firestore pero
       // nunca actualiza las variables JS en memoria (usuarios, rubros, trabajadores, etc.). Antes
       // solo se pedía "recargá la página" en un texto chico -- si alguien seguía trabajando sin
