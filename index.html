@@ -4598,26 +4598,43 @@ const LOGO_CYLP_B64 = "iVBORw0KGgoAAAANSUhEUgAAAMUAAAArCAYAAADIdkwCAAAAAXNSR0IAr
     // en vez de dejar la base completamente abierta a cualquiera.
     const authListo = firebase.auth().signInAnonymously()
       .catch(e=>{ console.error("No se pudo iniciar sesión anónima en Firebase:", e); });
+    // Con datos móviles con buena señal de antena pero mal camino hasta los servidores de Google
+    // (algo bastante común: una celda saturada, un proveedor que mete un proxy/portal cautivo, o
+    // simplemente una zona con mala "backhaul" aunque el teléfono muestre todas las rayitas), el
+    // SDK de Firestore puede quedarse esperando una respuesta durante MUCHO tiempo antes de
+    // rendirse solo -- la app se sentía "trabada" un buen rato y recién después caía al aviso de
+    // "Sin conexión". Ninguna de las llamadas de abajo tenía límite de tiempo propio (solo lo
+    // tenía el reintento de la cola offline, ver intentarSincronizarCola). Con esto, cualquier
+    // pedido que tarde más de este límite se da por perdido ENSEGUIDA y cae de una al mecanismo
+    // que ya existía (caché local de lectura / cola de reintento), en vez de tener a la persona
+    // esperando con el celular en la mano.
+    const TOPE_ESPERA_FIRESTORE_MS = 10000;
+    function conLimiteDeEspera(promesa, verboParaError){
+      return Promise.race([
+        promesa,
+        new Promise((_, reject)=>setTimeout(()=>reject(new Error(`${verboParaError} tardó más de ${TOPE_ESPERA_FIRESTORE_MS/1000}s sin responder -- la señal del teléfono puede estar llena pero el camino hasta el servidor estar lento o cortado`)), TOPE_ESPERA_FIRESTORE_MS))
+      ]);
+    }
     window.storage = {
       async get(key, shared){
         await authListo;
-        const doc = await db.collection("storage").doc(key).get();
+        const doc = await conLimiteDeEspera(db.collection("storage").doc(key).get(), "la lectura");
         if(!doc.exists) throw new Error("Clave no encontrada: "+key);
         return {key, value: doc.data().value, shared};
       },
       async set(key, value, shared){
         await authListo;
-        await db.collection("storage").doc(key).set({value, actualizado: new Date().toISOString()});
+        await conLimiteDeEspera(db.collection("storage").doc(key).set({value, actualizado: new Date().toISOString()}), "el guardado");
         return {key, value, shared};
       },
       async delete(key, shared){
         await authListo;
-        await db.collection("storage").doc(key).delete();
+        await conLimiteDeEspera(db.collection("storage").doc(key).delete(), "el borrado");
         return {key, deleted:true, shared};
       },
       async list(prefix, shared){
         await authListo;
-        const snap = await db.collection("storage").get();
+        const snap = await conLimiteDeEspera(db.collection("storage").get(), "la lectura");
         let keys = snap.docs.map(d=>d.id);
         if(prefix) keys = keys.filter(k=>k.startsWith(prefix));
         return {keys, prefix, shared};
@@ -4735,7 +4752,11 @@ function marcarLecturaDesdeCache(){
   }
   if(yaAvisoLecturaCache) return;
   yaAvisoLecturaCache = true;
-  setTimeout(()=>showToast("Sin señal — estás viendo la última copia guardada en el celular. Lo que cargues se manda solo cuando vuelva.", 6000), 1200);
+  // OJO: "sin conexión" es sobre el camino hasta el servidor de Google, no sobre las rayitas de
+  // señal del teléfono -- con buena señal de antena pero una conexión de datos lenta/saturada
+  // (o bloqueada por el proveedor) esto puede aparecer igual, así que no se dice literalmente
+  // "sin señal" para no contradecir lo que la persona está viendo en su propio celular.
+  setTimeout(()=>showToast("No se pudo conectar con el servidor (aunque tengas señal, puede ser que la conexión de datos esté lenta o cortada) — estás viendo la última copia guardada en el celular. Lo que cargues se manda solo cuando se restablezca.", 7000), 1200);
 }
 
 const CLAVE_COLA_PENDIENTE = "gdo_offline_queue";
