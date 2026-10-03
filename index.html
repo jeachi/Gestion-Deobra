@@ -460,7 +460,14 @@ nav.tabs button.active{
 .carrusel-dots .dot{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.3);transition:.2s;}
 .carrusel-dots .dot.activo{background:#fff;width:12px;border-radius:2px;}
 
-section.view{display:none;padding:6px 16px 16px;}
+/* El botón flotante de guardar (.fab-guardar, bottom:20px) y el globo del asistente
+   (#nexo-chip-flotante, bottom:92px, arriba del botón) son position:fixed -- sin dejarles un hueco
+   propio abajo de cada pantalla, se apoyaban directo sobre lo último que hubiera ahí (se vio tapando
+   la firma del chofer en Remitos, el filtro de obra en Herramientas, filas de la tabla en
+   Configuración). Este espacio queda reservado SIEMPRE, se use o no el botón en esa pantalla
+   puntual, porque el globo del asistente puede aparecer en cualquiera. */
+:root{ --espacio-flotantes:150px; }
+section.view{display:none;padding:6px 16px var(--espacio-flotantes);}
 section.view.active{display:block;}
 /* Modo overlay del Plano de avance cuando se abre desde adentro de un Certificado -- se muestra
    tapando toda la pantalla (encima del formulario de certificado, que queda intacto abajo, no se
@@ -631,8 +638,8 @@ table.trab input,table.trab select{
   padding:5px 6px 5px 12px;border-radius:999px;font-size:12.5px;font-weight:600;
 }
 .catalogo-chip button{
-  border:none;background:rgba(0,0,0,.08);color:var(--verde-oscuro);width:18px;height:18px;
-  border-radius:50%;font-size:11px;cursor:pointer;line-height:1;
+  border:none;background:rgba(0,0,0,.08);color:var(--verde-oscuro);width:26px;height:26px;
+  border-radius:50%;font-size:12px;cursor:pointer;line-height:1;flex-shrink:0;
 }
 .catalogo-chip.chip-default{background:#FFF3CD;color:#7A5A00;border:1px solid #E9C46A;}
 .catalogo-chip .btn-star{
@@ -643,6 +650,30 @@ table.trab input,table.trab select{
 .catalogo-chip .btn-finalizar{
   border:none;background:rgba(0,0,0,.08);color:inherit;width:auto;height:auto;border-radius:999px;
   font-size:10px;font-weight:700;cursor:pointer;padding:3px 8px;margin-right:2px;text-decoration:none;
+}
+/* La fila de Obras es la más cargada de botones (★ predeterminada, Finalizar, ✕ quitar) -- en vez
+   de amontonar los 3 en una sola píldora angosta (como siguen categorías/rubros/unidades, que solo
+   tienen un botón y entran bien así), cada obra pasa a ocupar su propia fila ancha, con cada botón
+   con su propio espacio para tocar cómodo. */
+.catalogo-lista-obras{display:flex;flex-direction:column;gap:6px;}
+.catalogo-chip-obra{
+  display:flex;align-items:center;gap:8px;background:var(--verde-claro);color:var(--texto-en-verde-claro);
+  padding:6px 8px 6px 6px;border-radius:10px;font-size:12.5px;font-weight:700;
+}
+.catalogo-chip-obra.chip-default{background:#FFF3CD;color:#7A5A00;border:1px solid #E9C46A;}
+.catalogo-chip-obra.chip-finalizada{background:var(--fondo);color:var(--tinta-suave);text-decoration:line-through;}
+.catalogo-chip-obra .btn-star{
+  border:none;background:transparent;color:#C9971C;width:30px;height:30px;flex-shrink:0;
+  font-size:16px;cursor:pointer;border-radius:50%;
+}
+.catalogo-chip-obra .nombre-obra{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.catalogo-chip-obra .btn-finalizar{
+  border:1px solid rgba(0,0,0,.12);background:#fff;color:inherit;height:28px;
+  font-size:10px;font-weight:700;cursor:pointer;padding:0 10px;border-radius:7px;text-decoration:none;flex-shrink:0;
+}
+.catalogo-chip-obra button.btn-quitar-obra{
+  border:1px solid rgba(0,0,0,.12);background:#fff;color:var(--texto-alerta);width:28px;height:28px;
+  border-radius:7px;font-size:12px;cursor:pointer;flex-shrink:0;
 }
 
 /* ---------- Pedidos de Materiales ---------- */
@@ -714,8 +745,16 @@ table.trab input,table.trab select{
 .herr-nombre{font-weight:800;font-size:13px;color:var(--verde-oscuro);}
 .herr-meta{font-size:10.5px;color:var(--tinta-suave);margin-top:2px;}
 .badge-estado-herr{font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:999px;margin-top:5px;display:inline-block;}
-.botones-fila-herr{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
-.btn-mini{border:1px solid var(--borde);border-radius:7px;padding:5px 9px;font-size:10.5px;font-weight:700;background:#fff;color:var(--tinta);cursor:pointer;}
+/* Antes todos los botones de la tarjeta (Observación, Reparar, Prestar, Historial, Eliminar) iban
+   en una misma fila con flex-wrap -- como cada uno mide lo que su propio texto ocupa, se acomodaban
+   como entraban y cada tarjeta terminaba con una cantidad de filas distinta, sin ningún orden entre
+   sí. Ahora van en una grilla pareja de 2 columnas (mismo ancho y alto cada botón), y "Eliminar"
+   queda SIEMPRE separado abajo -- nunca mezclado con el resto.*/
+.herr-acciones{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
+.herr-acciones-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.herr-acciones-grid .btn-mini{width:100%;box-sizing:border-box;text-align:center;}
+.herr-btn-eliminar{align-self:flex-end;padding:7px 16px !important;border-top:1px solid var(--fondo);padding-top:10px !important;margin-top:2px;}
+.btn-mini{border:1px solid var(--borde);border-radius:7px;padding:8px 9px;font-size:10.5px;font-weight:700;background:#fff;color:var(--tinta);cursor:pointer;min-height:34px;}
 .btn-mini.peligro{border-color:#B42318;color:var(--texto-alerta);}
 .btn-mini.admin{border-color:var(--verde);color:var(--texto-en-verde-claro);background:var(--verde-claro);}
 .herr-obs-item{font-size:10.5px;color:var(--tinta-suave);border-top:1px dashed var(--borde);padding-top:6px;margin-top:6px;}
@@ -1487,6 +1526,17 @@ table.rc-firmas-tabla td:last-child{border-right:none;}
   font-weight:700;font-size:13px;cursor:pointer;flex:0 0 auto;white-space:nowrap;
 }
 .quincena-toggle button.active{background:var(--verde);color:#fff;}
+/* Flechita fija que avisa "hay más pestañas deslizando" -- la agrega sola marcarSubtabsConDesborde()
+   solo cuando la tira de verdad no entra completa. position:sticky la deja clavada en el borde
+   derecho mientras se desliza el contenido de atrás (a diferencia de position:absolute, que se
+   movería junto con el scroll y dejaría de verse apenas se empieza a deslizar). */
+.quincena-toggle.desborda .desborda-flecha, .subtabs-scroll.desborda .desborda-flecha{
+  position:sticky;right:2px;flex:0 0 auto;align-self:center;
+  width:20px;height:20px;margin-left:-24px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(10,37,64,.8);color:#fff;border-radius:50%;font-size:13px;font-weight:800;
+  pointer-events:none;
+}
 .ico-subtab{display:inline-flex;vertical-align:-2px;}
 .subtabs-scroll{display:flex;gap:7px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:2px 2px 8px;margin-bottom:4px;scrollbar-width:none;}
 .subtabs-scroll::-webkit-scrollbar{display:none;}
@@ -2606,7 +2656,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <input id="nueva-obra" type="text" placeholder="Ej: Escuela Nº 12" style="flex:1;min-width:120px;">
           <button class="btn btn-outline btn-sm" onclick="agregarObra()">+ Agregar</button>
         </div>
-        <div id="lista-obras" class="catalogo-lista"></div>
+        <div id="lista-obras" class="catalogo-lista-obras"></div>
         <p class="tiny" id="obra-predet-info" style="margin-top:6px;"></p>
       </div>
 
@@ -5287,12 +5337,12 @@ function renderCatalogos(){
     const finalizada = obrasFinalizadas.includes(o);
     const oEsc = esc(o).replace(/'/g,"\\'");
     return `
-    <span class="catalogo-chip ${finalizada?'chip-finalizada':(obraPredeterminada===o?'chip-default':'')}">
+    <div class="catalogo-chip-obra ${finalizada?'chip-finalizada':(obraPredeterminada===o?'chip-default':'')}">
       <button class="btn-star" title="Marcar como predeterminada" onclick="marcarObraPredeterminada('${oEsc}')">${obraPredeterminada===o?'★':'☆'}</button>
-      ${esc(o)}
+      <span class="nombre-obra">${esc(o)}</span>
       <button class="btn-finalizar" title="${finalizada?'Reactivar':'Marcar como finalizada'}" onclick="toggleFinalizadaObra('${oEsc}')">${finalizada?'▶ Reactivar':'🏁 Finalizar'}</button>
-      <button onclick="quitarObra(${i})" title="Quitar">✕</button>
-    </span>`;
+      <button class="btn-quitar-obra" onclick="quitarObra(${i})" title="Quitar">✕</button>
+    </div>`;
   }).join("") || `<span class="tiny">Sin obras cargadas.</span>`;
   document.getElementById("obra-predet-info").textContent = obraPredeterminada
     ? `Obra predeterminada actual: ${obraPredeterminada}`
@@ -12980,7 +13030,30 @@ function irA(view){
   // "atrás" del celular tiene a dónde volver DENTRO de la app en vez de cerrarla directamente
   // (ver el bloque "Navegación con el botón atrás" más abajo, que escucha "popstate").
   if(!navegandoPorHistorial) empujarEstadoHistorialApp(view);
+  // Las pestañas internas (Asistencia, Pedidos, Caja Chica, Configuración...) son una tira que
+  // se puede deslizar horizontal cuando no entran todas -- pero no había NINGÚN aviso de que
+  // hubiera más para el costado: la última se cortaba justo en el borde de la pantalla (a mitad
+  // de palabra) y daba la sensación de que esa pestaña no existía. Se agrega una flechita que
+  // aparece sola solo cuando de verdad sobra contenido (ver marcarSubtabsConDesborde).
+  requestAnimationFrame(marcarSubtabsConDesborde);
 }
+// Marca con la clase "desborda" (y le agrega una flechita fija a la derecha, una sola vez) a
+// cualquier tira de pestañas/subtabs que realmente no entre completa en el ancho de pantalla
+// disponible -- si entra bien, no se le agrega nada, para no meter ruido visual de más.
+function marcarSubtabsConDesborde(){
+  document.querySelectorAll(".quincena-toggle, .subtabs-scroll").forEach(el=>{
+    const desborda = el.scrollWidth > el.clientWidth + 2;
+    el.classList.toggle("desborda", desborda);
+    if(desborda && !el.querySelector(":scope > .desborda-flecha")){
+      const span = document.createElement("span");
+      span.className = "desborda-flecha";
+      span.textContent = "›";
+      span.setAttribute("aria-hidden", "true");
+      el.appendChild(span);
+    }
+  });
+}
+window.addEventListener("resize", ()=>{ clearTimeout(window._tmrDesborde); window._tmrDesborde = setTimeout(marcarSubtabsConDesborde, 150); });
 // ==================== Navegación con el botón/gesto "atrás" del celular ====================
 // Antes, al tocar "atrás" (o hacer el gesto lateral en Android) la app se cerraba directo, porque
 // nunca dejaba nada en el historial del navegador para volver. Ahora cada cambio de módulo (irA)
@@ -13576,29 +13649,31 @@ function renderInventarioHerramientas(){
         <div class="herr-meta">${esc(h.obra)} · ${h.condicionInicial==="nueva"?"Nueva":"Usada"} · Compra: ${h.fechaCompra?fechaAR(h.fechaCompra):"—"}</div>
         <span class="badge-estado-herr ${info.clase}">${info.txt}${metaExtra}</span>
         ${obsHtml}
-        <div class="botones-fila-herr">
-          <button type="button" class="btn-mini" onclick="abrirModalObservacion('${h.id}')">💬 Observación</button>
-          ${esAdmin ? `
-            ${h.estado==="bien"
-              // Antes "dañada" solo se podía elegir al CARGAR la herramienta (chip del formulario
-              // de alta) -- no había ninguna forma de marcar como dañada una herramienta que ya
-              // estaba en uso. Solo se ofrece desde "bien": si ya está en reparación o prestada,
-              // hay que resolver eso primero (mismo criterio que "Enviar a reparar"/"Prestar").
-              ? `<button type="button" class="btn-mini admin" onclick="abrirModalDanada('${h.id}')">⚠ Marcar como dañada</button>` : ""}
-            ${h.estado==="reparacion"
-              ? `<button type="button" class="btn-mini admin" onclick="finalizarReparacionHerramienta('${h.id}')">✅ Volvió de reparación</button>`
-              // Oculto mientras está prestada: "Enviar a reparar" pisaba el estado a "reparacion"
-              // sin cerrar el préstamo en curso (h.prestamo quedaba colgado, nunca se archivaba en
-              // historialPrestamos) -- hay que registrar la devolución primero.
-              : (h.estado!=="prestada" ? `<button type="button" class="btn-mini admin" onclick="abrirModalReparacion('${h.id}')">🔧 Enviar a reparar</button>` : "")}
-            ${h.estado!=="reparacion"
-              // Mismo motivo al revés: "Prestar a otra obra" con la herramienta en reparación
-              // pisaba el estado a "prestada" sin cerrar la reparación en curso (h.reparacion
-              // quedaba colgado, nunca se archivaba en historialReparaciones).
-              ? `<button type="button" class="btn-mini admin" onclick="abrirModalPrestamo('${h.id}')">🔁 Prestar a otra obra</button>` : ""}
-            <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${totalHistorialHerramienta(h)>0 ? ` (${totalHistorialHerramienta(h)})` : ""}</button>
-            <button type="button" class="btn-mini peligro" onclick="confirmarDoble(this,'${h.estado==="prestada"?"⚠ Sigue prestada, ¿Seguro?":"¿Seguro?"}',()=>eliminarHerramienta('${h.id}'))">🗑 Eliminar</button>
-          ` : ``}
+        <div class="herr-acciones">
+          <div class="herr-acciones-grid">
+            <button type="button" class="btn-mini" onclick="abrirModalObservacion('${h.id}')">💬 Observación</button>
+            ${esAdmin ? `
+              ${h.estado==="bien"
+                // Antes "dañada" solo se podía elegir al CARGAR la herramienta (chip del formulario
+                // de alta) -- no había ninguna forma de marcar como dañada una herramienta que ya
+                // estaba en uso. Solo se ofrece desde "bien": si ya está en reparación o prestada,
+                // hay que resolver eso primero (mismo criterio que "Enviar a reparar"/"Prestar").
+                ? `<button type="button" class="btn-mini admin" onclick="abrirModalDanada('${h.id}')">⚠ Marcar como dañada</button>` : ""}
+              ${h.estado==="reparacion"
+                ? `<button type="button" class="btn-mini admin" onclick="finalizarReparacionHerramienta('${h.id}')">✅ Volvió de reparación</button>`
+                // Oculto mientras está prestada: "Enviar a reparar" pisaba el estado a "reparacion"
+                // sin cerrar el préstamo en curso (h.prestamo quedaba colgado, nunca se archivaba en
+                // historialPrestamos) -- hay que registrar la devolución primero.
+                : (h.estado!=="prestada" ? `<button type="button" class="btn-mini admin" onclick="abrirModalReparacion('${h.id}')">🔧 Enviar a reparar</button>` : "")}
+              ${h.estado!=="reparacion"
+                // Mismo motivo al revés: "Prestar a otra obra" con la herramienta en reparación
+                // pisaba el estado a "prestada" sin cerrar la reparación en curso (h.reparacion
+                // quedaba colgado, nunca se archivaba en historialReparaciones).
+                ? `<button type="button" class="btn-mini admin" onclick="abrirModalPrestamo('${h.id}')">🔁 Prestar a otra obra</button>` : ""}
+              <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${totalHistorialHerramienta(h)>0 ? ` (${totalHistorialHerramienta(h)})` : ""}</button>
+            ` : ``}
+          </div>
+          ${esAdmin ? `<button type="button" class="btn-mini peligro herr-btn-eliminar" onclick="confirmarDoble(this,'${h.estado==="prestada"?"⚠ Sigue prestada, ¿Seguro?":"¿Seguro?"}',()=>eliminarHerramienta('${h.id}'))">🗑 Eliminar</button>` : ``}
         </div>
       </div>
     </div>`;
