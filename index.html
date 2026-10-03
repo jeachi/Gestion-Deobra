@@ -13062,7 +13062,11 @@ async function cargarRemitosIndex(){
   }catch(e){ remitosIndex = []; }
 }
 async function guardarRemitosIndex(){
-  await guardarClave("remitos_index", JSON.stringify(remitosIndex));
+  // OJO: antes esto no devolvía nada (guardarClave() sí devuelve true/false, pero se descartaba) --
+  // guardarRemito() no tenía forma de enterarse si el índice realmente se guardó o quedó pendiente
+  // en la cola offline, así que nunca podía revisarlo ni avisar/revertir como sí hace su par de
+  // Minutas (guardarMinutasIndex).
+  return guardarClave("remitos_index", JSON.stringify(remitosIndex));
 }
 async function cargarCorrelativoRemito(){
   try{
@@ -13075,6 +13079,13 @@ async function guardarCorrelativoRemito(){
 }
 
 function prepararVistaRemitos(){
+  limpiarFormularioRemito();
+  renderListaRemitos();
+}
+// Deja el formulario listo para cargar un remito nuevo -- se usa tanto al entrar a la pestaña como
+// después de guardar uno, que antes dejaba la obra/ítems/firmas del envío anterior todavía cargados
+// en pantalla (ver el comentario en guardarRemito()).
+function limpiarFormularioRemito(){
   poblarSelectObras(document.getElementById("rem-obra"));
   document.getElementById("rem-fecha").value = hoyISO();
   document.getElementById("rem-destinatario").value = "CYLP SA";
@@ -13086,7 +13097,6 @@ function prepararVistaRemitos(){
   remItems = [{cant:"",detalle:"",esHerramienta:false},{cant:"",detalle:"",esHerramienta:false}];
   renderItemsRemito();
   document.getElementById("avisos-remito-form-box").style.display = "none";
-  renderListaRemitos();
   mostrarBotonFlotanteGuardar("Guardar remito", guardarRemito, "📄");
 }
 function renderItemsRemito(){
@@ -13170,18 +13180,45 @@ async function guardarRemito(){
   }
 
   const id = uid();
+  // Se vuelve a pedir el correlativo a Firestore justo antes de asignarlo (en vez de confiar en el
+  // que ya estaba en memoria desde que arrancó la sesión) -- reduce bastante la ventana en la que
+  // dos pestañas/dispositivos guardando casi al mismo tiempo podían sacar el MISMO número para dos
+  // remitos distintos (un comprobante de entrega duplicado). No la elimina del todo -- se necesitaría
+  // una transacción atómica de Firestore para eso, algo que hoy no usa ningún módulo de la app -- pero
+  // es la mejora de bajo riesgo que se puede hacer sin tocar esa arquitectura más amplia.
+  await cargarCorrelativoRemito();
   const numero = correlativoRemitoSiguiente;
   const remito = {id, numero, obra, fecha, destinatario, procedencia, items:itemsValidos, chofer, autorizaciones, creadoPor: sesionActual?sesionActual.username:"", timestamp:new Date().toISOString()};
   nexoAvisoFlotante("guardando");
-  try{ await window.storage.set("remito_"+id, JSON.stringify(remito), true); }catch(e){ nexoAvisoFlotante("error", "No se pudo guardar el remito ⚠"); return; }
+  let r;
+  try{ r = await window.storage.set("remito_"+id, JSON.stringify(remito), true); }catch(e){ nexoAvisoFlotante("error", "No se pudo guardar el remito ⚠"); return; }
+  // window.storage.set NUNCA rechaza ante un fallo de red -- encola en localStorage y devuelve
+  // {pendiente:true} en vez de tirar una excepción, así que el catch de arriba nunca se disparaba
+  // para "sin señal". Sin este chequeo se mostraba "Remito guardado ✓" iguaç (y hasta se generaba
+  // el PDF y se agregaban las herramientas al inventario) aunque el comprobante solo hubiera
+  // quedado en la cola local de este celular -- mismo criterio que ya usa generarMinutaPDF().
+  if(r && r.pendiente){
+    nexoAvisoFlotante("error", "⚠ No se pudo subir el remito a la nube (quedó pendiente) -- revisá la conexión. Si tiene varias firmas puede ser demasiado pesado.");
+    return;
+  }
   remitosIndex.unshift({id, numero, obra, fecha});
-  await guardarRemitosIndex();
+  const okIndice = await guardarRemitosIndex();
+  if(!okIndice){
+    remitosIndex.shift();
+    nexoAvisoFlotante("error", "⚠ El remito se guardó, pero no se pudo agregar a la lista (revisá conexión)");
+    renderListaRemitos();
+    return;
+  }
   correlativoRemitoSiguiente++;
   await guardarCorrelativoRemito();
   registrarActividad(`cargó el Remito N° ${numero} de ${esc(obra)}`);
   nexoAvisoFlotante("guardado", "Remito guardado ✓");
   renderListaRemitos();
-  await agregarHerramientasDesdeRemito(itemsValidos, obra, fecha);
+  // Deja el formulario listo para cargar el PRÓXIMO remito -- antes quedaba con la misma obra,
+  // ítems y firmas en pantalla, invitando a tocar "Guardar remito" una segunda vez sin querer y
+  // duplicar la entrega con un número correlativo distinto.
+  limpiarFormularioRemito();
+  await agregarHerramientasDesdeRemito(itemsValidos, obra, fecha, id);
   mostrarModalPDF(construirHtmlRemito(remito), "portrait", `Remito_${numero}_${nombreArchivoSeguro(obra)}.pdf`);
 }
 // Antes había que cargar dos veces lo mismo: una vez como ítem del remito y otra vez a mano en
@@ -13189,15 +13226,23 @@ async function guardarRemito(){
 // directo al inventario de Herramientas -- misma obra, misma fecha, sin pedir nada más (la
 // herramienta queda como "nueva"/"bien" y se puede completar el resto del detalle después, igual
 // que cualquier otra que se cargue a mano).
-async function agregarHerramientasDesdeRemito(itemsRemito, obra, fecha){
+async function agregarHerramientasDesdeRemito(itemsRemito, obra, fecha, remitoId){
   const marcados = itemsRemito.filter(it=>it.esHerramienta);
   if(marcados.length===0) return;
   const nuevas = marcados.map(it=>({
     id: uid(), nombre: it.detalle.trim(), obra,
-    cantidad: parseInt(it.cant)||1,
+    // parseInt("0")||1 y parseInt("-3")||1 daban "1" y "-3" respectivamente -- una cantidad "0"
+    // (alguien completando el detalle después) se convertía sola en "1", y una cantidad negativa
+    // quedaba tal cual, sin ningún control de rango. Ahora cualquier valor que no sea un entero
+    // positivo de verdad (vacío, cero, negativo, no numérico) cae al mismo "1" por defecto.
+    cantidad: (()=>{ const n = parseInt(String(it.cant||"").trim().replace(",","."), 10); return (Number.isFinite(n) && n>0) ? n : 1; })(),
     foto: null, condicionInicial: "nueva",
     fechaCompra: fecha, fechaIngresoObra: fecha,
     estado: "bien", observaciones: [], reparacion: null, prestamo: null,
+    // Vínculo con el remito que la generó -- sin esto, borrar el remito después (ej. se cargó con
+    // la obra equivocada) no tenía forma de saber qué herramientas había agregado solo, y quedaban
+    // para siempre en el inventario sin ningún respaldo documental (ver eliminarRemito()).
+    origenRemitoId: remitoId || null,
     creadoPor: sesionActual?sesionActual.username:"", timestamp: new Date().toISOString()
   }));
   herramientas.unshift(...nuevas);
@@ -13268,6 +13313,18 @@ async function verRemitoPDF(id){
     mostrarModalPDF(construirHtmlRemito(remito), "portrait", `Remito_${remito.numero}_${nombreArchivoSeguro(remito.obra)}.pdf`);
   }catch(e){ showToast("No se pudo abrir ese remito (revisá conexión)"); }
 }
+// Una herramienta que vino de un remito y que todavía está exactamente como se creó (nunca se
+// marcó con un daño, nunca se mandó a reparar, nunca se prestó) no tiene ninguna historia propia
+// más allá de ese remito -- si el remito se borra, no queda ningún respaldo documental de que esa
+// herramienta haya entrado de verdad. Si YA tiene algo de historial, ya es un registro real del
+// inventario por derecho propio y borrarla de taquito perdería esa historia sin avisar.
+function herramientaSinUsarTodavia(h){
+  return h.estado==="bien" && !h.reparacion && !h.prestamo
+    && !(h.observaciones&&h.observaciones.length)
+    && !(h.historialPrestamos&&h.historialPrestamos.length)
+    && !(h.historialReparaciones&&h.historialReparaciones.length)
+    && !(h.historialDanios&&h.historialDanios.length);
+}
 async function eliminarRemito(id){
   const r = remitosIndex.find(x=>x.id===id);
   remitosIndex = remitosIndex.filter(x=>x.id!==id);
@@ -13280,6 +13337,22 @@ async function eliminarRemito(id){
   if(r && r.numero===correlativoRemitoSiguiente-1 && !remitosIndex.some(x=>x.numero>=r.numero)){
     correlativoRemitoSiguiente = r.numero;
     await guardarCorrelativoRemito();
+  }
+  // Las herramientas que este remito agregó solo al inventario (ver agregarHerramientasDesdeRemito)
+  // quedaban huérfanas para siempre al borrarlo -- sin vínculo ni aviso, ensuciando el stock físico
+  // reportado. Si todavía están "sin usar" se sacan junto con el remito; si ya tienen historial
+  // propio (se usaron, repararon o prestaron), se dejan y solo se avisa.
+  const vinculadas = herramientas.filter(h=>h.origenRemitoId===id);
+  if(vinculadas.length>0){
+    const sinUsar = vinculadas.filter(herramientaSinUsarTodavia);
+    const conHistorial = vinculadas.filter(h=>!herramientaSinUsarTodavia(h));
+    if(sinUsar.length>0){
+      herramientas = herramientas.filter(h=>!sinUsar.includes(h));
+      await guardarHerramientasIndex();
+    }
+    if(conHistorial.length>0){
+      showToast(`⚠ Este remito había agregado ${conHistorial.length} herramienta(s) que ya tienen uso/historial -- quedaron en el inventario sin vínculo al remito borrado.`, 7000);
+    }
   }
   showToast("Remito eliminado");
   renderListaRemitos();
