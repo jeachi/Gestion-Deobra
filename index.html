@@ -3766,6 +3766,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <datalist id="lista-capas-existentes"></datalist>
           <input type="hidden" id="input-patron-capa" value="solido">
           <button type="button" class="btn-toggle-patron" id="btn-toggle-patron-capa" onclick="alternarPatronCapa()" title="Ahora es SÓLIDO -- tocá para poner rayado (útil si esta capa se superpone visualmente con otra)">■ Sólido</button>
+          <button type="button" class="btn-toggle-patron" id="btn-siguiente-item-contrato" style="display:none;" onclick="irAlProximoItemSinMarcar()" title="Salta al próximo ítem del contrato de este contratista que todavía no tiene ninguna pieza dibujada -- para ir marcando todas las capas del contrato una tras otra, sin buscarlas en la lista.">⚡ Siguiente</button>
         </div>
         <div class="paleta-colores" id="paleta-input-color-poligono-capa" style="display:none;">
           <input type="color" id="input-color-poligono-capa" value="#10B981" oninput="sincronizarPaletaColor('input-color-poligono-capa')">
@@ -26162,6 +26163,8 @@ async function renderSelectorItemCapa(){
   }
   if(miToken !== tokenRenderSelectorItemCapa) return; // llegó tarde, ya hay una consulta más nueva en curso
   if(dibujando || leerSelectorActividad().base !== seleccion.base) return; // el usuario ya siguió adelante
+  const btnSiguienteItem = document.getElementById("btn-siguiente-item-contrato");
+  if(btnSiguienteItem) btnSiguienteItem.style.display = (c && c.items && c.items.length>0) ? "" : "none";
   if(c && c.items && c.items.length>0){
     sel.style.display = "";
     sel.innerHTML = c.items.map(it=>
@@ -26196,6 +26199,33 @@ function onCambioItemCapa(){
     inputTexto.value = sel.value;
   }
   copiarEstiloSiCapaExiste();
+}
+// "Crear todas las capas del contrato de una" -- en vez de repetir el proceso ítem por ítem
+// buscando cada uno en la lista, esto salta directo al PRÓXIMO ítem del contrato que todavía no
+// tiene ninguna pieza dibujada en esta actividad, listo para marcarlo. Tocar de nuevo salta al
+// siguiente, así se puede ir recorriendo todo el contrato de punta a punta.
+function itemsContratoSinMarcarActual(){
+  const seleccion = leerSelectorActividad();
+  if(seleccion.tipo!=="capa") return [];
+  const planoActual = planosIndex.find(p=>p.id===planoActualId);
+  const contratistaId = contratistaOverridePlanoAvance || (planoActual ? planoActual.contratistaId : null);
+  const c = contratistaId ? contratistasCache[contratistaId] : null;
+  if(!c || !c.items) return [];
+  const itemsDeEstePlano = c.items.filter(it=>!it.planoId || it.planoId===planoActualId);
+  const capasYaDibujadas = new Set(poligonos.filter(p=>p.capa && p.nombreBase===seleccion.base).map(p=>p.capa.trim().toLowerCase()));
+  return itemsDeEstePlano.filter(it=>!capasYaDibujadas.has((it.nombre||"").trim().toLowerCase()));
+}
+function irAlProximoItemSinMarcar(){
+  const pendientes = itemsContratoSinMarcarActual();
+  if(pendientes.length===0){ showToast("✓ Ya se marcó al menos una pieza de cada ítem del contrato para esta actividad."); return; }
+  const actual = (document.getElementById("input-nombre-capa").value||"").trim().toLowerCase();
+  const idxActual = pendientes.findIndex(it=>(it.nombre||"").trim().toLowerCase()===actual);
+  const siguiente = pendientes[(idxActual+1) % pendientes.length];
+  document.getElementById("input-nombre-capa").value = siguiente.nombre;
+  const sel = document.getElementById("select-item-capa");
+  sel.value = [...sel.options].some(o=>o.value===siguiente.nombre) ? siguiente.nombre : "__otro__";
+  copiarEstiloSiCapaExiste();
+  showToast(`⚡ Quedan ${pendientes.length} sin marcar -- mostrando "${siguiente.nombre}"`, 3000);
 }
 // Si el nombre de capa que se está tipeando/eligiendo YA existe (tiene piezas dibujadas en este
 // plano), copia su color y su relleno (sólido/rayado) automático -- así todas las piezas de
