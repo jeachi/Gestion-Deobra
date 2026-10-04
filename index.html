@@ -3605,6 +3605,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="card" id="pa-panel-selector">
       <h2>📐 Planos de avance — <span id="pa-obra-actual"></span></h2>
       <p class="helper" style="margin-bottom:10px;">Podés tener varios planos independientes por obra (ej: "Solados PB", "Durlock 1er piso") — cada uno con sus propias actividades y capas, sin mezclarse entre sí.</p>
+      <button type="button" id="btn-buscar-actividad-obra" onclick="abrirBuscadorActividadesObra()" style="display:none;width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--vidrio-borde);border-radius:9px;font-size:12.5px;background:rgba(255,255,255,.05);color:#e7eef1;font-weight:700;text-align:left;">🔍 Buscar una actividad en TODOS los planos de la obra...</button>
       <input type="text" id="buscador-planos" placeholder="🔎 Buscar plano por nombre..." oninput="renderSelectorPlanos()" style="display:none;width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--vidrio-borde);border-radius:9px;font-size:12.5px;background:rgba(255,255,255,.05);color:#e7eef1;">
       <div id="pa-selector-planos" style="margin-bottom:10px;"></div>
       <input type="file" id="input-plano" accept="application/pdf,image/*" style="display:none;" onchange="cargarPlano(this.files[0])">
@@ -20601,15 +20602,20 @@ function renderSelectorPlanos(){
       Plano Maestro
     </div>`;
   const buscador = document.getElementById("buscador-planos");
+  const btnBuscarActividad = document.getElementById("btn-buscar-actividad-obra");
   if(planosIndex.length===0){
     cont.innerHTML = `<p class="helper" style="margin:0 0 8px;">Todavía no cargaste ningún plano para esta obra.</p>` + `<div class="grilla-planos">${tarjetaAgregar}${tarjetaMaestro}</div>`;
     if(buscador) buscador.style.display = "none";
+    if(btnBuscarActividad) btnBuscarActividad.style.display = "none";
     return;
   }
-  // El buscador solo se muestra si hay bastantes planos de avance como para que valga la pena
-  // escanear la lista en vez de simplemente mirarla -- con pocos, solo sería un campo de más.
+  // El buscador de PLANOS solo se muestra si hay bastantes como para que valga la pena escanear
+  // la lista en vez de simplemente mirarla. El buscador de ACTIVIDADES cruza todos los planos de
+  // la obra -- tiene sentido ya con 2, porque lo que resuelve es "¿en CUÁL está?", no "cuál es más
+  // fácil de ver en la grilla".
   const normalesSinFiltrar = planosIndex.filter(p=>p.tipo!=='maestro');
   if(buscador) buscador.style.display = normalesSinFiltrar.length > 5 ? "" : "none";
+  if(btnBuscarActividad) btnBuscarActividad.style.display = normalesSinFiltrar.length > 1 ? "" : "none";
   const busquedaPlanos = normalizarBusqueda((buscador && buscador.value) || "");
   const tarjetaDe = p=>`
     <div class="plano-card${p.id===planoActualId?' sel':''}${p.tipo==='maestro'?' es-maestro':''}" data-plano-id="${p.id}" onclick="seleccionarPlano('${p.id}')">
@@ -26463,6 +26469,62 @@ async function cargarSugerenciasActividadesObra(){
   sugerenciasActividadesObra = Object.keys(porNombre).map(nombre=>({nombre, color:porNombre[nombre]}));
   const datalist = document.getElementById("lista-actividades-obra");
   if(datalist) datalist.innerHTML = sugerenciasActividadesObra.map(s=>`<option value="${esc(s.nombre)}"></option>`).join("");
+}
+// ---------------- Buscador cruzado de actividades/capas entre TODOS los planos de la obra ----------------
+// "¿En qué plano está la capa 'Zócalos'?" antes significaba abrir cada plano uno por uno hasta
+// encontrarla. Reusa el mismo recorrido de cargarSugerenciasActividadesObra() (todos los planos de
+// contratista de la obra, vía cargarPoligonosDePlano), pero buscando el nombre de actividad O de
+// capa, y saltando directo al plano correcto al tocar un resultado.
+function abrirBuscadorActividadesObra(){
+  const html = `
+    <h2 style="margin-top:0;">🔍 Buscar actividad en la obra</h2>
+    <p class="helper">Escribí el nombre de una actividad o una capa (ej: "Zócalos") para ver en qué plano(s) está.</p>
+    <input type="text" id="input-busqueda-actividad-obra" placeholder="Nombre de la actividad o capa..." oninput="buscarActividadEnTodaLaObra()" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:14px;margin-bottom:10px;">
+    <div id="resultados-busqueda-actividad-obra"></div>`;
+  abrirPromptGenerico(html);
+  document.getElementById("input-busqueda-actividad-obra").focus();
+}
+async function buscarActividadEnTodaLaObra(){
+  const cont = document.getElementById("resultados-busqueda-actividad-obra");
+  const inputEl = document.getElementById("input-busqueda-actividad-obra");
+  if(!cont || !inputEl) return;
+  const q = normalizarBusqueda(inputEl.value.trim());
+  if(q.length<2){ cont.innerHTML = `<p class="helper" style="margin:0;">Escribí al menos 2 letras.</p>`; return; }
+  const miToken = ++tokenBusquedaActividadObra;
+  cont.innerHTML = `<p class="helper" style="margin:0;">Buscando...</p>`;
+  const obra = claveObraPlanoAvance();
+  const resultados = [];
+  for(const p of planosIndex.filter(x=>x.tipo!=="maestro")){
+    const polis = p.id===planoActualId ? poligonos : await cargarPoligonosDePlano(obra, p.id);
+    if(miToken !== tokenBusquedaActividadObra) return; // se tipeó algo nuevo mientras esto cargaba
+    const yaListado = new Set();
+    polis.forEach(poli=>{
+      if(yaListado.has(poli.nombreCompleto)) return;
+      const coincideBase = normalizarBusqueda(poli.nombreBase||"").includes(q);
+      const coincideCapa = poli.capa && normalizarBusqueda(poli.capa).includes(q);
+      if(!coincideBase && !coincideCapa) return;
+      yaListado.add(poli.nombreCompleto);
+      resultados.push({planoId:p.id, planoNombre:p.nombre, nombreBase:poli.nombreBase, capa:poli.capa||null, color:poli.color});
+    });
+  }
+  if(resultados.length===0){ cont.innerHTML = `<p class="helper" style="margin:0;">Ninguna actividad ni capa coincide con "${esc(inputEl.value.trim())}" en esta obra.</p>`; return; }
+  cont.innerHTML = resultados.map(r=>`
+    <button type="button" onclick="irAActividadDesdeBusquedaObra('${r.planoId}','${esc(r.nombreBase).replace(/'/g,"\\'")}',${r.capa?`'${esc(r.capa).replace(/'/g,"\\'")}'`:"null"})" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:9px 10px;margin-bottom:6px;border:1.5px solid var(--borde);border-radius:9px;background:#fff;cursor:pointer;">
+      <span style="width:10px;height:10px;border-radius:50%;background:${r.color};flex-shrink:0;"></span>
+      <span style="flex:1;min-width:0;">
+        <div style="font-weight:800;font-size:12.5px;">${esc(r.capa ? `${r.nombreBase} → ${r.capa}` : r.nombreBase)}</div>
+        <div style="font-size:10.5px;color:var(--tinta-suave);">📐 ${esc(r.planoNombre)}</div>
+      </span>
+    </button>`).join("");
+}
+let tokenBusquedaActividadObra = 0;
+async function irAActividadDesdeBusquedaObra(planoId, nombreBase, capa){
+  cerrarPromptGenerico();
+  await seleccionarPlano(planoId, true);
+  if(capa){
+    await new Promise(r=>setTimeout(r, 300)); // deja terminar de entrar al editor antes de tocar el selector
+    elegirCapaDesdeLeyenda(nombreBase, capa);
+  }
 }
 function copiarColorSiActividadExisteEnObra(){
   const nombre = (document.getElementById("input-nombre-actividad-nueva").value||"").trim().toLowerCase();
