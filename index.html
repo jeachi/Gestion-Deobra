@@ -3649,7 +3649,8 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
       <p class="vr-vacio" id="vr-vacio" style="display:none;">Todavía no marcaste nada en este plano.</p>
 
-      <button type="button" class="btn btn-primary" id="vr-btn-editar" style="width:100%;margin-top:16px;" onclick="entrarAEditarPlano()">✏️ Editar plano</button>
+      <button type="button" class="btn btn-outline" id="vr-btn-compartir" style="width:100%;margin-top:8px;" onclick="compartirAvancePlano()">📤 Compartir avance</button>
+      <button type="button" class="btn btn-primary" id="vr-btn-editar" style="width:100%;margin-top:8px;" onclick="entrarAEditarPlano()">✏️ Editar plano</button>
     </div>
 
   <div class="card" id="card-canvas" style="display:none;padding:8px;">
@@ -21033,6 +21034,9 @@ function mostrarVistaRapidaPlano(){
   document.getElementById("vr-preview-img").src = generarImagenSnapshotIndividual(null);
   document.getElementById("vr-bloque-actividades").style.display = modoPlanoMaestro ? "none" : "block";
   document.getElementById("vr-bloque-leyenda").style.display = modoPlanoMaestro ? "block" : "none";
+  // "Compartir avance" dibuja la mini-leyenda de capas sobre la imagen -- un Plano Maestro no
+  // tiene capas (solo pines), así que por ahora este botón es solo para planos de contratista.
+  document.getElementById("vr-btn-compartir").style.display = modoPlanoMaestro ? "none" : "block";
   if(modoPlanoMaestro) renderVistaRapidaMaestro();
   else renderVistaRapidaContratista();
 }
@@ -22160,6 +22164,83 @@ function generarImagenSnapshotIndividual(snapshot){
     ctx.restore();
   });
   return canvas.toDataURL("image/jpeg", 0.85);
+}
+// ---------------- Compartir el avance actual (con la leyenda de capas incluida) ----------------
+// Reusa generarImagenSnapshotIndividual (plano + capas pintadas) como base, y le agrega una
+// franja con la leyenda (color/nombre/%) debajo -- pensado para mandar por WhatsApp/email a
+// alguien que no tiene la app, sin tener que armar un PDF completo primero.
+async function generarImagenParaCompartir(){
+  const dataUrlBase = generarImagenSnapshotIndividual(null);
+  const imgBase = new Image();
+  await new Promise((resolve,reject)=>{ imgBase.onload=resolve; imgBase.onerror=reject; imgBase.src=dataUrlBase; });
+  const yaListado = new Set();
+  const filas = [];
+  poligonos.forEach(p=>{
+    if(!p.capa || yaListado.has(p.nombreCompleto)) return;
+    yaListado.add(p.nombreCompleto);
+    const areaTot = areaTotalDe(p.nombreBase);
+    const piezas = poligonos.filter(q=>q.nombreCompleto===p.nombreCompleto);
+    const pct = areaTot ? Math.min(100, piezas.reduce((s,q)=>s+Math.round((q.area/areaTot)*100),0)) : 0;
+    filas.push({nombre:p.capa, color:p.color, pct});
+  });
+  const W = imgBase.width;
+  const filaAlto = Math.round(W/18);
+  const padding = Math.round(W/40);
+  const altoLeyenda = filas.length>0 ? padding*2 + filaAlto*filas.length : 0;
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = imgBase.height + altoLeyenda;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(imgBase, 0, 0);
+  if(filas.length>0){
+    ctx.fillStyle = "#0A0E12";
+    ctx.fillRect(0, imgBase.height, W, altoLeyenda);
+    const fontSize = Math.max(10, Math.round(filaAlto*0.4));
+    filas.forEach((f,i)=>{
+      const y = imgBase.height + padding + i*filaAlto + filaAlto/2;
+      ctx.beginPath();
+      ctx.arc(padding+fontSize/2, y, fontSize/2, 0, Math.PI*2);
+      ctx.fillStyle = f.color;
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText(`${f.nombre} — ${f.pct}%`, padding*2+fontSize, y);
+    });
+  }
+  return canvas.toDataURL("image/jpeg", 0.88);
+}
+function descargarImagenDirecto(dataUrl, nombreArchivo){
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = nombreArchivo;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showToast("✓ Imagen descargada");
+}
+async function compartirAvancePlano(){
+  if(!imagenPlano || !imagenPlano.width){ showToast("Esperá a que termine de cargar la imagen del plano."); return; }
+  let dataUrl;
+  try{ dataUrl = await generarImagenParaCompartir(); }
+  catch(e){ console.error("No se pudo armar la imagen para compartir:", e); showToast("No se pudo preparar la imagen para compartir."); return; }
+  const plano = planosIndex.find(p=>p.id===planoActualId);
+  const nombrePlano = (plano && plano.nombre) || "plano";
+  const nombreArchivo = `avance_${nombrePlano.replace(/[^a-z0-9]+/gi,"_")}.jpg`;
+  const resp = await fetch(dataUrl);
+  const blob = await resp.blob();
+  const file = new File([blob], nombreArchivo, {type:"image/jpeg"});
+  if(navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({files:[file], title: nombrePlano, text: `Avance de "${nombrePlano}"`});
+    }catch(e){
+      if(e && e.name==="AbortError") return; // el usuario canceló el share -- no hace falta avisar nada
+      showToast("No se pudo compartir -- se descarga la imagen en su lugar.");
+      descargarImagenDirecto(dataUrl, nombreArchivo);
+    }
+    return;
+  }
+  descargarImagenDirecto(dataUrl, nombreArchivo);
 }
 // ---------------- Línea de tiempo del avance ----------------
 // Recorre los hitos guardados (semanas cerradas y certificados) y deja ver cómo se fue llenando
