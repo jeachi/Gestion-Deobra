@@ -20975,6 +20975,16 @@ function entrarAEditarPlano(){
   // No se espera (recorre TODOS los planos de la obra) -- mientras tanto, escribir el nombre
   // igual funciona normal, solo que sin la sugerencia hasta que esto termine.
   cargarSugerenciasActividadesObra();
+  avisarSiFaltaCalibrarEscala();
+}
+// Cartel chico y descartable, UNA sola vez por plano (guardado en localStorage, no se repite en
+// cada entrada) -- antes, un plano sin calibrar simplemente no mostraba m² en ningún lado, sin que
+// nadie avisara por qué.
+function avisarSiFaltaCalibrarEscala(){
+  if(metrosPorPixelPlano || !planoActualId) return;
+  const clave = "plano_aviso_calibrar_"+planoActualId;
+  try{ if(localStorage.getItem(clave)==="1") return; localStorage.setItem(clave, "1"); }catch(e){}
+  showToast('📏 Este plano todavía no tiene escala calibrada -- no se van a mostrar m² reales. Podés calibrarlo (o copiar la de otro plano) con "📏 ESCALA" cuando quieras.', 6000);
 }
 // ---------------- Vista rápida: resumen de solo lectura antes de entrar al editor ----------------
 // Entrar a Plano de avance SIEMPRE caía directo en el editor CAD completo (riel de herramientas,
@@ -25331,13 +25341,52 @@ function toggleBarraReferencias(){
 let metrosPorPixelPlano = null; // null = este plano no está calibrado
 let calibracionActiva = false;
 let calibracionPuntos = [];
-function iniciarCalibracionEscala(){
+async function iniciarCalibracionEscala(){
   if(!imagenPlano){ showToast("Primero abrí un plano."); return; }
+  const otrosCalibrados = await planosCalibradosDeLaObra();
+  if(otrosCalibrados.length===0){ iniciarCalibracionEscalaManual(); return; }
+  abrirPromptElegirOrigenEscala(otrosCalibrados);
+}
+function iniciarCalibracionEscalaManual(){
   calibracionActiva = true;
   calibracionPuntos = [];
   cerrarFlyoutsAbiertos(); // cierra cualquier cajón abierto para no estorbar mientras se marcan los 2 puntos
   showToast("📏 Tocá el PRIMER punto de una distancia que conozcas en el plano (ej: el largo de una pared)");
   document.getElementById("canvas-plano").addEventListener("pointerdown", capturarPuntoCalibracion);
+}
+// Lista los demás planos (de contratista, no Maestro) de esta misma obra que YA tienen una escala
+// calibrada -- para poder ofrecer copiarla en vez de volver a medir con la cinta, en obras donde
+// dos planos son literalmente el mismo edificio a la misma escala de foto.
+async function planosCalibradosDeLaObra(){
+  const obra = claveObraPlanoAvance();
+  if(!obra) return [];
+  const resultado = [];
+  for(const p of planosIndex){
+    if(p.id===planoActualId || p.tipo==='maestro') continue;
+    try{
+      const r = await window.storage.get(`plano_avance_calibracion_${obra}_${p.id}`, true);
+      const mpp = r && r.value ? JSON.parse(r.value).metrosPorPixel : null;
+      if(mpp) resultado.push({id:p.id, nombre:p.nombre, metrosPorPixel: mpp});
+    }catch(e){}
+  }
+  return resultado;
+}
+function abrirPromptElegirOrigenEscala(otros){
+  const html = `
+    <h2 style="margin-top:0;">📏 Calibrar escala</h2>
+    <p class="helper">Medí dos puntos a mano, o copiá la escala de otro plano de esta obra que ya esté calibrado (útil si es literalmente el mismo edificio a la misma escala de foto).</p>
+    <button class="btn btn-primary" style="width:100%;margin-bottom:10px;" onclick="cerrarPromptGenerico(); iniciarCalibracionEscalaManual();">📏 Medir dos puntos a mano</button>
+    ${otros.map(o=>`<button class="btn btn-outline" style="width:100%;margin-bottom:6px;text-align:left;" onclick="usarEscalaDeOtroPlano(${o.metrosPorPixel})">📋 Usar la escala de "${esc(o.nombre)}" <span style="opacity:.65;">(100px = ${(o.metrosPorPixel*100).toFixed(2)}m)</span></button>`).join("")}
+    <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cancelar</button>`;
+  abrirPromptGenerico(html);
+}
+async function usarEscalaDeOtroPlano(metrosPorPixel){
+  cerrarPromptGenerico();
+  metrosPorPixelPlano = metrosPorPixel;
+  await guardarCalibracionPlano();
+  renderActividades();
+  actualizarBarraEscala();
+  showToast(`✓ Escala copiada — cada 100px del plano son ${(metrosPorPixelPlano*100).toFixed(2)}m reales`);
 }
 function capturarPuntoCalibracion(e){
   if(!calibracionActiva) return;
@@ -25373,7 +25422,38 @@ async function confirmarCalibracionEscala(distPx){
   cerrarPromptGenerico();
   renderActividades();
   actualizarBarraEscala();
-  showToast(`✓ Escala guardada — cada 100px del plano son ${(metrosPorPixelPlano*100).toFixed(2)}m reales`);
+  const avisoDistinta = await avisarSiEscalaDistintaEnPlanoConMismaFoto();
+  showToast(avisoDistinta || `✓ Escala guardada — cada 100px del plano son ${(metrosPorPixelPlano*100).toFixed(2)}m reales`, avisoDistinta ? 6500 : 2200);
+}
+// Si otro plano de la obra tiene EXACTAMENTE la misma foto (ej: se duplicó para crear un Plano
+// Maestro, o se volvió a subir para corregir algo) pero quedó calibrado con una escala distinta,
+// los m² de uno y otro ya no son comparables entre sí sin que nadie lo note -- esto avisa (no
+// bloquea, la calibración ya se guardó) la primera vez que se detecta la diferencia.
+async function avisarSiEscalaDistintaEnPlanoConMismaFoto(){
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return null;
+  let miImagen;
+  try{
+    const r = await window.storage.get(`plano_avance_imagen_${obra}_${planoActualId}`, true);
+    miImagen = r && r.value;
+  }catch(e){ return null; }
+  if(!miImagen) return null;
+  for(const p of planosIndex){
+    if(p.id===planoActualId) continue;
+    try{
+      const rImg = await window.storage.get(`plano_avance_imagen_${obra}_${p.id}`, true);
+      if(!rImg || rImg.value!==miImagen) continue;
+      const rCalib = await window.storage.get(`plano_avance_calibracion_${obra}_${p.id}`, true);
+      const otraEscala = rCalib && rCalib.value ? JSON.parse(rCalib.value).metrosPorPixel : null;
+      if(!otraEscala) continue;
+      const difRelativa = Math.abs(otraEscala - metrosPorPixelPlano) / metrosPorPixelPlano;
+      if(difRelativa > 0.05){
+        return `⚠ "${esc(p.nombre)}" tiene la MISMA foto pero quedó calibrado distinto (100px = ${(otraEscala*100).toFixed(2)}m ahí, ${(metrosPorPixelPlano*100).toFixed(2)}m acá) -- revisá cuál es la correcta.`;
+      }
+      return null;
+    }catch(e){}
+  }
+  return null;
 }
 async function guardarCalibracionPlano(){
   const obra = claveObraPlanoAvance();
