@@ -2172,6 +2172,15 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .btn-toggle-patron{padding:7px 10px;border-radius:8px;border:1.5px solid var(--vidrio-borde);background:rgba(255,255,255,.05);color:#e7eef1;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer;}
 .btn-toggle-patron.activo{background:rgba(94,234,212,.18);border-color:#5EEAD4;color:#5EEAD4;}
 .cad-flyout .row-flex{margin:0;}
+/* Paleta de colores para los 3 campos de color del cajón Dibujar (nueva actividad / más área
+   total / nueva capa) -- antes cada uno era un <input type=color> pelado, lento de abrir en el
+   celular y sin ninguna sugerencia. Ahora una fila de colores ya usados en la obra, más el mismo
+   input nativo de siempre (estilizado como un swatch más) para un color personalizado. */
+.paleta-colores{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+.paleta-swatch{width:24px;height:24px;border-radius:7px;border:2px solid transparent;cursor:pointer;flex-shrink:0;padding:0;}
+.paleta-swatch.sel{border-color:#fff;box-shadow:0 0 0 2px #5EEAD4;}
+.paleta-colores input[type=color]{width:24px;height:24px;border-radius:7px;border:2px dashed rgba(255,255,255,.3);background:transparent;cursor:pointer;flex-shrink:0;padding:0;}
+.paleta-colores input[type=color].sel{border-style:solid;border-color:#fff;box-shadow:0 0 0 2px #5EEAD4;}
 .grid-tools{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
 .tool-card{background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);border-radius:11px;padding:9px 3px;display:flex;flex-direction:column;align-items:center;gap:4px;color:#e7eef1;cursor:pointer;}
 .tool-card .ico{font-size:18px;line-height:1;}
@@ -2229,6 +2238,18 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .cad-modo-flotante .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;}
 .cad-modo-flotante .x{background:rgba(255,255,255,.25);border:none;color:#fff;width:22px;height:22px;
   border-radius:50%;font-size:12px;font-weight:800;flex-shrink:0;cursor:pointer;}
+
+/* ---- Mini-leyenda flotante de capas: antes había que abrir el cajón "Capas" cada vez solo para
+   ver qué actividades/capas ya existen en el plano y de qué color -- esto queda siempre a la
+   vista (se oculta solo mientras se está dibujando, mismo lugar que cad-bottom-actions, para no
+   superponerse) y tocar una capa salta directo a seguir marcando ahí. ---- */
+.mini-leyenda-capas{position:absolute;left:8px;right:74px;top:106px;z-index:33;display:none;gap:6px;overflow-x:auto;padding:2px 0;}
+.mini-leyenda-chip{display:flex;align-items:center;gap:6px;background:rgba(15,22,27,.88);border:1px solid rgba(255,255,255,.14);
+  border-radius:999px;padding:6px 11px 6px 7px;flex-shrink:0;cursor:pointer;white-space:nowrap;}
+.mini-leyenda-chip.activa{border-color:#5EEAD4;background:rgba(94,234,212,.14);}
+.mini-leyenda-chip .pt{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.mini-leyenda-chip .nombre{font-size:10.5px;color:#e7eef1;font-weight:700;}
+.mini-leyenda-chip .pct{font-size:9px;color:#9fb0b8;font-weight:700;}
 
 /* ---- Barra de acciones (abajo): solo visible mientras se está dibujando ---- */
 .cad-bottom-actions{position:absolute;left:8px;right:8px;top:106px;z-index:39;display:none;gap:8px;}
@@ -3724,19 +3745,25 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <option value="__nueva__">➕ Nueva actividad (área 100%)</option>
         </select>
         <div class="row-flex" id="campo-nueva-actividad" style="margin-top:6px;">
-          <input type="text" id="input-nombre-actividad-nueva" placeholder="Nombre de la actividad (ej: Durlok)">
-          <input type="color" id="input-color-poligono" value="#3B82F6">
+          <input type="text" id="input-nombre-actividad-nueva" list="lista-actividades-obra" placeholder="Nombre de la actividad (ej: Durlok)" oninput="copiarColorSiActividadExisteEnObra()">
+          <datalist id="lista-actividades-obra"></datalist>
         </div>
-        <div class="row-flex" id="campo-mas-area-total" style="display:none;margin-top:6px;">
-          <input type="color" id="input-color-mas-total" value="#3B82F6">
+        <div class="paleta-colores" id="paleta-input-color-poligono">
+          <input type="color" id="input-color-poligono" value="#3B82F6" oninput="sincronizarPaletaColor('input-color-poligono')">
+        </div>
+        <div class="row-flex" id="campo-mas-area-total" style="display:none;margin-top:6px;"></div>
+        <div class="paleta-colores" id="paleta-input-color-mas-total" style="display:none;">
+          <input type="color" id="input-color-mas-total" value="#3B82F6" oninput="sincronizarPaletaColor('input-color-mas-total')">
         </div>
         <div class="row-flex" id="campo-nueva-capa" style="display:none;margin-top:6px;">
           <select id="select-item-capa" onchange="onCambioItemCapa()" style="flex:1;min-width:150px;padding:7px 8px;border:1.5px solid var(--vidrio-borde);border-radius:8px;font-size:11.5px;background:rgba(255,255,255,.05);color:#e7eef1;"></select>
           <input type="text" id="input-nombre-capa" list="lista-capas-existentes" placeholder="Nombre de esta capa (ej: Estructura)" oninput="copiarEstiloSiCapaExiste()">
           <datalist id="lista-capas-existentes"></datalist>
-          <input type="color" id="input-color-poligono-capa" value="#10B981">
           <input type="hidden" id="input-patron-capa" value="solido">
           <button type="button" class="btn-toggle-patron" id="btn-toggle-patron-capa" onclick="alternarPatronCapa()" title="Ahora es SÓLIDO -- tocá para poner rayado (útil si esta capa se superpone visualmente con otra)">■ Sólido</button>
+        </div>
+        <div class="paleta-colores" id="paleta-input-color-poligono-capa" style="display:none;">
+          <input type="color" id="input-color-poligono-capa" value="#10B981" oninput="sincronizarPaletaColor('input-color-poligono-capa')">
         </div>
         <div class="grupo-herramientas-tit">Formas</div>
         <div class="grid-tools">
@@ -3809,6 +3836,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       </div>
       <div class="cad-status" id="estado-dibujo" style="display:none;"></div>
       <div class="cad-hint-idle" id="cad-hint-idle" style="display:none;">👆 Doble toque en un área: editar/copiar/mover/eliminar &nbsp;·&nbsp; Mantené pulsado: mover los vértices</div>
+      <div class="mini-leyenda-capas" id="mini-leyenda-capas"></div>
 
       <button id="btn-listo-referencia" onclick="salirDeColocarReferencia()" style="display:none;position:absolute;left:50%;top:106px;transform:translateX(-50%);z-index:40;background:var(--verde);color:#fff;border:none;border-radius:999px;padding:13px 24px;font-weight:800;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.35);cursor:pointer;">✓ Listo, dejar de poner ejes</button>
       <div class="cad-bottom-actions" id="cad-bottom-actions" style="display:none;">
@@ -20891,6 +20919,9 @@ function entrarAEditarPlano(){
       if(planoActualId===idEntrando) renderActividades(); // solo si seguís mirando el mismo plano
     }).catch(e=>console.error("No se pudo precargar el contratista para el % ponderado:", e));
   }
+  // No se espera (recorre TODOS los planos de la obra) -- mientras tanto, escribir el nombre
+  // igual funciona normal, solo que sin la sugerencia hasta que esto termine.
+  cargarSugerenciasActividadesObra();
 }
 // ---------------- Vista rápida: resumen de solo lectura antes de entrar al editor ----------------
 // Entrar a Plano de avance SIEMPRE caía directo en el editor CAD completo (riel de herramientas,
@@ -24448,6 +24479,56 @@ function seleccionarCapaDesdePanelCad(idx){
   }
   toggleDrawerHerramientas("dibujar");
 }
+// ---------------- Mini-leyenda flotante de capas ----------------
+// Antes, ver qué capas ya existen en el plano (y de qué color) significaba abrir el cajón
+// "Capas", mirar, cerrarlo, volver a dibujar -- un ida y vuelta constante mientras se trabaja un
+// plano con varias capas a la vez. Esto queda siempre a la vista (se oculta solo mientras se está
+// dibujando o colocando ejes, que usan el mismo lugar en pantalla) y tocar una capa salta directo
+// a seguir marcando ahí, sin pasar por el cajón.
+function renderMiniLeyendaCapas(){
+  const cont = document.getElementById("mini-leyenda-capas");
+  if(!cont) return;
+  if(modoPlanoMaestro || dibujando || modoColocarReferencia){ cont.style.display = "none"; return; }
+  const yaListado = new Set();
+  const filas = [];
+  poligonos.forEach(p=>{
+    if(!p.capa || yaListado.has(p.nombreCompleto)) return;
+    yaListado.add(p.nombreCompleto);
+    const areaTot = areaTotalDe(p.nombreBase);
+    const piezas = poligonos.filter(q=>q.nombreCompleto===p.nombreCompleto);
+    const pct = areaTot ? Math.min(100, piezas.reduce((s,q)=>s+Math.round((q.area/areaTot)*100),0)) : 0;
+    filas.push({nombreBase:p.nombreBase, capa:p.capa, color:p.color, pct});
+  });
+  if(filas.length===0){ cont.style.display = "none"; return; }
+  const seleccion = leerSelectorActividad();
+  const capaEnCurso = (document.getElementById("input-nombre-capa")||{}).value || "";
+  cont.style.display = "flex";
+  cont.innerHTML = filas.map(f=>{
+    const activa = seleccion.tipo==="capa" && seleccion.base===f.nombreBase && capaEnCurso.trim()===f.capa;
+    return `
+    <div class="mini-leyenda-chip${activa?' activa':''}" onclick="elegirCapaDesdeLeyenda('${esc(f.nombreBase).replace(/'/g,"\\'")}','${esc(f.capa).replace(/'/g,"\\'")}')">
+      <span class="pt" style="background:${f.color};"></span>
+      <span class="nombre">${esc(f.capa)}</span>
+      <span class="pct">${f.pct}%</span>
+    </div>`;
+  }).join("");
+}
+function elegirCapaDesdeLeyenda(nombreBase, nombreCapa){
+  if(dibujando) return; // no cambiar de capa a mitad de un dibujo en curso
+  const sel = document.getElementById("select-actividad-base");
+  const valor = `capa::${nombreBase}`;
+  if(![...sel.options].some(o=>o.value===valor)) return;
+  sel.value = valor;
+  // El nombre se carga ANTES de onCambioActividadBase(): renderSelectorItemCapa() (que dispara)
+  // respeta cualquier nombre que ya esté escrito en el campo en vez de pisarlo con el primer ítem
+  // del contrato del contratista vinculado (mismo mecanismo que ya protege la escritura a mano).
+  document.getElementById("input-nombre-capa").value = nombreCapa;
+  onCambioActividadBase();
+  copiarEstiloSiCapaExiste();
+  const yaAbierto = document.getElementById("drawer-dibujar").style.display==="block";
+  if(!yaAbierto) toggleDrawerHerramientas("dibujar");
+  renderMiniLeyendaCapas();
+}
 
 function iniciarCanvas(){
   const canvas = document.getElementById("canvas-plano");
@@ -25879,6 +25960,11 @@ function onCambioActividadBase(){
   document.getElementById("campo-nueva-actividad").style.display = seleccion.tipo==="nueva" ? "flex" : "none";
   document.getElementById("campo-mas-area-total").style.display = seleccion.tipo==="total" ? "flex" : "none";
   document.getElementById("campo-nueva-capa").style.display = seleccion.tipo==="capa" ? "flex" : "none";
+  // Las paletas de color viven en su propio div, al lado de cada campo (no adentro), así que
+  // siguen la misma visibilidad que el campo al que pertenecen.
+  document.getElementById("paleta-input-color-poligono").style.display = seleccion.tipo==="nueva" ? "flex" : "none";
+  document.getElementById("paleta-input-color-mas-total").style.display = seleccion.tipo==="total" ? "flex" : "none";
+  document.getElementById("paleta-input-color-poligono-capa").style.display = seleccion.tipo==="capa" ? "flex" : "none";
   if(seleccion.tipo==="capa") renderSelectorItemCapa();
   const lbl = document.getElementById("lbl-marcar-nuevo");
   if(lbl){
@@ -25886,6 +25972,9 @@ function onCambioActividadBase(){
       : seleccion.tipo==="total" ? "Marcar más área"
       : "Marcar capa";
   }
+  sincronizarPaletaColor("input-color-poligono");
+  sincronizarPaletaColor("input-color-mas-total");
+  sincronizarPaletaColor("input-color-poligono-capa");
   actualizarTypeSelectorCad();
 }
 // Si el plano está vinculado a un contratista con ítems ya cargados en su contrato, los ofrece
@@ -25978,6 +26067,78 @@ function copiarEstiloSiCapaExiste(){
   document.getElementById("input-color-poligono-capa").value = existente.color;
   document.getElementById("input-patron-capa").value = existente.patron||"solido";
   actualizarBotonPatronCapa();
+  sincronizarPaletaColor("input-color-poligono-capa");
+}
+// ---------------- Paleta de colores para los 3 campos de color del cajón Dibujar ----------------
+// Antes cada uno era un <input type=color> nativo pelado -- lento de abrir en el celular y sin
+// ninguna sugerencia, así que cada actividad nueva arrancaba de cero. Ahora una fila de colores ya
+// usados se agrega ANTES del mismo input nativo de siempre (que queda como la opción "personalizado",
+// restyleado para verse como un swatch más) -- elegir uno repetido ayuda a que el plano quede
+// consistente entre actividades parecidas, sin sacarle a nadie la posibilidad de elegir cualquier
+// otro color.
+const PALETA_COLORES_PLANO = ["#3B82F6","#10B981","#F59E0B","#EF4444","#8B5CF6","#EC4899","#06B6D4","#84CC16"];
+function inicializarPaletasColorPlano(){
+  ["input-color-poligono","input-color-mas-total","input-color-poligono-capa"].forEach(idInput=>{
+    const cont = document.getElementById("paleta-"+idInput);
+    if(!cont || cont.querySelector(".paleta-swatch")) return; // ya inicializada
+    const html = PALETA_COLORES_PLANO.map(c=>
+      `<button type="button" class="paleta-swatch" style="background:${c};" onclick="elegirColorPaleta('${idInput}','${c}')" title="${c}" aria-label="Color ${c}"></button>`
+    ).join("");
+    cont.insertAdjacentHTML("afterbegin", html);
+  });
+}
+function elegirColorPaleta(idInput, color){
+  const input = document.getElementById(idInput);
+  if(!input) return;
+  input.value = color;
+  sincronizarPaletaColor(idInput);
+  if(idInput==="input-color-poligono-capa") actualizarBotonPatronCapa();
+}
+// Resalta el swatch que coincide con el valor actual del input (o ninguno, si es un color
+// personalizado elegido con el selector nativo) -- se llama después de cualquier cambio de color,
+// sea por tocar un swatch, abrir el selector nativo, o que el color se copie solo (actividad/capa
+// ya usada antes).
+function sincronizarPaletaColor(idInput){
+  const input = document.getElementById(idInput);
+  const cont = document.getElementById("paleta-"+idInput);
+  if(!input || !cont) return;
+  const valorActual = (input.value||"").toLowerCase();
+  cont.querySelectorAll(".paleta-swatch").forEach(sw=>{
+    sw.classList.toggle("sel", sw.title.toLowerCase()===valorActual);
+  });
+  input.classList.toggle("sel", !cont.querySelector(".paleta-swatch.sel"));
+}
+inicializarPaletasColorPlano();
+// ---------------- Autocompletar el nombre de una actividad nueva con las de toda la obra ----------------
+// El campo "Nombre de la actividad" (para marcar un área total nueva) no sugería nada -- fácil
+// terminar con la "misma" actividad escrita distinto en dos planos de la misma obra ("Durlock -
+// Estructura" en uno, "durlock-estructura" en otro), lo que las deja como dos actividades
+// separadas en reportes y en la curva de avance. Se arma UNA vez por entrada al editor (no hace
+// falta reconsultar storage en cada tecla) recorriendo todos los planos de CONTRATISTA de esta
+// obra -- el Maestro no tiene actividades, así que ni se intenta ahí.
+let sugerenciasActividadesObra = [];
+async function cargarSugerenciasActividadesObra(){
+  sugerenciasActividadesObra = [];
+  const obra = claveObraPlanoAvance();
+  if(!obra) return;
+  const idPlanoDeEntrada = planoActualId;
+  const porNombre = {};
+  for(const p of planosIndex.filter(x=>x.tipo!=="maestro")){
+    const polis = p.id===planoActualId ? poligonos : await cargarPoligonosDePlano(obra, p.id);
+    if(planoActualId!==idPlanoDeEntrada) return; // se cambió de plano mientras esto cargaba -- no pisar nada
+    polis.filter(q=>!q.capa && q.nombreBase).forEach(q=>{ porNombre[q.nombreBase] = q.color; });
+  }
+  sugerenciasActividadesObra = Object.keys(porNombre).map(nombre=>({nombre, color:porNombre[nombre]}));
+  const datalist = document.getElementById("lista-actividades-obra");
+  if(datalist) datalist.innerHTML = sugerenciasActividadesObra.map(s=>`<option value="${esc(s.nombre)}"></option>`).join("");
+}
+function copiarColorSiActividadExisteEnObra(){
+  const nombre = (document.getElementById("input-nombre-actividad-nueva").value||"").trim().toLowerCase();
+  if(!nombre) return;
+  const existente = sugerenciasActividadesObra.find(s=>s.nombre.trim().toLowerCase()===nombre);
+  if(!existente) return;
+  document.getElementById("input-color-poligono").value = existente.color;
+  sincronizarPaletaColor("input-color-poligono");
 }
 // Valida que haya nombre cargado (actividad nueva o capa) y prepara el estado común de "empezar
 // a dibujar" -- lo comparten el modo polígono libre y el modo rectángulo.
@@ -26019,6 +26180,7 @@ function prepararInicioDibujo(){
   // lado derecho del plano, tapando esa zona. El zoom sigue andando con el pellizco de dos dedos,
   // así que no hace falta el botón "Vista" mientras se está marcando el área.
   document.getElementById("cad-riel").style.display = "none";
+  renderMiniLeyendaCapas(); // se oculta -- comparte lugar en pantalla con cad-bottom-actions
   return nombreParaMostrar;
 }
 // ---------------- Copiar contorno de otra capa/actividad ----------------
@@ -26751,6 +26913,7 @@ function iniciarColocarReferencia(){
   const btnListo = document.getElementById("btn-listo-referencia");
   if(btnListo) btnListo.style.display = "block";
   actualizarModoFlotante();
+  renderMiniLeyendaCapas(); // se oculta -- comparte lugar en pantalla con btn-listo-referencia
   showToast("📏 Tocá un punto para poner un eje horizontal y uno vertical ahí.", 4000);
 }
 function manejarTapColocarReferencia(e){
@@ -26777,6 +26940,7 @@ function salirDeColocarReferencia(){
   const btnListo = document.getElementById("btn-listo-referencia");
   if(btnListo) btnListo.style.display = "none";
   actualizarModoFlotante();
+  renderMiniLeyendaCapas();
 }
 function buscarSnapLineaReferencia(x, y){
   const tolerancia = SNAP_PX_PANTALLA / zoomActual;
@@ -26976,6 +27140,7 @@ function iniciarModoRecorte(){
   ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas"].forEach(id=>{ document.getElementById(id).style.display = "none"; });
   ["btn-drawer-vista","btn-drawer-capas","btn-drawer-dibujar","btn-drawer-mas"].forEach(id=>{ const btn=document.getElementById(id); if(btn) btn.classList.remove("abierto"); });
   document.getElementById("cad-riel").style.display = "none";
+  renderMiniLeyendaCapas(); // se oculta -- comparte lugar en pantalla con cad-bottom-actions
   const est = document.getElementById("estado-dibujo");
   est.style.display = "block";
   est.textContent = "✂️ Tocá una esquina de la zona a RECORTAR, después la esquina OPUESTA -- se borra esa parte de cualquier área que toque, sea de la actividad que sea.";
@@ -27024,6 +27189,7 @@ function cancelarDibujo(){
   document.getElementById("cad-bottom-actions").style.display = "none";
   document.getElementById("cad-riel").style.display = "flex";
   renderPorcentajesFlotantes();
+  renderMiniLeyendaCapas();
   redibujar();
 }
 function areaPoligono(puntos){
@@ -30554,6 +30720,7 @@ function renderActividades(){
   }).join("") || (busquedaActNorm
     ? `<p style="font-size:12px;color:#999;">Ninguna actividad ni capa coincide con "${esc(busquedaAct)}".</p>`
     : `<p style="font-size:12px;color:#999;">Todavía no marcaste ningún área.</p>`);
+  renderMiniLeyendaCapas();
 }
 // Confirmación de doble toque -- mismo patrón que se usa en toda la app: la primera vez arma
 // ("¿Seguro?"), la segunda (dentro de unos segundos) recién ejecuta. Sin cuadros nativos.
