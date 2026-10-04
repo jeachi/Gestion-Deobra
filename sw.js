@@ -1,8 +1,17 @@
 // Service Worker de "Gestión de Obra". Su único trabajo es guardar una copia de la app en el
 // celular para que abra rápido y funcione aunque no haya señal en ese momento — los datos en sí
 // (Firebase, Gemini) siguen necesitando conexión real, esto no los reemplaza.
-const CACHE_NAME = "gdo-cache-v2";
-const ARCHIVOS_CACHE = ["./", "./index.html", "./icon-192.png?v=2", "./icon-512.png?v=2"];
+const CACHE_NAME = "gdo-cache-v3";
+const ARCHIVOS_CACHE = [
+  "./", "./index.html", "./icon-192.png?v=2", "./icon-512.png?v=2",
+  // Íconos Phosphor (SVG) servidos desde el propio sitio en vez de un CDN externo -- se
+  // precachean acá para que estén disponibles sin conexión desde la primera visita, igual que
+  // el resto de la app (ver el comentario del handler de fetch, más abajo).
+  "./phosphor/regular/style.css", "./phosphor/regular/Phosphor.woff2",
+  "./phosphor/bold/style.css", "./phosphor/bold/Phosphor-Bold.woff2",
+  "./phosphor/duotone/style.css", "./phosphor/duotone/Phosphor-Duotone.woff2",
+  "./phosphor/fill/style.css", "./phosphor/fill/Phosphor-Fill.woff2",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
