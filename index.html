@@ -3822,6 +3822,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarColocarTextoPlano();"><span class="ico"><i class="ph-bold ph-text-t"></i></span><span class="lbl">Texto</span></button>
           <button class="tool-card" id="btn-copiar-pieza-directo" onclick="cerrarFlyoutsAbiertos(); toggleModoCopiarPiezaDirecto();"><span class="ico"><i class="ph-bold ph-copy"></i></span><span class="lbl">Copiar pieza</span></button>
           <button class="tool-card" id="btn-modo-exterior" onclick="toggleModoAltoContraste();" title="Sube el contraste del relleno y agrega un borde oscuro grueso a cada pieza -- para leer el plano bajo sol directo"><span class="ico">☀️</span><span class="lbl">Exterior</span></button>
+          <button class="tool-card" id="btn-guia-fantasma" onclick="toggleGuiaFantasma();" title="Muestra de fondo, en punteado, el contorno de la última semana cerrada -- para no re-trazar lo mismo ni dejar huecos mientras marcás el avance de hoy"><span class="ico">👻</span><span class="lbl">Guía semana ant.</span></button>
         </div>
       </div>
 
@@ -24641,6 +24642,7 @@ function iniciarCanvas(){
   actualizarBotonOrdenBadges();
   actualizarBotonAltoContraste();
   actualizarBadgesHerramientaAvanzada();
+  actualizarBotonGuiaFantasma();
   redibujar();
   // Se espera 2 "frames" antes de medir el tamaño para ajustar el zoom -- si se mide en el mismo
   // instante en que recién se hizo visible el visor, el navegador todavía no terminó de acomodar
@@ -25209,6 +25211,24 @@ function toggleModoAltoContraste(){
 function actualizarBotonAltoContraste(){
   const btn = document.getElementById("btn-modo-exterior");
   if(btn) btn.classList.toggle("btn-primary", modoAltoContrasteCad);
+}
+// Guía fantasma EN VIVO -- muestra el contorno de la última semana cerrada de fondo mientras se
+// dibuja hoy (ver el bloque en redibujar()). No se persiste entre sesiones a propósito: es una
+// ayuda puntual mientras se trabaja, no una preferencia permanente como el modo exterior.
+let guiaFantasmaActiva = false;
+function toggleGuiaFantasma(){
+  if(!guiaFantasmaActiva && snapshotsPlanoActual.length===0){
+    showToast("Todavía no hay ninguna semana cerrada en este plano para comparar.");
+    return;
+  }
+  guiaFantasmaActiva = !guiaFantasmaActiva;
+  actualizarBotonGuiaFantasma();
+  if(guiaFantasmaActiva) showToast("👻 Mostrando de fondo el contorno de la última semana cerrada", 3500);
+  redibujar();
+}
+function actualizarBotonGuiaFantasma(){
+  const btn = document.getElementById("btn-guia-fantasma");
+  if(btn) btn.classList.toggle("btn-primary", guiaFantasmaActiva);
 }
 // Punto MEDIO de cualquier lado ya trazado (de un polígono cerrado, o del que estás dibujando
 // ahora mismo) -- mismo radio de imán que el de "extremo".
@@ -30362,6 +30382,32 @@ function redibujar(){
   }
   const grosor = Math.max(2, canvas.width/500);
   const radioPunto = Math.max(4, canvas.width/250);
+  // Guía fantasma EN VIVO -- el mismo contorno punteado de "Comparar semanas" (hasta ahora solo
+  // una exportación estática), pero de fondo mientras se dibuja hoy, para no re-trazar lo mismo
+  // ni dejar huecos respecto de la última semana cerrada. Va ANTES del relleno de las piezas
+  // actuales a propósito: que quede detrás, como referencia tenue, nunca tapando lo real.
+  if(guiaFantasmaActiva && snapshotsPlanoActual.length>0){
+    const snapViejo = snapshotsPlanoActual[snapshotsPlanoActual.length-1];
+    ctx.save();
+    ctx.setLineDash([Math.max(6,canvas.width/150), Math.max(5,canvas.width/180)]);
+    ctx.lineWidth = Math.max(2, canvas.width/300);
+    ctx.strokeStyle = "rgba(255,255,255,.55)";
+    (snapViejo.poligonos||[]).forEach(p=>{
+      if(!p.capa || !p.puntos || p.puntos.length<3) return;
+      ctx.beginPath();
+      p.puntos.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+      ctx.closePath();
+      ctx.stroke();
+    });
+    (snapViejo.lineas||[]).forEach(l=>{
+      if(!l.capa || !l.puntos || l.puntos.length<2) return;
+      ctx.beginPath();
+      l.puntos.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+      if(l.cerrado) ctx.closePath();
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
   // Polígonos ya cerrados -- se salta el relleno/borde de las capas que el panel de Capas
   // apagó con el ojito (capasOcultasCad), sin tocar el dato guardado.
   poligonos.forEach(p=>{
