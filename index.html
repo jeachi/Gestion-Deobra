@@ -2247,6 +2247,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .mini-leyenda-chip{display:flex;align-items:center;gap:6px;background:rgba(15,22,27,.88);border:1px solid rgba(255,255,255,.14);
   border-radius:999px;padding:6px 11px 6px 7px;flex-shrink:0;cursor:pointer;white-space:nowrap;}
 .mini-leyenda-chip.activa{border-color:#5EEAD4;background:rgba(94,234,212,.14);}
+.mini-leyenda-chip.aislada{border-color:#F59E0B;background:rgba(245,158,11,.16);}
 .mini-leyenda-chip .pt{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
 .mini-leyenda-chip .nombre{font-size:10.5px;color:#e7eef1;font-weight:700;}
 .mini-leyenda-chip .pct{font-size:9px;color:#9fb0b8;font-weight:700;}
@@ -24516,6 +24517,17 @@ function seleccionarCapaDesdePanelCad(idx){
 // plano con varias capas a la vez. Esto queda siempre a la vista (se oculta solo mientras se está
 // dibujando o colocando ejes, que usan el mismo lugar en pantalla) y tocar una capa salta directo
 // a seguir marcando ahí, sin pasar por el cajón.
+// "Uso reciente" de cada capa (por nombreCompleto) -- un contador que sube cada vez que se marca
+// avance ahí o se la elige a mano. Vive solo en memoria (no es un dato de la obra, es de esta
+// sesión de trabajo): si un plano tiene muchas capas, la que se está trabajando ahora queda
+// siempre primera en la fila de la mini-leyenda, en vez de perderse en el scroll por el orden fijo
+// en que las capas se crearon.
+let ordenUsoCapas = {};
+let _contadorUsoCapas = 0;
+function marcarCapaUsada(nombreCompleto){
+  if(!nombreCompleto) return;
+  ordenUsoCapas[nombreCompleto] = ++_contadorUsoCapas;
+}
 function renderMiniLeyendaCapas(){
   const cont = document.getElementById("mini-leyenda-capas");
   if(!cont) return;
@@ -24528,21 +24540,48 @@ function renderMiniLeyendaCapas(){
     const areaTot = areaTotalDe(p.nombreBase);
     const piezas = poligonos.filter(q=>q.nombreCompleto===p.nombreCompleto);
     const pct = areaTot ? Math.min(100, piezas.reduce((s,q)=>s+Math.round((q.area/areaTot)*100),0)) : 0;
-    filas.push({nombreBase:p.nombreBase, capa:p.capa, color:p.color, pct});
+    filas.push({nombreBase:p.nombreBase, capa:p.capa, nombreCompleto:p.nombreCompleto, color:p.color, pct});
   });
   if(filas.length===0){ cont.style.display = "none"; return; }
+  filas.sort((a,b)=>(ordenUsoCapas[b.nombreCompleto]||0)-(ordenUsoCapas[a.nombreCompleto]||0));
   const seleccion = leerSelectorActividad();
   const capaEnCurso = (document.getElementById("input-nombre-capa")||{}).value || "";
   cont.style.display = "flex";
   cont.innerHTML = filas.map(f=>{
     const activa = seleccion.tipo==="capa" && seleccion.base===f.nombreBase && capaEnCurso.trim()===f.capa;
+    const aislada = capaAisladaActual===f.nombreCompleto;
     return `
-    <div class="mini-leyenda-chip${activa?' activa':''}" onclick="elegirCapaDesdeLeyenda('${esc(f.nombreBase).replace(/'/g,"\\'")}','${esc(f.capa).replace(/'/g,"\\'")}')">
+    <div class="mini-leyenda-chip${activa?' activa':''}${aislada?' aislada':''}" data-nombre-base="${esc(f.nombreBase)}" data-capa="${esc(f.capa)}" data-nombre-completo="${esc(f.nombreCompleto)}" onclick="elegirCapaDesdeLeyenda('${esc(f.nombreBase).replace(/'/g,"\\'")}','${esc(f.capa).replace(/'/g,"\\'")}')">
       <span class="pt" style="background:${f.color};"></span>
       <span class="nombre">${esc(f.capa)}</span>
       <span class="pct">${f.pct}%</span>
     </div>`;
   }).join("");
+  prepararGestoAislarMiniLeyenda(cont);
+}
+// Mantener presionado un chip de la mini-leyenda aísla esa capa (reusa aislarCapa(), el mismo
+// "Isolate" que ya existía escondido en el cajón Capas) -- antes había que abrir ese cajón y
+// buscarla en la lista larga, justo cuando más se la necesita: mientras se trabaja esa misma capa.
+// El toque corto sigue funcionando igual que antes (onclick -> elegirCapaDesdeLeyenda); se
+// suprime con stopImmediatePropagation en fase de captura, que corre ANTES que el onclick inline,
+// así un long-press no además cambia de capa.
+function prepararGestoAislarMiniLeyenda(cont){
+  cont.querySelectorAll(".mini-leyenda-chip").forEach(chip=>{
+    let timer = null, disparoLargo = false;
+    chip.addEventListener("pointerdown", ()=>{
+      disparoLargo = false;
+      timer = setTimeout(()=>{
+        disparoLargo = true;
+        aislarCapa(chip.dataset.nombreCompleto);
+        if(navigator.vibrate) navigator.vibrate(15);
+      }, 500);
+    });
+    chip.addEventListener("pointerup", ()=>clearTimeout(timer));
+    chip.addEventListener("pointerleave", ()=>clearTimeout(timer));
+    chip.addEventListener("click", (e)=>{
+      if(disparoLargo){ e.stopImmediatePropagation(); e.preventDefault(); disparoLargo = false; }
+    }, true);
+  });
 }
 function elegirCapaDesdeLeyenda(nombreBase, nombreCapa){
   if(dibujando) return; // no cambiar de capa a mitad de un dibujo en curso
@@ -24556,6 +24595,7 @@ function elegirCapaDesdeLeyenda(nombreBase, nombreCapa){
   document.getElementById("input-nombre-capa").value = nombreCapa;
   onCambioActividadBase();
   copiarEstiloSiCapaExiste();
+  marcarCapaUsada(nombreCapa ? `${nombreBase} - ${nombreCapa}` : nombreBase);
   const yaAbierto = document.getElementById("drawer-dibujar").style.display==="block";
   if(!yaAbierto) toggleDrawerHerramientas("dibujar");
   renderMiniLeyendaCapas();
@@ -27352,6 +27392,7 @@ function cerrarPoligono(){
   cerrandoPorPrimerPunto = false;
   primerEsquinaRectangulo = null;
   document.getElementById("btn-cerrar").disabled = true;
+  if(capa) marcarCapaUsada(nombreCompleto);
   redibujar();
   renderSelectorActividades();
   renderActividades();
