@@ -1319,9 +1319,13 @@ table.op-items td.op-u{text-align:center;border-bottom:1px solid #555;font-size:
 .contratista-card{background:#fff;border:1px solid var(--borde);border-radius:16px;padding:14px 16px 14px 18px;margin-bottom:12px;cursor:pointer;position:relative;overflow:hidden;box-shadow:0 2px 10px rgba(10,37,64,.05);}
 .contratista-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:linear-gradient(180deg,var(--verde),var(--verde-claro));}
 .contratista-card:active{background:var(--fondo);}
-.contratista-card .cc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
-.contratista-card .cc-nombre{font-weight:900;font-size:15.5px;color:var(--verde-oscuro);}
-.contratista-card .cc-monto{font-weight:800;font-size:13px;color:var(--tinta-suave);}
+/* Con un nombre de contratista largo, la fila (nombre a la izquierda, monto a la derecha) se
+   quedaba sin espacio de sobra y los dos textos terminaban pegados uno contra el otro sin ningún
+   espacio ("Electricidad$3.200.000,00") -- ahora el monto nunca se achica ni pierde su lugar, y el
+   nombre corta con "…" antes de llegar a tocarlo. */
+.contratista-card .cc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;}
+.contratista-card .cc-nombre{font-weight:900;font-size:15.5px;color:var(--verde-oscuro);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.contratista-card .cc-monto{font-weight:800;font-size:13px;color:var(--tinta-suave);flex-shrink:0;}
 .contratista-card .cc-meta{font-size:11.5px;color:var(--tinta-suave);margin-bottom:8px;}
 .cc-barra{height:10px;border-radius:6px;background:var(--fondo);overflow:hidden;}
 .cc-barra-fill{height:100%;background:linear-gradient(90deg,var(--verde),var(--verde-claro));border-radius:6px;}
