@@ -3605,6 +3605,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="card" id="pa-panel-selector">
       <h2>📐 Planos de avance — <span id="pa-obra-actual"></span></h2>
       <p class="helper" style="margin-bottom:10px;">Podés tener varios planos independientes por obra (ej: "Solados PB", "Durlock 1er piso") — cada uno con sus propias actividades y capas, sin mezclarse entre sí.</p>
+      <input type="text" id="buscador-planos" placeholder="🔎 Buscar plano por nombre..." oninput="renderSelectorPlanos()" style="display:none;width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--vidrio-borde);border-radius:9px;font-size:12.5px;background:rgba(255,255,255,.05);color:#e7eef1;">
       <div id="pa-selector-planos" style="margin-bottom:10px;"></div>
       <input type="file" id="input-plano" accept="application/pdf,image/*" style="display:none;" onchange="cargarPlano(this.files[0])">
     </div>
@@ -20599,10 +20600,17 @@ function renderSelectorPlanos(){
       <div class="ico">🏛️</div>
       Plano Maestro
     </div>`;
+  const buscador = document.getElementById("buscador-planos");
   if(planosIndex.length===0){
     cont.innerHTML = `<p class="helper" style="margin:0 0 8px;">Todavía no cargaste ningún plano para esta obra.</p>` + `<div class="grilla-planos">${tarjetaAgregar}${tarjetaMaestro}</div>`;
+    if(buscador) buscador.style.display = "none";
     return;
   }
+  // El buscador solo se muestra si hay bastantes planos de avance como para que valga la pena
+  // escanear la lista en vez de simplemente mirarla -- con pocos, solo sería un campo de más.
+  const normalesSinFiltrar = planosIndex.filter(p=>p.tipo!=='maestro');
+  if(buscador) buscador.style.display = normalesSinFiltrar.length > 5 ? "" : "none";
+  const busquedaPlanos = normalizarBusqueda((buscador && buscador.value) || "");
   const tarjetaDe = p=>`
     <div class="plano-card${p.id===planoActualId?' sel':''}${p.tipo==='maestro'?' es-maestro':''}" data-plano-id="${p.id}" onclick="seleccionarPlano('${p.id}')">
       <button type="button" class="btn-eliminar-plano-card" onclick="event.stopPropagation(); eliminarPlano('${p.id}', this)" title="Eliminar plano (tocá 2 veces)">🗑 Borrar</button>
@@ -20625,7 +20633,14 @@ function renderSelectorPlanos(){
   // general de la obra, así que conviene que salten a la vista antes que los planos de avance
   // por contratista (que suelen ser varios).
   const maestros = planosIndex.filter(p=>p.tipo==='maestro');
-  const normales = planosIndex.filter(p=>p.tipo!=='maestro');
+  // El más editado recientemente queda primero -- en una obra con muchas semanas de historial,
+  // el plano en el que se está trabajando ahora ya no se pierde entre los más viejos, que quedaban
+  // siempre en el orden fijo en que se cargaron. Los que todavía no tienen ultimaEdicion (nunca se
+  // guardó nada después de este cambio) quedan al final, en su orden de siempre.
+  const normales = normalesSinFiltrar
+    .filter(p=>!busquedaPlanos || normalizarBusqueda(p.nombre).includes(busquedaPlanos))
+    .slice()
+    .sort((a,b)=>(b.ultimaEdicion||0)-(a.ultimaEdicion||0));
   let html = "";
   if(maestros.length>0){
     html += `<div class="rotulo-categoria-planos">🏛️ PLANOS MAESTROS</div>`;
@@ -20635,6 +20650,9 @@ function renderSelectorPlanos(){
     html += `<div class="grilla-planos">${tarjetaMaestro}</div>`;
   }
   html += `<div class="rotulo-categoria-planos">📐 PLANOS DE AVANCE</div>`;
+  if(busquedaPlanos && normales.length===0){
+    html += `<p class="helper" style="margin:0 0 8px;">Ningún plano coincide con "${esc(buscador.value)}".</p>`;
+  }
   html += `<div class="grilla-planos">${normales.map(tarjetaDe).join("")}${tarjetaAgregar}</div>`;
   cont.innerHTML = html;
   // Mantener pulsado sobre una tarjeta la abre para renombrar -- un toque normal (rápido, sin
@@ -21212,10 +21230,19 @@ function recargarPlanoPorEdicionConcurrente(){
   // devuelve al mismo lugar, no a la Vista rápida.
   if(planoActualId) seleccionarPlano(planoActualId, true);
 }
+// Para poder ordenar el selector de planos por "editado más recientemente" (ver
+// renderSelectorPlanos()) sin tener que ir a leer la fecha real de cada guardado.
+function marcarPlanoActualComoEditado(){
+  const p = planosIndex.find(x=>x.id===planoActualId);
+  if(!p) return;
+  p.ultimaEdicion = Date.now();
+  guardarPlanosIndex(); // fire-and-forget -- no hace falta esperarlo para seguir guardando el plano
+}
 async function guardarPlanoAvancePoligonos(){
   asegurarCapaIds();
   const obra = claveObraPlanoAvance();
   if(!obra || !planoActualId) return;
+  marcarPlanoActualComoEditado();
   mostrarIndicadorGuardado("guardando");
   try{
     ignorarProximoSnapshotPropio = true;
