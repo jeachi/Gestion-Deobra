@@ -2188,6 +2188,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .tool-card.destacado{background:rgba(14,148,136,.25);border-color:var(--verde);}
 .tool-card.destacado .lbl{color:var(--verde-claro);}
 .tool-card.btn-primary{background:var(--verde);border-color:var(--verde);}
+/* Punto naranja discreto para que una herramienta avanzada (Auto contorno/Seguir pared) se note
+   entre tantos botones del cajón -- desaparece solo la primera vez que se toca, nunca más. */
+.tool-card.sin-probar{position:relative;}
+.tool-card.sin-probar::after{content:"";position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;background:#F59E0B;box-shadow:0 0 0 2px rgba(10,14,18,.9);}
 .tool-card.btn-primary .lbl{color:#fff;}
 .tool-card.btn-danger{background:rgba(220,90,90,.25);border-color:#DC5A5A;}
 .tool-card.btn-danger .lbl{color:#ff9c9c;}
@@ -20933,6 +20937,7 @@ function entrarAEditarPlano(){
   document.getElementById("card-actividades").style.display = "block";
   iniciarCanvas();
   renderSelectorActividades();
+  restaurarUltimaSeleccionPlano();
   renderActividades();
   renderListaLineasAvance();
   actualizarTypeSelectorCad();
@@ -24528,6 +24533,26 @@ function marcarCapaUsada(nombreCompleto){
   if(!nombreCompleto) return;
   ordenUsoCapas[nombreCompleto] = ++_contadorUsoCapas;
 }
+// Recuerda la última actividad/capa que se estaba marcando en ESTE plano (por dispositivo, en
+// localStorage) -- si se cierra la app a mitad de marcar "Placas - Dormitorio 2" y se vuelve más
+// tarde, al reabrir el plano ya queda ese mismo selector elegido, sin tener que buscarlo de nuevo
+// desde cero. Si la actividad/capa ya no existe (se borró o se renombró), no restaura nada.
+function guardarUltimaSeleccionPlano(nombreBase, capa){
+  if(!planoActualId || !nombreBase) return;
+  try{ localStorage.setItem("plano_ultima_seleccion_"+planoActualId, JSON.stringify({nombreBase, capa: capa||null})); }catch(e){}
+}
+function restaurarUltimaSeleccionPlano(){
+  if(!planoActualId) return;
+  let guardado;
+  try{ guardado = JSON.parse(localStorage.getItem("plano_ultima_seleccion_"+planoActualId)||"null"); }catch(e){ return; }
+  if(!guardado || !guardado.nombreBase) return;
+  const sel = document.getElementById("select-actividad-base");
+  const valor = guardado.capa ? `capa::${guardado.nombreBase}` : `total::${guardado.nombreBase}`;
+  if(![...sel.options].some(o=>o.value===valor)) return;
+  sel.value = valor;
+  if(guardado.capa) document.getElementById("input-nombre-capa").value = guardado.capa;
+  onCambioActividadBase();
+}
 function renderMiniLeyendaCapas(){
   const cont = document.getElementById("mini-leyenda-capas");
   if(!cont) return;
@@ -24596,6 +24621,7 @@ function elegirCapaDesdeLeyenda(nombreBase, nombreCapa){
   onCambioActividadBase();
   copiarEstiloSiCapaExiste();
   marcarCapaUsada(nombreCapa ? `${nombreBase} - ${nombreCapa}` : nombreBase);
+  guardarUltimaSeleccionPlano(nombreBase, nombreCapa);
   const yaAbierto = document.getElementById("drawer-dibujar").style.display==="block";
   if(!yaAbierto) toggleDrawerHerramientas("dibujar");
   renderMiniLeyendaCapas();
@@ -24613,6 +24639,7 @@ function iniciarCanvas(){
   renderRielAdaptativo();
   actualizarBotonOrdenBadges();
   actualizarBotonAltoContraste();
+  actualizarBadgesHerramientaAvanzada();
   redibujar();
   // Se espera 2 "frames" antes de medir el tamaño para ajustar el zoom -- si se mide en el mismo
   // instante en que recién se hizo visible el visor, el navegador todavía no terminó de acomodar
@@ -24992,13 +25019,36 @@ function actualizarBarraPasoAPaso(){
   }
   posicionarBarraPasoAPaso(); // el ancho puede cambiar según si ▶ está habilitado o no
 }
+// Tip de primera vez para una herramienta avanzada (Auto contorno/Seguir pared) -- antes el tutorial
+// completo aparecía CADA vez que se activaba el modo, lo cual termina siendo ruido para quien ya
+// la conoce. Ahora el tutorial largo se ve una sola vez por dispositivo (guardado en localStorage);
+// las siguientes veces solo un toast corto confirma que quedó activada. El punto naranja del botón
+// (ver CSS .sin-probar) ayuda a notar que la herramienta existe ANTES de tocarla por primera vez.
+function tipHerramientaYaVisto(cual){
+  try{ return localStorage.getItem("plano_tip_visto_"+cual)==="1"; }catch(e){ return false; }
+}
+function marcarTipHerramientaVisto(cual){
+  try{ localStorage.setItem("plano_tip_visto_"+cual, "1"); }catch(e){}
+  actualizarBadgesHerramientaAvanzada();
+}
+function actualizarBadgesHerramientaAvanzada(){
+  [["btn-auto-contorno","autocontorno"],["btn-seguir-pared","seguirpared"]].forEach(([id,cual])=>{
+    const btn = document.getElementById(id);
+    if(btn) btn.classList.toggle("sin-probar", !tipHerramientaYaVisto(cual));
+  });
+}
 function toggleModoAutoContorno(){
   modoAutoContorno = !modoAutoContorno;
   document.getElementById("btn-auto-contorno").classList.toggle("btn-primary", modoAutoContorno);
   if(!modoAutoContorno && pasoAPasoAutoContorno) terminarPasoAPasoAutoContorno(); // apagar el modo corta el paso a paso, pero deja los vértices ya confirmados
   actualizarModoFlotante();
   if(modoAutoContorno && !dibujando){
-    showToast('Quedó activado. Tocá "✏️ Marcar área" primero, y ubicá el primer punto con la lupa igual que siempre (arrastrando hasta la esquina, después soltá) -- ahí arranca solo el seguimiento paso a paso. No hace falta activar "Pared" para esto.', 7500);
+    if(!tipHerramientaYaVisto("autocontorno")){
+      showToast('Quedó activado. Tocá "✏️ Marcar área" primero, y ubicá el primer punto con la lupa igual que siempre (arrastrando hasta la esquina, después soltá) -- ahí arranca solo el seguimiento paso a paso. No hace falta activar "Pared" para esto.', 7500);
+      marcarTipHerramientaVisto("autocontorno");
+    }else{
+      showToast("🪄 Auto contorno activado");
+    }
   }
 }
 // Nota: el arranque del seguimiento paso a paso ahora pasa por el flujo normal de colocar un
@@ -25307,7 +25357,12 @@ function toggleModoSeguirPared(){
   document.getElementById("btn-seguir-pared").classList.toggle("btn-primary", modoSeguirPared);
   actualizarModoFlotante();
   if(modoSeguirPared && !dibujando){
-    showToast('Quedó activado. Ahora tocá "✏️ Marcar área" (o "▭ Rectángulo") para empezar a poner puntos — el primero es libre, desde el segundo te ayuda a seguir la pared.', 6000);
+    if(!tipHerramientaYaVisto("seguirpared")){
+      showToast('Quedó activado. Ahora tocá "✏️ Marcar área" (o "▭ Rectángulo") para empezar a poner puntos — el primero es libre, desde el segundo te ayuda a seguir la pared.', 6000);
+      marcarTipHerramientaVisto("seguirpared");
+    }else{
+      showToast("🧱 Seguir pared activado");
+    }
   }
 }
 // Modo borrador -- a diferencia de "Deshacer último punto" (que solo saca el más reciente), esto
@@ -27393,6 +27448,7 @@ function cerrarPoligono(){
   primerEsquinaRectangulo = null;
   document.getElementById("btn-cerrar").disabled = true;
   if(capa) marcarCapaUsada(nombreCompleto);
+  guardarUltimaSeleccionPlano(nombreBase, capa);
   redibujar();
   renderSelectorActividades();
   renderActividades();
