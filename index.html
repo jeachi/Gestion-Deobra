@@ -2772,7 +2772,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
         <div class="table-wrap" style="margin-top:12px;">
           <table class="trab" id="tabla-usuarios">
-            <thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Asistencia</th><th style="text-align:center;">Pedidos</th><th style="text-align:center;">Caja Chica</th><th style="text-align:center;">Certificados</th><th style="text-align:center;">Clima</th><th style="text-align:center;">Minutas</th><th style="text-align:center;">Remitos</th><th style="text-align:center;">Herramientas</th><th style="text-align:center;">Observaciones</th><th style="text-align:center;">Presupuesto</th><th></th></tr></thead>
+            <thead><tr><th>Usuario</th><th>Rol</th><th style="text-align:center;">Asistencia</th><th style="text-align:center;">Pedidos</th><th style="text-align:center;">Caja Chica</th><th style="text-align:center;">Certificados</th><th style="text-align:center;">Clima</th><th style="text-align:center;">Minutas</th><th style="text-align:center;">Remitos</th><th style="text-align:center;">Herramientas</th><th style="text-align:center;">Observaciones</th><th style="text-align:center;">Presupuesto</th><th style="text-align:center;">Plano avance</th><th></th></tr></thead>
             <tbody id="tbody-usuarios"></tbody>
           </table>
         </div>
@@ -3711,7 +3711,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
            guardó cambios en ESTE plano mientras lo tenías abierto acá. -->
       <div class="aviso-edicion-concurrente" id="aviso-edicion-concurrente-plano" style="display:none;">
         <span class="ico">⚠</span>
-        <span class="txt">Alguien más guardó cambios en este plano recién. Recargá para verlos antes de seguir — si seguís dibujando sin recargar, tu próximo guardado puede pisarlos.</span>
+        <span class="txt">Alguien más guardó cambios en este plano recién (tu historial de "Deshacer" se vació por las dudas). Recargá para verlos antes de seguir — si seguís dibujando sin recargar, tu próximo guardado puede pisarlos.</span>
         <button type="button" class="btn btn-primary btn-sm" onclick="recargarPlanoPorEdicionConcurrente()">Recargar</button>
         <button type="button" class="x" onclick="document.getElementById('aviso-edicion-concurrente-plano').style.display='none';" title="Cerrar este aviso (no recarga)">✕</button>
       </div>
@@ -19133,10 +19133,15 @@ async function iniciarAppData(){
 /* ==================== USUARIOS Y LOGIN ==================== */
 let usuarios = [];
 let sesionActual = null; // {username, role, permisos}
-const MODULOS_PERMISO = ["asistencia","pedidos","caja","certificados","clima","minutas","remitos","herramientas","observaciones","presupuesto"];
+const MODULOS_PERMISO = ["asistencia","pedidos","caja","certificados","clima","minutas","remitos","herramientas","observaciones","presupuesto","planoavance"];
 const PERMISOS_ADMIN = {asistencia:true, pedidos:true, caja:true, certificados:true, clima:true, minutas:true, remitos:true, herramientas:true, observaciones:true, presupuesto:true};
-const PERMISOS_CAPATAZ_DEFAULT = {asistencia:true, pedidos:false, caja:false, certificados:false, clima:false, minutas:false, remitos:false, herramientas:false, observaciones:false, presupuesto:false};
-const NOMBRES_MODULO = {asistencia:"Asistencia", pedidos:"Pedidos", caja:"Caja Chica", certificados:"Certificados", clima:"Libro climático", minutas:"Minutas", remitos:"Remitos", herramientas:"Herramientas", observaciones:"Pendientes", presupuesto:"Presupuesto"};
+// "planoavance" default=true (a diferencia de todos los demás, que default=false) porque antes
+// de este cambio NO tenía gate de permisos -- quedaba siempre disponible para cualquier capataz
+// logueado. Arrancar en false le hubiera sacado el acceso de golpe a todo el mundo, sin que nadie
+// lo haya pedido. cargarUsuarios() hace la migración equivalente para cuentas ya existentes que
+// tienen un objeto "permisos" guardado SIN esta clave todavía.
+const PERMISOS_CAPATAZ_DEFAULT = {asistencia:true, pedidos:false, caja:false, certificados:false, clima:false, minutas:false, remitos:false, herramientas:false, observaciones:false, presupuesto:false, planoavance:true};
+const NOMBRES_MODULO = {asistencia:"Asistencia", pedidos:"Pedidos", caja:"Caja Chica", certificados:"Certificados", clima:"Libro climático", minutas:"Minutas", remitos:"Remitos", herramientas:"Herramientas", observaciones:"Pendientes", presupuesto:"Presupuesto", planoavance:"Plano de avance"};
 
 /* ---------------- Registro de actividad (quién hizo qué y cuándo) ----------------
    Guardamos solo las acciones importantes (crear/editar/eliminar/cambios de permiso), NO cada
@@ -19194,6 +19199,14 @@ async function cargarUsuarios(){
   try{
     const r = await window.storage.get("usuarios", true);
     usuarios = r && r.value ? JSON.parse(r.value) : [];
+    // Migración en memoria (no se re-guarda sola): una cuenta de capataz creada ANTES de que
+    // "planoavance" existiera como permiso tiene un objeto "permisos" guardado sin esa clave --
+    // sin esto, quedaría bloqueada del módulo de un día para el otro, sin que ningún admin lo haya
+    // pedido. Si no tiene ningún objeto "permisos" guardado, ya cae en PERMISOS_CAPATAZ_DEFAULT
+    // (que también tiene planoavance:true) en cada lugar que lo usa -- no hace falta tocar nada acá.
+    usuarios.forEach(u=>{
+      if(u.role!=="admin" && u.permisos && u.permisos.planoavance===undefined) u.permisos.planoavance = true;
+    });
     errorCargaUsuarios = false;
   }catch(e){
     if(String(e.message||"").includes("Clave no encontrada")){
@@ -20010,7 +20023,7 @@ function renderTablaUsuarios(){
       ${celdasModulo}
       <td><button class="btn btn-danger btn-sm" onclick="confirmarDoble(this,'¿Seguro?',()=>quitarUsuario('${esc(u.username)}'))">Quitar</button></td>
     </tr>`;
-  }).join("") || `<tr><td colspan="12" class="empty-msg">Todavía no agregaste ningún capataz.</td></tr>`;
+  }).join("") || `<tr><td colspan="13" class="empty-msg">Todavía no agregaste ningún capataz.</td></tr>`;
 }
 
 async function togglePermisoUsuario(username, modulo, activo){
@@ -21224,6 +21237,14 @@ function escucharCambiosRemotosPlano(obra, id){
       if(actualizado===ultimoTimestampVistoPlano) return;
       ultimoTimestampVistoPlano = actualizado;
       if(ignorarProximoSnapshotPropio){ ignorarProximoSnapshotPropio = false; return; } // fue nuestro propio guardado
+      // El historial de "Deshacer" vive por dispositivo (memoria + sessionStorage) -- si alguien
+      // más guardó cambios en este plano desde otro celular, "Deshacer" hacia ESTE historial viejo
+      // pisaría ese trabajo ajeno sin que nadie se dé cuenta (deshacerGeneral() sobrescribe
+      // "poligonos" entero y lo guarda). Se vacía apenas se detecta el cambio remoto, en vez de
+      // solo avisar y dejar la bomba de tiempo armada.
+      historialPoligonos = [];
+      historialFuturo = [];
+      persistirHistorialPlano();
       const el = document.getElementById("aviso-edicion-concurrente-plano");
       if(el) el.style.display = "flex";
     }, err=>{ console.error("No se pudo escuchar cambios remotos del plano:", err); });
