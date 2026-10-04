@@ -2291,6 +2291,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .badge-maestro{position:absolute;top:6px;left:6px;background:#C9A227;color:#fff;font-size:8.5px;font-weight:800;padding:2px 7px;border-radius:20px;z-index:2;}
 .pin-maestro-tocable{position:absolute;width:30px;height:30px;margin-left:-15px;margin-top:-30px;cursor:pointer;touch-action:manipulation;}
 .pin-maestro-svg{width:100%;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35));}
+/* % real de avance de las capas vinculadas a este pin -- aparte del color del semáforo (que solo
+   refleja el checklist), para no confundir "sin pendientes marcados" con "ya está hecho de verdad". */
+.pin-pct-badge{position:absolute;top:-4px;right:-10px;background:#fff;color:#0A2540;font-size:8px;font-weight:800;line-height:1;border-radius:999px;padding:2px 4px;border:1.5px solid rgba(10,37,64,.25);box-shadow:0 1px 3px rgba(0,0,0,.3);pointer-events:none;}
 .plano-card-nuevo .ico{font-size:20px;}
 .toolbar-cat{background:#fff;border:1px solid var(--borde);border-radius:10px;padding:8px 6px;margin-bottom:8px;}
 .fila-tb{display:flex;align-items:center;gap:4px;}
@@ -22847,6 +22850,40 @@ function renderPinesMaestro(){
   // pines en sí -- se refresca acá para que quede al día apenas se agrega/mueve un pin o se toca
   // un ítem de su checklist (ambos casos ya llaman a renderPinesMaestro()).
   actualizarTypeSelectorCad();
+  actualizarBadgesPctPines();
+}
+// Badge chico de % real sobre cada pin con vínculos de capa -- antes el color del pin reflejaba
+// SOLO el checklist, ignorando por completo cuánto avance real tienen las capas vinculadas (un pin
+// podía verse "verde" con checklist vacío estando al 20% real de avance). No reemplaza el color
+// del semáforo: se agrega como un número aparte, al costado. Es fire-and-forget (no bloquea el
+// render de los pines en sí, que debe seguir siendo instantáneo) y reusa el mismo caché de
+// cargarPoligonosParaLink que ya usa el panel de cada pin, así no vuelve a pedir lo mismo.
+async function actualizarBadgesPctPines(){
+  const obra = claveObraPlanoAvance();
+  if(!obra) return;
+  const idDeEsteRender = planoActualId;
+  for(const pin of pinesMaestro){
+    const vinculosCapa = (pin.capasVinculadas||[]).filter(v=>(v.tipo||"capa")==="capa");
+    if(vinculosCapa.length===0) continue;
+    const pcts = [];
+    for(const v of vinculosCapa){
+      try{
+        const datos = await cargarPoligonosParaLink(obra, v.planoId);
+        if(planoActualId!==idDeEsteRender) return; // se cambió de plano mientras esto cargaba
+        const estado = calcularEstadoCapaEnPunto(datos, v.nombreCompleto, pin.x, pin.y);
+        if(estado.encontrado && estado.pct!==null) pcts.push(estado.pct);
+      }catch(e){}
+    }
+    if(pcts.length===0) continue;
+    const promedio = Math.round(pcts.reduce((s,p)=>s+p,0)/pcts.length);
+    const div = document.querySelector(`.pin-maestro-tocable[data-pin-id="${pin.id}"]`);
+    if(div && !div.querySelector(".pin-pct-badge")){
+      const badge = document.createElement("span");
+      badge.className = "pin-pct-badge";
+      badge.textContent = promedio+"%";
+      div.appendChild(badge);
+    }
+  }
 }
 // Busca si el pin que se está moviendo queda cerca del eje X o Y de ALGÚN otro pin ya puesto --
 // si es así, lo alinea exacto a ese eje (aunque el otro pin esté lejos), igual que la alineación
@@ -23555,20 +23592,39 @@ async function cargarEstadoVinculosPin(){
         const datos = await cargarPoligonosParaLink(obra, v.planoId);
         if(pinAbiertoId!==pin.id) return;
         const estado = calcularEstadoCapaEnPunto(datos, v.nombreCompleto, pin.x, pin.y);
+        const infoItem = await obtenerInfoItemContratoDeVinculo(obra, v.planoId, v.nombreCompleto);
+        if(pinAbiertoId!==pin.id) return;
+        const sufijoItem = infoItem ? ` · 📋 ${esc(infoItem)}` : "";
         if(!estado.encontrado){
-          el.textContent = `${v.planoNombre} · sin marcar en esta zona todavía`;
+          el.innerHTML = `${esc(v.planoNombre)} · sin marcar en esta zona todavía${sufijoItem}`;
         }else if(estado.pct===null){
-          el.textContent = `${v.planoNombre} · marcado acá (sin referencia de área total para calcular %)`;
+          el.innerHTML = `${esc(v.planoNombre)} · marcado acá (sin referencia de área total para calcular %)${sufijoItem}`;
         }else if(estado.pct>=97){
-          el.innerHTML = `${v.planoNombre} · <b style="color:var(--verde);">✅ Listo</b>`;
+          el.innerHTML = `${esc(v.planoNombre)} · <b style="color:var(--verde);">✅ Listo</b>${sufijoItem}`;
         }else if(estado.pct>0){
-          el.innerHTML = `${v.planoNombre} · <b style="color:#E9A23B;">🔶 En progreso (${estado.pct}%)</b>`;
+          el.innerHTML = `${esc(v.planoNombre)} · <b style="color:#E9A23B;">🔶 En progreso (${estado.pct}%)</b>${sufijoItem}`;
         }else{
-          el.textContent = `${v.planoNombre} · ⚪ No iniciado en esta zona`;
+          el.innerHTML = `${esc(v.planoNombre)} · ⚪ No iniciado en esta zona${sufijoItem}`;
         }
       }
     }catch(e){ el.textContent = v.planoNombre; }
   }
+}
+// A qué ítem del contrato (y de qué contratista) corresponde una capa vinculada -- antes, para
+// saber eso había que ir a Contratistas/Certificados por separado. Empareja por nombre (mismo
+// criterio sin mayúsculas/tildes que ya usa normalizarBusqueda en el resto de la app).
+async function obtenerInfoItemContratoDeVinculo(obra, planoId, nombreCompleto){
+  const planoVinc = planosIndex.find(p=>p.id===planoId);
+  if(!planoVinc || !planoVinc.contratistaId) return null;
+  let c;
+  try{ c = contratistasCache[planoVinc.contratistaId] || await cargarContratistaDetalle(planoVinc.contratistaId); }
+  catch(e){ return null; }
+  if(!c || !c.items || c.items.length===0) return null;
+  const nombreCapaSola = (nombreCompleto||"").includes(" - ") ? nombreCompleto.split(" - ").slice(1).join(" - ") : nombreCompleto;
+  const norm = normalizarBusqueda(nombreCapaSola);
+  const item = c.items.find(it=>normalizarBusqueda(it.nombre||"")===norm);
+  if(!item) return null;
+  return `${c.nombre} — ${item.nombre} (peso ${Math.round(item.pctIncidencia||0)}%)`;
 }
 function desvincularCapaPin(i){
   const pin = pinesMaestro.find(p=>p.id===pinAbiertoId);
