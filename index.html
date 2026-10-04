@@ -23747,6 +23747,37 @@ async function cargarAnotacionesParaLink(obra, planoId){
     return datos;
   }catch(e){ return []; }
 }
+// Antes, vincular un pin del Maestro a la capa recién marcada era SIEMPRE un paso aparte (ir al
+// Maestro, "🔗 Vincular", buscarla en la lista). Si el plano de contratista usa la MISMA imagen que
+// un Maestro de la obra (compartenImagen, mismo criterio que ya usa cargarEstadoVinculosPin) y hay
+// un pin justo en la zona del área recién cerrada, se sugiere vincularla ahí mismo -- no bloquea,
+// un "Cancelar" simplemente no hace nada.
+async function sugerirVincularPinCercano(poligonoNuevo){
+  if(!poligonoNuevo) return;
+  const obra = claveObraPlanoAvance();
+  const planoActual = planosIndex.find(p=>p.id===planoActualId);
+  if(!obra || !planoActual || !planoActual.miniatura) return;
+  const maestros = planosIndex.filter(p=>p.tipo==="maestro" && p.miniatura===planoActual.miniatura);
+  const anillos = anillosDe(poligonoNuevo);
+  for(const maestro of maestros){
+    let pines;
+    try{
+      const r = await window.storage.get(`plano_maestro_pines_${obra}_${maestro.id}`, true);
+      pines = r && r.value ? JSON.parse(r.value) : [];
+    }catch(e){ continue; }
+    const pinDentro = pines.find(pin=>anillos.some(an=>puntoDentroDePoligono(pin.x, pin.y, an)));
+    if(!pinDentro) continue;
+    pinDentro.capasVinculadas = pinDentro.capasVinculadas || [];
+    const yaVinculado = pinDentro.capasVinculadas.some(v=>(v.tipo||"capa")==="capa" && v.planoId===planoActualId && v.nombreCompleto===poligonoNuevo.nombreCompleto);
+    if(yaVinculado) return;
+    if(confirm(`El pin "${pinDentro.nombre||"(sin nombre)"}" del Plano Maestro está en esta misma zona -- ¿vincular "${poligonoNuevo.nombreCompleto}" a él?`)){
+      pinDentro.capasVinculadas.push({tipo:"capa", planoId:planoActualId, planoNombre:planoActual.nombre, nombreCompleto:poligonoNuevo.nombreCompleto});
+      await guardarClave(`plano_maestro_pines_${obra}_${maestro.id}`, JSON.stringify(pines));
+      showToast(`✓ Vinculado al pin "${pinDentro.nombre||"(sin nombre)"}"`);
+    }
+    return; // alcanza con sugerir el primero que coincida
+  }
+}
 function abrirVincularCapasPin(){
   const pin = pinesMaestro.find(p=>p.id===pinAbiertoId);
   if(!pin) return;
@@ -27728,6 +27759,7 @@ function cerrarPoligono(){
   renderSelectorActividades();
   renderActividades();
   guardarPlanoAvancePoligonos();
+  if(capa) sugerirVincularPinCercano(poligonos[poligonos.length-1]);
   // Antes esto solo corría si la pieza tenía capa -- una pieza nueva de "área total" (sin capa)
   // que se superpone con otra ya existente infla el DENOMINADOR de todas sus capas, y quedaba sin
   // ningún aviso. revisarSuperposicionEnCapa ya soporta este caso solo (nombreCompleto es el
