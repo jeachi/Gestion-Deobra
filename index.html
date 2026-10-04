@@ -2293,6 +2293,24 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .barra-fg{height:100%;border-radius:4px;}
 .pct-txt{font-size:11.5px;font-weight:800;width:40px;text-align:right;}
 
+/* ---- Vista rápida de Plano de avance (modo lectura, antes de entrar al editor) ---- */
+.vr-preview-cont{position:relative;border-radius:10px;overflow:hidden;background:var(--fondo);border:1.5px solid var(--borde);}
+.vr-preview-cont img{width:100%;height:auto;display:block;}
+#vr-pines-overlay{position:absolute;inset:0;}
+.vr-pin-punto{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);}
+.vr-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;}
+.vr-stats .stat{background:#fff;border:1.5px solid var(--borde);border-radius:10px;padding:10px 6px;text-align:center;}
+.vr-stats .stat .num{font-size:19px;font-weight:900;color:var(--verde-oscuro);}
+.vr-stats .stat .lbl{font-size:9.5px;color:var(--tinta-suave);font-weight:700;margin-top:2px;}
+.vr-subtitulo{font-size:11px;font-weight:800;color:var(--tinta-suave);text-transform:uppercase;letter-spacing:.4px;margin:16px 0 8px;}
+.vr-fila-actividad{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.vr-fila-actividad .vr-punto{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.vr-fila-actividad .vr-nombre{font-size:12.5px;font-weight:700;color:var(--tinta);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.vr-punto{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+.vr-leyenda{background:var(--fondo);border-radius:10px;padding:10px 12px;}
+.vr-leyenda-fila{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;font-weight:700;color:var(--tinta);}
+.vr-vacio{font-size:12px;color:var(--tinta-suave);margin-top:14px;}
+
 </style>
 </head>
 <body>
@@ -3559,6 +3577,39 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <p class="helper" style="margin-bottom:10px;">Podés tener varios planos independientes por obra (ej: "Solados PB", "Durlock 1er piso") — cada uno con sus propias actividades y capas, sin mezclarse entre sí.</p>
       <div id="pa-selector-planos" style="margin-bottom:10px;"></div>
       <input type="file" id="input-plano" accept="application/pdf,image/*" style="display:none;" onchange="cargarPlano(this.files[0])">
+    </div>
+
+    <!-- ---- Vista rápida: lo primero que se ve al elegir un plano -- solo lectura, liviana, sin
+         cargar todo el editor CAD. "✏️ Editar plano" recién ahí entra al editor completo. ---- -->
+    <div class="card" id="pa-panel-vista-rapida" style="display:none;">
+      <button type="button" class="btn btn-outline btn-sm" onclick="volverASelectorPlanos()" style="margin-bottom:10px;">← Volver a planos</button>
+      <h2 id="vr-titulo-plano" style="margin-bottom:2px;"></h2>
+      <p class="tiny" id="vr-meta-plano" style="color:var(--tinta-suave);margin:0 0 12px;"></p>
+
+      <div class="vr-preview-cont">
+        <img id="vr-preview-img" alt="">
+        <div id="vr-pines-overlay"></div>
+      </div>
+
+      <div class="vr-stats" id="vr-stats"></div>
+
+      <div id="vr-bloque-actividades">
+        <div class="vr-subtitulo">Por actividad</div>
+        <div id="vr-lista-actividades"></div>
+      </div>
+
+      <div id="vr-bloque-leyenda" class="vr-leyenda" style="display:none;">
+        <div class="vr-subtitulo">Anillo del pin = estado</div>
+        <div class="vr-leyenda-fila">
+          <span><span class="vr-punto" style="background:#DC5B4A;"></span>Urgente</span>
+          <span><span class="vr-punto" style="background:#E9A23B;"></span>Pendiente</span>
+          <span><span class="vr-punto" style="background:#0E9488;"></span>Al día</span>
+        </div>
+      </div>
+
+      <p class="vr-vacio" id="vr-vacio" style="display:none;">Todavía no marcaste nada en este plano.</p>
+
+      <button type="button" class="btn btn-primary" id="vr-btn-editar" style="width:100%;margin-top:16px;" onclick="entrarAEditarPlano()">✏️ Editar plano</button>
     </div>
 
   <div class="card" id="card-canvas" style="display:none;padding:8px;">
@@ -11709,7 +11760,10 @@ async function cargarPoligonosDePlano(obra, planoId){
 async function capturarImagenPlanoSnapshot(obra, planoId){
   const obraAnterior = obraOverridePlanoAvance;
   obraOverridePlanoAvance = obra;
-  await seleccionarPlano(planoId);
+  // true = entra directo al editor -- esta función lee el <canvas> compartido apenas termina
+  // seleccionarPlano(), y solo el editor (iniciarCanvas) lo deja con el tamaño/dibujo correctos;
+  // la Vista rápida no toca ese <canvas> para nada.
+  await seleccionarPlano(planoId, true);
   const canvas = document.getElementById("canvas-plano");
   // Si este plano quedó marcado como "horizontal" (botón ↔️/↕️ en su tarjeta), la foto para el
   // certificado también rota -- mismo criterio que el reporte del plano, así las dos coinciden.
@@ -11896,7 +11950,9 @@ async function abrirPlanoDesdeContratista(contratistaId){
   const planosVinculados = planosIndex.filter(p=>p.contratistaId===contratistaId);
   if(planosVinculados.length>0){
     const masReciente = [...planosVinculados].sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""))[0];
-    await seleccionarPlano(masReciente.id);
+    // true = entra directo al editor -- quien toca "Marcar avance" desde un Certificado quiere
+    // dibujar ya mismo, no pasar primero por la Vista rápida de solo lectura.
+    await seleccionarPlano(masReciente.id, true);
   }
   avisarItemsSinMarcarEnPlano(c);
 }
@@ -20624,7 +20680,7 @@ async function confirmarVincularPlano(contratistaId){
   cerrarVincularPlano();
   showToast(contratistaId ? `✓ Plano vinculado a "${p.contratistaNombre}"` : "✓ Se quitó el vínculo del plano");
 }
-async function seleccionarPlano(id){
+async function seleccionarPlano(id, entrarDirectoAEditor){
   planoActualId = id;
   imagenPlano = null;
   poligonos = [];
@@ -20714,6 +20770,7 @@ async function seleccionarPlano(id){
   metrosPorPixelPlano = null;
   document.getElementById("card-canvas").style.display = "none";
   document.getElementById("card-actividades").style.display = "none";
+  document.getElementById("pa-panel-vista-rapida").style.display = "none";
   const obra = claveObraPlanoAvance();
   if(!obra) return;
   try{
@@ -20748,17 +20805,12 @@ async function seleccionarPlano(id){
     // pines. Se salta toda esa carga y va directo a traer los pines.
     await cargarPinesMaestro();
     plantillasChecklistPin = await cargarPlantillasChecklistPin(obra);
-    if(imagenPlano){
-      document.getElementById("pa-panel-selector").style.display = "none";
-      document.getElementById("pa-editor-header").style.display = "flex";
-      document.getElementById("card-canvas").style.display = "block";
-      iniciarCanvas();
-      actualizarTypeSelectorCad();
-      activarPantallaCompletaPlano();
-      renderPinesMaestro();
-    }
     document.getElementById("card-snapshots").style.display = "none";
     document.getElementById("card-lineas").style.display = "none";
+    if(imagenPlano){
+      if(entrarDirectoAEditor) entrarAEditarPlano();
+      else mostrarVistaRapidaPlano();
+    }
     return;
   }
   try{
@@ -20788,36 +20840,121 @@ async function seleccionarPlano(id){
     const rEst = await window.storage.get(`plano_avance_estados_${obra}_${id}`, true);
     estadosPersonalizados = rEst && rEst.value ? JSON.parse(rEst.value) : ESTADOS_POR_DEFECTO;
   }catch(e){ estadosPersonalizados = ESTADOS_POR_DEFECTO; }
-  if(imagenPlano){
-    // Apenas se elige un plano válido, pasamos del "selector" al "editor": se oculta la tarjeta
-    // de elegir plano (y el seguimiento semanal) y queda solo la herramienta de dibujo, con un
-    // encabezado chico para volver o eliminar -- así no queda todo mezclado en una sola pantalla.
-    document.getElementById("pa-panel-selector").style.display = "none";
-    const header = document.getElementById("pa-editor-header");
-    header.style.display = "flex";
-    document.getElementById("card-canvas").style.display = "block";
-    document.getElementById("card-actividades").style.display = "block";
-    iniciarCanvas();
-    renderSelectorActividades();
-    renderActividades();
-    renderListaLineasAvance();
-    actualizarTypeSelectorCad();
-    actualizarBotonPatronCapa();
-    activarPantallaCompletaPlano();
-    // Precarga el contratista vinculado a este plano (si tiene) para que el "avance general
-    // ponderado" de cada actividad aparezca desde el primer momento -- si no, recién se calculaba
-    // después de tocar "Dibujar" con una capa, que era cuando se cacheaba por primera vez.
-    const contratistaIdPrecarga = contratistaOverridePlanoAvance || (planosIndex.find(p=>p.id===planoActualId)||{}).contratistaId;
-    if(contratistaIdPrecarga && !contratistasCache[contratistaIdPrecarga]){
-      cargarContratistaDetalle(contratistaIdPrecarga).then(()=>{
-        if(planoActualId===id) renderActividades(); // solo si seguís mirando el mismo plano
-      }).catch(e=>console.error("No se pudo precargar el contratista para el % ponderado:", e));
-    }
-  }
   document.getElementById("card-snapshots").style.display = "none"; // arranca oculto -- se abre con el botón 📅 del encabezado
   await cargarSnapshotsPlanoActual();
   renderListaSnapshots();
   escucharCambiosRemotosPlano(obra, id);
+  if(imagenPlano){
+    // Apenas se elige un plano válido, pasamos del "selector" a la Vista rápida (o directo al
+    // editor, si entrarDirectoAEditor pide saltearla -- ver abajo de qué llamados viene eso).
+    if(entrarDirectoAEditor) entrarAEditarPlano();
+    else mostrarVistaRapidaPlano();
+  }
+}
+// Entra de verdad al editor CAD completo -- hasta acá, seleccionarPlano() solo cargó los datos y
+// mostró la Vista rápida (de solo lectura). Esto es lo que antes pasaba SIEMPRE apenas se elegía
+// un plano; ahora queda como un paso aparte, disparado por el botón "✏️ Editar plano" de la Vista
+// rápida, o directo (sin pasar por ahí) desde los lugares que ya dependían de caer en el editor de
+// una: abrir un plano vinculado desde Certificados, recargar por edición concurrente, o la captura
+// de imagen en segundo plano para un certificado.
+function entrarAEditarPlano(){
+  const idEntrando = planoActualId;
+  document.getElementById("pa-panel-selector").style.display = "none";
+  document.getElementById("pa-panel-vista-rapida").style.display = "none";
+  document.getElementById("pa-editor-header").style.display = "flex";
+  document.getElementById("card-canvas").style.display = "block";
+  if(modoPlanoMaestro){
+    iniciarCanvas();
+    actualizarTypeSelectorCad();
+    activarPantallaCompletaPlano();
+    renderPinesMaestro();
+    return;
+  }
+  document.getElementById("card-actividades").style.display = "block";
+  iniciarCanvas();
+  renderSelectorActividades();
+  renderActividades();
+  renderListaLineasAvance();
+  actualizarTypeSelectorCad();
+  actualizarBotonPatronCapa();
+  activarPantallaCompletaPlano();
+  // Precarga el contratista vinculado a este plano (si tiene) para que el "avance general
+  // ponderado" de cada actividad aparezca desde el primer momento -- si no, recién se calculaba
+  // después de tocar "Dibujar" con una capa, que era cuando se cacheaba por primera vez.
+  const contratistaIdPrecarga = contratistaOverridePlanoAvance || (planosIndex.find(p=>p.id===planoActualId)||{}).contratistaId;
+  if(contratistaIdPrecarga && !contratistasCache[contratistaIdPrecarga]){
+    cargarContratistaDetalle(contratistaIdPrecarga).then(()=>{
+      if(planoActualId===idEntrando) renderActividades(); // solo si seguís mirando el mismo plano
+    }).catch(e=>console.error("No se pudo precargar el contratista para el % ponderado:", e));
+  }
+}
+// ---------------- Vista rápida: resumen de solo lectura antes de entrar al editor ----------------
+// Entrar a Plano de avance SIEMPRE caía directo en el editor CAD completo (riel de herramientas,
+// modos de dibujo, cajones) aunque lo único que se quisiera fuera chequear cómo viene el avance --
+// la gran mayoría de las visitas. Ahora, al elegir un plano, primero se ve esto: liviano, con la
+// app normal alrededor (sin pantalla completa), y recién "✏️ Editar plano" entra al editor de
+// verdad.
+function mostrarVistaRapidaPlano(){
+  document.getElementById("pa-panel-selector").style.display = "none";
+  document.getElementById("pa-editor-header").style.display = "none";
+  document.getElementById("pa-panel-vista-rapida").style.display = "block";
+  const plano = planosIndex.find(p=>p.id===planoActualId);
+  document.getElementById("vr-titulo-plano").textContent = (plano && plano.nombre) || "Plano";
+  // plano.fecha es la fecha de CREACIÓN del plano (no se toca al editar) -- "Creado hace X días"
+  // es lo único que se puede afirmar con ese dato; no hay un timestamp de última edición guardado.
+  document.getElementById("vr-meta-plano").textContent = plano && plano.fecha ? `Creado ${fechaRelativaCorta(plano.fecha)}` : "";
+  document.getElementById("vr-preview-img").src = generarImagenSnapshotIndividual(null);
+  document.getElementById("vr-bloque-actividades").style.display = modoPlanoMaestro ? "none" : "block";
+  document.getElementById("vr-bloque-leyenda").style.display = modoPlanoMaestro ? "block" : "none";
+  if(modoPlanoMaestro) renderVistaRapidaMaestro();
+  else renderVistaRapidaContratista();
+}
+function renderVistaRapidaContratista(){
+  const porcentajes = [...calcularPorcentajesActuales(), ...calcularPorcentajesLineasActuales()];
+  const avanceGeneral = porcentajes.length ? Math.round(porcentajes.reduce((s,p)=>s+p.pct,0)/porcentajes.length) : 0;
+  const semanasCerradas = snapshotsPlanoActual.filter(s=>s.tipo==="semanal").length;
+  document.getElementById("vr-stats").innerHTML = `
+    <div class="stat"><div class="num">${porcentajes.length?avanceGeneral+"%":"—"}</div><div class="lbl">Avance general</div></div>
+    <div class="stat"><div class="num">${porcentajes.length}</div><div class="lbl">Actividades</div></div>
+    <div class="stat"><div class="num">${semanasCerradas}</div><div class="lbl">Semanas cerradas</div></div>
+  `;
+  document.getElementById("vr-pines-overlay").innerHTML = "";
+  const vacio = document.getElementById("vr-vacio");
+  if(porcentajes.length===0){
+    vacio.style.display = "block";
+    document.getElementById("vr-lista-actividades").innerHTML = "";
+    return;
+  }
+  vacio.style.display = "none";
+  document.getElementById("vr-lista-actividades").innerHTML = porcentajes.map(p=>{
+    const poligonoDeLaCapa = (p.esLinea ? lineasAvance : poligonos).find(q=>q.capaId && q.capaId===p.capaId);
+    const color = poligonoDeLaCapa ? poligonoDeLaCapa.color : "#999";
+    return `
+    <div class="vr-fila-actividad">
+      <span class="vr-punto" style="background:${color};width:10px;height:10px;"></span>
+      <span class="vr-nombre">${esc(p.nombreCompleto)}</span>
+      <div class="barra-bg"><div class="barra-fg" style="width:${p.pct}%;background:${color};"></div></div>
+      <span class="pct-txt">${p.pct}%</span>
+    </div>`;
+  }).join("");
+}
+function renderVistaRapidaMaestro(){
+  const {urgentes, pendientes, alDia} = contarPinesMaestroPorEstado(pinesMaestro);
+  document.getElementById("vr-stats").innerHTML = `
+    <div class="stat"><div class="num" style="color:#DC5B4A;">${urgentes}</div><div class="lbl">Urgentes</div></div>
+    <div class="stat"><div class="num" style="color:#E9A23B;">${pendientes}</div><div class="lbl">Pendientes</div></div>
+    <div class="stat"><div class="num" style="color:#0E9488;">${alDia}</div><div class="lbl">Al día</div></div>
+  `;
+  const img = imagenPlano;
+  const overlay = document.getElementById("vr-pines-overlay");
+  if(!img || !img.width){ overlay.innerHTML = ""; }
+  else{
+    overlay.innerHTML = pinesMaestro.map(pin=>{
+      const left = (pin.x/img.width)*100, top = (pin.y/img.height)*100;
+      return `<div class="vr-pin-punto" style="left:${left}%;top:${top}%;background:${colorEstadoPinMaestro(pin)};" title="${esc(pin.nombre||"")}"></div>`;
+    }).join("");
+  }
+  document.getElementById("vr-vacio").style.display = pinesMaestro.length===0 ? "block" : "none";
 }
 // Vuelve de la pantalla de edición a la de elegir plano, sin borrar nada -- el plano queda
 // guardado tal cual estaba.
@@ -20899,6 +21036,7 @@ function volverASelectorPlanos(){
   document.getElementById("card-lineas").style.display = "none";
   document.getElementById("card-snapshots").style.display = "none";
   document.getElementById("pa-editor-header").style.display = "none";
+  document.getElementById("pa-panel-vista-rapida").style.display = "none";
   document.getElementById("pa-panel-selector").style.display = "block";
   desactivarPantallaCompletaPlano();
   renderSelectorPlanos();
@@ -21000,7 +21138,9 @@ function recargarPlanoPorEdicionConcurrente(){
     if(typeof indiceEditando!=="undefined" && indiceEditando!==null && typeof cancelarEdicion==="function") cancelarEdicion();
   }
   document.getElementById("aviso-edicion-concurrente-plano").style.display = "none";
-  if(planoActualId) seleccionarPlano(planoActualId);
+  // true = entra directo al editor -- ya estaba ahí cuando apareció el aviso, "Recargar" lo
+  // devuelve al mismo lugar, no a la Vista rápida.
+  if(planoActualId) seleccionarPlano(planoActualId, true);
 }
 async function guardarPlanoAvancePoligonos(){
   asegurarCapaIds();
@@ -22513,6 +22653,19 @@ function colorEstadoPinMaestro(pin){
   if(pendientes.length>0) return "#E9A23B";
   return "#0E9488";
 }
+// Mismo criterio que colorEstadoPinMaestro, pero agregado para toda la lista -- lo usan tanto la
+// Vista rápida (resumen antes de entrar al editor) como el encabezado del editor en sí, para que
+// el conteo de "cuántos pines están en cada estado" salga siempre del mismo lugar.
+function contarPinesMaestroPorEstado(pines){
+  let urgentes=0, pendientes=0, alDia=0;
+  (pines||[]).forEach(pin=>{
+    const color = colorEstadoPinMaestro(pin);
+    if(color==="#DC5B4A") urgentes++;
+    else if(color==="#E9A23B") pendientes++;
+    else alDia++;
+  });
+  return {urgentes, pendientes, alDia};
+}
 // Vista de Semáforo: en vez de mirar chinches sueltas, el plano entero se tiñe -- una mancha de
 // color radial detrás de cada pin (rojo/ámbar/verde, el mismo color que ya usa el pin), pensada
 // para que las de zonas vecinas se fundan entre sí y de un vistazo se vea DÓNDE está atrasada la
@@ -22577,6 +22730,10 @@ function renderPinesMaestro(){
     marcarPinActivoVisual(pinAbiertoId);
   }
   renderSemaforoMaestro();
+  // El semáforo agregado del encabezado (🔴 N · 🟠 N · 🟢 N) depende de pinesMaestro igual que los
+  // pines en sí -- se refresca acá para que quede al día apenas se agrega/mueve un pin o se toca
+  // un ítem de su checklist (ambos casos ya llaman a renderPinesMaestro()).
+  actualizarTypeSelectorCad();
 }
 // Busca si el pin que se está moviendo queda cerca del eje X o Y de ALGÚN otro pin ya puesto --
 // si es así, lo alinea exacto a ese eje (aunque el otro pin esté lejos), igual que la alineación
@@ -24177,7 +24334,14 @@ function actualizarTypeSelectorCad(){
   if(modoPlanoMaestro){
     const planoActual = planosIndex.find(p=>p.id===planoActualId);
     nombreEl.textContent = planoActual ? planoActual.nombre : "Plano Maestro";
-    tipoEl.textContent = `🏛️ ${pinesMaestro.length} pin(es) -- 📍 para agregar uno`;
+    if(pinesMaestro.length===0){
+      tipoEl.textContent = `🏛️ 0 pin(es) -- 📍 para agregar uno`;
+    }else{
+      // Semáforo agregado, de un vistazo -- antes había que tocar pin por pin para saber cuántos
+      // tenían algo urgente pendiente.
+      const {urgentes, pendientes, alDia} = contarPinesMaestroPorEstado(pinesMaestro);
+      tipoEl.textContent = `🔴 ${urgentes} · 🟠 ${pendientes} · 🟢 ${alDia}`;
+    }
     swatchEl.style.background = "#C9A227";
     return;
   }
