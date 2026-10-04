@@ -21990,10 +21990,41 @@ async function crearSnapshotPlano(etiqueta, tipo){
 function cerrarSemanaClick(btn){
   if(poligonos.length===0){ showToast("Todavía no marcaste ninguna actividad en este plano."); return; }
   confirmarDobleToque(btn, "¿Confirmar?", async ()=>{
+    const snapAnterior = snapshotsPlanoActual[snapshotsPlanoActual.length-1] || null;
     await crearSnapshotPlano(`Semana del ${new Date().toLocaleDateString("es-AR")}`, "semanal");
     renderListaSnapshots();
-    showToast("✓ Semana cerrada, avance guardado");
+    mostrarResumenCambiosSemana(generarResumenCambiosSemana(snapAnterior));
   });
+}
+// "Cerrar semana" guardaba la foto en silencio -- esto arma un resumen corto tipo changelog de
+// qué cambió desde el hito anterior (cada capa que subió de %, o que arrancó de cero), fácil de
+// copiar y mandar por WhatsApp a quien pregunte cómo viene la semana.
+function generarResumenCambiosSemana(snapAnterior){
+  const actuales = [...calcularPorcentajesActuales(), ...calcularPorcentajesLineasActuales()];
+  const mapaAntes = {};
+  if(snapAnterior) (snapAnterior.porcentajes||[]).forEach(p=>{ mapaAntes[p.capaId || p.nombreCompleto] = p.pct; });
+  return actuales.map(p=>{
+    const antes = mapaAntes[p.capaId || p.nombreCompleto];
+    if(antes===undefined) return `${p.nombreCompleto} arrancó esta semana en ${p.pct}%`;
+    if(antes===p.pct) return null; // sin cambios -- no vale la pena mencionarlo en el resumen
+    return `${p.nombreCompleto} pasó de ${antes}% a ${p.pct}%`;
+  }).filter(Boolean);
+}
+function mostrarResumenCambiosSemana(cambios){
+  const resumenTexto = cambios.length>0 ? cambios.join("\n") : "Sin cambios de % desde el hito anterior.";
+  const html = `
+    <h2 style="margin-top:0;">✓ Semana cerrada</h2>
+    <p class="helper">Esto es lo que cambió desde el hito anterior:</p>
+    <div id="resumen-cambios-semana-texto" style="background:var(--fondo);border-radius:8px;padding:10px 12px;font-size:12.5px;white-space:pre-line;margin-bottom:10px;">${esc(resumenTexto)}</div>
+    <button class="btn btn-primary" style="width:100%;" onclick="copiarResumenCambiosSemana()">📋 Copiar para WhatsApp</button>
+    <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cerrar</button>`;
+  abrirPromptGenerico(html);
+}
+function copiarResumenCambiosSemana(){
+  const texto = document.getElementById("resumen-cambios-semana-texto").textContent;
+  navigator.clipboard.writeText(texto)
+    .then(()=>showToast("✓ Copiado"))
+    .catch(()=>showToast("No se pudo copiar -- copiá el texto a mano."));
 }
 // Foto de evidencia por hito -- un <input> oculto compartido por toda la lista de hitos (no uno
 // por fila): el botón de cada hito guarda a cuál le corresponde en snapshotEvidenciaTargetId antes
@@ -22089,7 +22120,7 @@ function renderListaSnapshots(){
       ${conForma.length>=2 ? `<button class="btn btn-primary btn-sm" style="width:100%;margin-bottom:8px;" onclick="abrirLineaDeTiempoPlano()">🎬 Ver línea de tiempo del avance</button>` : ""}
       <div style="font-size:11px;font-weight:800;color:var(--tinta-suave);margin-bottom:6px;">🔄 Comparar visualmente con una semana anterior</div>
       ${conForma.map(s=>`<button class="btn btn-outline btn-sm" style="margin:0 6px 6px 0;" onclick="abrirComparacionSemanas('${s.id}')">${esc(s.etiqueta)}</button>`).join("")}
-      <button class="btn btn-outline btn-sm" style="margin:0 6px 6px 0;background:var(--fondo);" onclick="abrirComparacionLadoALado()">🔀 Comparar dos meses lado a lado</button>
+      <button class="btn btn-outline btn-sm" style="margin:0 6px 6px 0;background:var(--fondo);" onclick="abrirComparacionLadoALado()">🔀 Comparar varios momentos lado a lado</button>
     </div>`;
   // Foto de evidencia por hito (opcional) -- no tiene nada que ver con la foto de "Foto → avance"
   // (esa se descarta a propósito apenas la IA responde). Esta es una miniatura chica que se puede
@@ -22364,51 +22395,75 @@ function cerrarLineaDeTiempo(){
   ltImagenes = []; ltSnaps = [];
   cerrarFotoAvanceOverlay();
 }
-function abrirComparacionLadoALado(){
+// Antes era siempre A vs B -- para una obra larga, ver 3-4 momentos en fila (inicio / mitad /
+// ahora) de un vistazo cuenta mejor la historia que ir comparando de a pares. clMomentos guarda
+// cuántos selectores mostrar (entre 2 y 4) mientras se arma la comparación.
+let clMomentos = 2;
+function opcionesComparacionLadoALado(){
   const snapsConForma = snapshotsPlanoActual.filter(s=>(s.poligonos && s.poligonos.length>0) || (s.lineas && s.lineas.length>0));
-  if(snapsConForma.length===0){ showToast("Todavía no hay semanas con forma guardada para comparar."); return; }
-  const opciones = [{id:"ahora", etiqueta:"Ahora (estado actual)"}, ...snapsConForma.map(s=>({id:s.id, etiqueta:s.etiqueta}))];
+  return snapsConForma.length>0 ? [{id:"ahora", etiqueta:"Ahora (estado actual)"}, ...snapsConForma.map(s=>({id:s.id, etiqueta:s.etiqueta}))] : [];
+}
+function abrirComparacionLadoALado(){
+  if(opcionesComparacionLadoALado().length===0){ showToast("Todavía no hay semanas con forma guardada para comparar."); return; }
+  clMomentos = 2;
+  renderSelectoresComparacionLadoALado();
+}
+function renderSelectoresComparacionLadoALado(){
+  const opciones = opcionesComparacionLadoALado();
+  const etiquetasPos = ["Primer momento","Segundo momento","Tercer momento","Cuarto momento"];
+  let selects = "";
+  for(let i=0;i<clMomentos;i++){
+    // Por defecto reparte los momentos elegidos de punta a punta de la lista (ej: con 3 -- el más
+    // viejo, uno del medio, y "Ahora") en vez de dejarlos todos apuntando al mismo -- así ya se ve
+    // algo razonable antes de tocar nada.
+    const idxDefault = clMomentos===1 ? 0 : Math.round(i*(opciones.length-1)/(clMomentos-1));
+    selects += `
+    <div class="field" style="margin-top:10px;"><label style="color:#9fb0b8;font-size:11px;">${etiquetasPos[i]}</label>
+      <select id="cl-snap-${i}" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#1a2530;color:#fff;">
+        ${opciones.map((o,j)=>`<option value="${o.id}" ${j===idxDefault?"selected":""}>${esc(o.etiqueta)}</option>`).join("")}
+      </select>
+    </div>`;
+  }
   const cont = document.getElementById("foto-avance-cuerpo");
   cont.innerHTML = `
-    <h2 style="margin-top:0;color:#fff;">🔀 Comparar dos meses lado a lado</h2>
-    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">A diferencia del "antes vs ahora" (que superpone los dos), esto te deja elegir libremente CUALQUIER dos momentos y verlos uno al lado del otro.</p>
-    <div class="field"><label style="color:#9fb0b8;font-size:11px;">Izquierda</label>
-      <select id="cl-snap-a" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#1a2530;color:#fff;">
-        ${opciones.map((o,i)=>`<option value="${o.id}" ${i===0?"selected":""}>${esc(o.etiqueta)}</option>`).join("")}
-      </select>
-    </div>
-    <div class="field" style="margin-top:10px;"><label style="color:#9fb0b8;font-size:11px;">Derecha</label>
-      <select id="cl-snap-b" style="width:100%;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:#1a2530;color:#fff;">
-        ${opciones.map((o,i)=>`<option value="${o.id}" ${i===opciones.length-1?"selected":""}>${esc(o.etiqueta)}</option>`).join("")}
-      </select>
+    <h2 style="margin-top:0;color:#fff;">🔀 Comparar varios momentos lado a lado</h2>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">A diferencia del "antes vs ahora" (que superpone dos), esto te deja elegir libremente entre 2 y 4 momentos y verlos todos en fila.</p>
+    ${selects}
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      ${clMomentos<4 ? `<button onclick="agregarMomentoComparacion()" style="flex:1;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">+ Agregar momento</button>` : ""}
+      ${clMomentos>2 ? `<button onclick="quitarMomentoComparacion()" style="flex:1;padding:9px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">− Quitar último</button>` : ""}
     </div>
     <button class="btn btn-primary" style="width:100%;margin-top:14px;" onclick="generarComparacionLadoALado()">✓ Comparar</button>
     <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarFotoAvanceOverlay()">Cancelar</button>`;
   document.getElementById("foto-avance-overlay").style.display = "flex";
   habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
 }
+function agregarMomentoComparacion(){
+  if(clMomentos>=4) return;
+  clMomentos++;
+  renderSelectoresComparacionLadoALado();
+}
+function quitarMomentoComparacion(){
+  if(clMomentos<=2) return;
+  clMomentos--;
+  renderSelectoresComparacionLadoALado();
+}
 function generarComparacionLadoALado(){
-  const idA = document.getElementById("cl-snap-a").value;
-  const idB = document.getElementById("cl-snap-b").value;
-  const snapA = idA==="ahora" ? null : snapshotsPlanoActual.find(s=>s.id===idA);
-  const snapB = idB==="ahora" ? null : snapshotsPlanoActual.find(s=>s.id===idB);
-  const imgA = generarImagenSnapshotIndividual(snapA);
-  const imgB = generarImagenSnapshotIndividual(snapB);
-  const etiquetaA = idA==="ahora" ? "Ahora" : esc(snapA.etiqueta);
-  const etiquetaB = idB==="ahora" ? "Ahora" : esc(snapB.etiqueta);
+  const seleccionados = [];
+  for(let i=0;i<clMomentos;i++) seleccionados.push(document.getElementById(`cl-snap-${i}`).value);
+  const columnas = seleccionados.map(id=>{
+    const snap = id==="ahora" ? null : snapshotsPlanoActual.find(s=>s.id===id);
+    const img = generarImagenSnapshotIndividual(snap);
+    const etiqueta = id==="ahora" ? "Ahora" : esc(snap.etiqueta);
+    return `<div style="flex:1;min-width:0;">
+      <div style="font-size:10px;color:#5EEAD4;font-weight:700;text-align:center;margin-bottom:4px;">${etiqueta}</div>
+      <img src="${img}" style="width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1);">
+    </div>`;
+  }).join("");
   document.getElementById("foto-avance-cuerpo").innerHTML = `
     <h2 style="margin-top:0;color:#fff;">🔀 Comparación lado a lado</h2>
-    <div style="display:flex;gap:6px;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:10px;color:#5EEAD4;font-weight:700;text-align:center;margin-bottom:4px;">${etiquetaA}</div>
-        <img src="${imgA}" style="width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1);">
-      </div>
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:10px;color:#5EEAD4;font-weight:700;text-align:center;margin-bottom:4px;">${etiquetaB}</div>
-        <img src="${imgB}" style="width:100%;border-radius:8px;border:1px solid rgba(255,255,255,.1);">
-      </div>
-    </div>
-    <button onclick="abrirComparacionLadoALado()" style="width:100%;margin-top:12px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">← Elegir otros dos</button>
+    <div style="display:flex;gap:6px;">${columnas}</div>
+    <button onclick="abrirComparacionLadoALado()" style="width:100%;margin-top:12px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">← Elegir otros momentos</button>
     <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:8px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cerrar</button>`;
 }
 // ---------------- Comparación visual "antes vs ahora" ----------------
