@@ -2204,6 +2204,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .fila-capa-cad .pct{color:#5EEAD4;font-size:9.5px;font-weight:800;flex-shrink:0;background:rgba(94,234,212,.12);padding:1px 6px;border-radius:5px;}
 .fila-capa-cad .ojo{color:#7c8f98;font-size:13px;flex-shrink:0;width:18px;text-align:center;}
 .fila-capa-cad .ojo.apagado{opacity:.4;}
+.fila-capa-cad .pausa{color:#7c8f98;font-size:13px;flex-shrink:0;width:18px;text-align:center;}
+.fila-capa-cad .pausa.activa{color:#E9A23B;}
+.fila-capa-cad.pausada{opacity:.6;}
+.fila-capa-cad.pausada .nombre{text-decoration:line-through;text-decoration-color:rgba(231,238,241,.35);}
+.badge-revisado-sin-avance{display:inline-block;margin-left:5px;font-size:8.5px;font-weight:800;color:#9CA3AF;background:rgba(156,163,175,.15);border-radius:5px;padding:1px 4px;vertical-align:middle;}
 
 /* ---- Franja de estado (abajo) ---- */
 /* El "right" de estas franjas (status/hint/modo-flotante/aviso concurrente, más abajo) no era
@@ -3772,6 +3777,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <input type="hidden" id="input-patron-capa" value="solido">
           <button type="button" class="btn-toggle-patron" id="btn-toggle-patron-capa" onclick="alternarPatronCapa()" title="Ahora es SÓLIDO -- tocá para poner rayado (útil si esta capa se superpone visualmente con otra)">■ Sólido</button>
           <button type="button" class="btn-toggle-patron" id="btn-siguiente-item-contrato" style="display:none;" onclick="irAlProximoItemSinMarcar()" title="Salta al próximo ítem del contrato de este contratista que todavía no tiene ninguna pieza dibujada -- para ir marcando todas las capas del contrato una tras otra, sin buscarlas en la lista.">⚡ Siguiente</button>
+          <button type="button" class="btn-toggle-patron" id="btn-revisado-sin-avance" onclick="toggleRevisadoSinAvanceActual()" title="Marca esta capa como revisada -- confirmás que no hay nada hecho ahí todavía, distinto de simplemente no haberla mirado">✓ Sin avance</button>
         </div>
         <div class="paleta-colores" id="paleta-input-color-poligono-capa" style="display:none;">
           <input type="color" id="input-color-poligono-capa" value="#10B981" oninput="sincronizarPaletaColor('input-color-poligono-capa')">
@@ -20948,6 +20954,7 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   }catch(e){ estadosPersonalizados = ESTADOS_POR_DEFECTO; }
   document.getElementById("card-snapshots").style.display = "none"; // arranca oculto -- se abre con el botón 📅 del encabezado
   await cargarSnapshotsPlanoActual();
+  await cargarEstadosCapas();
   renderListaSnapshots();
   escucharCambiosRemotosPlano(obra, id);
   if(imagenPlano){
@@ -21049,8 +21056,14 @@ function renderVistaRapidaContratista(){
   document.getElementById("vr-lista-actividades").innerHTML = porcentajes.map(p=>{
     const poligonoDeLaCapa = (p.esLinea ? lineasAvance : poligonos).find(q=>q.capaId && q.capaId===p.capaId);
     const color = poligonoDeLaCapa ? poligonoDeLaCapa.color : "#999";
+    // Trazabilidad simple (quién la marcó/editó y cuándo) -- como title, para no competir por
+    // espacio en una fila ya ajustada en celular. Piezas de antes de este cambio no tienen estos
+    // campos todavía, así que simplemente no muestran nada (sin inventar un dato que no existe).
+    const quien = poligonoDeLaCapa ? (poligonoDeLaCapa.editadoPor || poligonoDeLaCapa.creadoPor) : null;
+    const fechaQuien = poligonoDeLaCapa ? (poligonoDeLaCapa.editadoPor ? poligonoDeLaCapa.fechaEdicion : poligonoDeLaCapa.fechaCreacion) : null;
+    const tituloTrazabilidad = quien ? ` title="${esc(poligonoDeLaCapa.editadoPor ? 'Editado' : 'Marcado')} por ${esc(quien)}${fechaQuien?' el '+esc(fechaQuien):''}"` : "";
     return `
-    <div class="vr-fila-actividad">
+    <div class="vr-fila-actividad"${tituloTrazabilidad}>
       <span class="vr-punto" style="background:${color};width:10px;height:10px;"></span>
       <span class="vr-nombre">${esc(p.nombreCompleto)}</span>
       <div class="barra-bg"><div class="barra-fg" style="width:${p.pct}%;background:${color};"></div></div>
@@ -21809,6 +21822,65 @@ function eliminarPlano(id, btn){
 // Un snapshot es una "foto" liviana (solo números, no vuelve a guardar el dibujo) del % de cada
 // capa en ese momento. Se guarda por plano -- cada plano tiene su propio historial, separado.
 // Cerrar la semana es SIEMPRE manual (vos decidís cuándo), como pediste.
+// Estado manual por capa, aparte de la geometría -- dos casos que antes no tenían forma de
+// distinguirse: "pausada" (tuvo avance, ahora está parada a propósito, no es que se abandonó
+// sin querer) y "revisado_sin_avance" (alguien confirmó que no hay nada hecho ahí, no es que
+// nadie fue a mirar todavía). Se guarda por nombreCompleto, igual que el resto de lo que agrupa
+// piezas sueltas de una misma capa.
+let estadosCapas = {};
+async function cargarEstadosCapas(){
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId){ estadosCapas = {}; return; }
+  try{
+    const r = await window.storage.get(`plano_avance_estados_capas_${obra}_${planoActualId}`, true);
+    estadosCapas = r && r.value ? JSON.parse(r.value) : {};
+  }catch(e){ estadosCapas = {}; }
+}
+async function guardarEstadosCapas(){
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return;
+  await guardarClave(`plano_avance_estados_capas_${obra}_${planoActualId}`, JSON.stringify(estadosCapas));
+}
+function togglePausarCapa(nombreCompleto){
+  const yaPausada = estadosCapas[nombreCompleto] && estadosCapas[nombreCompleto].estado==="pausada";
+  if(yaPausada) delete estadosCapas[nombreCompleto];
+  else estadosCapas[nombreCompleto] = {estado:"pausada", fecha:hoyISO(), por: sesionActual ? sesionActual.username : null};
+  guardarEstadosCapas();
+  renderPanelCapasCad();
+}
+function toggleRevisadoSinAvance(nombreCompleto){
+  if(!nombreCompleto) return;
+  const yaRevisado = estadosCapas[nombreCompleto] && estadosCapas[nombreCompleto].estado==="revisado_sin_avance";
+  if(yaRevisado) delete estadosCapas[nombreCompleto];
+  else estadosCapas[nombreCompleto] = {estado:"revisado_sin_avance", fecha:hoyISO(), por: sesionActual ? sesionActual.username : null};
+  guardarEstadosCapas();
+  renderPanelCapasCad();
+  actualizarBotonRevisadoSinAvance();
+  showToast(yaRevisado ? "Se quitó la marca de \"revisado: sin avance\"" : `✓ "${nombreCompleto}" marcado como revisado: sin avance`);
+}
+// Lee la capa que se está por nombrar en el cajón Dibujar (sin necesidad de que ya tenga ninguna
+// pieza dibujada todavía -- a diferencia del panel de Capas, que solo lista lo que ya existe) y
+// aplica/quita la marca sobre ESE nombre completo.
+function nombreCompletoCapaEnCurso(){
+  const seleccion = leerSelectorActividad();
+  if(seleccion.tipo!=="capa") return null;
+  const nombreCapa = (document.getElementById("input-nombre-capa").value||"").trim();
+  if(!nombreCapa) return null;
+  return `${seleccion.base} - ${nombreCapa}`;
+}
+function toggleRevisadoSinAvanceActual(){
+  const nombreCompleto = nombreCompletoCapaEnCurso();
+  if(!nombreCompleto){ showToast("Elegí primero a qué capa (con su nombre) corresponde."); return; }
+  toggleRevisadoSinAvance(nombreCompleto);
+}
+function actualizarBotonRevisadoSinAvance(){
+  const btn = document.getElementById("btn-revisado-sin-avance");
+  if(!btn) return;
+  const nombreCompleto = nombreCompletoCapaEnCurso();
+  const marcada = nombreCompleto && estadosCapas[nombreCompleto] && estadosCapas[nombreCompleto].estado==="revisado_sin_avance";
+  btn.classList.toggle("activo", !!marcada);
+  btn.textContent = marcada ? "✓ Sin avance (marcada)" : "✓ Sin avance";
+}
 let snapshotsPlanoActual = [];
 async function cargarSnapshotsPlanoActual(){
   const obra = claveObraPlanoAvance();
@@ -24641,11 +24713,21 @@ function renderPanelCapasCad(){
       // desviar 1-2 puntos contra la suma exacta real).
       pct = areaTot ? Math.min(100, piezas.reduce((s,q)=>s+Math.round((q.area/areaTot)*100),0)) : 0;
     }
+    const estado = estadosCapas[p.nombreCompleto];
+    const pausada = estado && estado.estado==="pausada";
+    const revisadaSinAvance = estado && estado.estado==="revisado_sin_avance";
+    // "Pausar" solo tiene sentido para una capa de avance (no para el área total, que no se
+    // "trabaja" en sí misma) -- la etiqueta de "revisado: sin avance" ya quedó marcada, si
+    // corresponde, desde el cajón Dibujar (ver toggleRevisadoSinAvance) antes de que existiera
+    // ninguna pieza acá; se muestra también en esta lista una vez que la capa aparece.
+    const btnPausar = p.capa ? `<div class="pausa ${pausada?'activa':''}" onclick="event.stopPropagation(); togglePausarCapa('${esc(p.nombreCompleto).replace(/'/g,"\\'")}')" title="${pausada?'Reanudar':'Pausar'} esta capa">${pausada?'▶':'⏸'}</div>` : "";
+    const badgeRevisada = revisadaSinAvance ? `<span class="badge-revisado-sin-avance" title="Revisado: confirmado sin avance">✓0%</span>` : "";
     return `
-    <div class="fila-capa-cad" onclick="seleccionarCapaDesdePanelCad(${idx})">
+    <div class="fila-capa-cad${pausada?' pausada':''}" onclick="seleccionarCapaDesdePanelCad(${idx})">
       <div class="swatch" style="background:${p.color};"></div>
-      <div class="nombre">${esc(p.capa ? p.nombreCompleto : p.nombreBase)}</div>
+      <div class="nombre">${esc(p.capa ? p.nombreCompleto : p.nombreBase)}${badgeRevisada}</div>
       <div class="pct mono">${pct}%</div>
+      ${btnPausar}
       <div class="ojo ${oculto?'apagado':''}" onclick="event.stopPropagation(); toggleOcultarCapaCad('${esc(p.nombreCompleto).replace(/'/g,"\\'")}')" title="${oculto?'Mostrar':'Ocultar'}">${oculto?'🚫':'👁'}</div>
     </div>`;
   }).join("");
@@ -26362,6 +26444,7 @@ function onCambioActividadBase(){
   sincronizarPaletaColor("input-color-mas-total");
   sincronizarPaletaColor("input-color-poligono-capa");
   actualizarTypeSelectorCad();
+  actualizarBotonRevisadoSinAvance();
 }
 // Si el plano está vinculado a un contratista con ítems ya cargados en su contrato, los ofrece
 // como opciones (con su % de incidencia al lado) en vez de tener que escribir el nombre a mano --
@@ -26473,6 +26556,7 @@ function irAlProximoItemSinMarcar(){
 // "Estructura", por ejemplo, quedan con el mismo estilo sin tener que elegir el color a mano cada
 // vez y arriesgarse a que te toque uno distinto por error.
 function copiarEstiloSiCapaExiste(){
+  actualizarBotonRevisadoSinAvance();
   const seleccion = leerSelectorActividad();
   if(seleccion.tipo!=="capa") return;
   const nombreCapa = (document.getElementById("input-nombre-capa").value||"").trim().toLowerCase();
@@ -27764,7 +27848,11 @@ function cerrarPoligono(){
   guardarEnHistorial();
   const {nombreBase, capa, color, patron} = resolverDatosPiezaActual();
   const nombreCompleto = capa ? `${nombreBase} - ${capa}` : nombreBase;
-  poligonos.push({nombreCompleto, nombreBase, capa, color, patron, puntos:[...puntosActuales], area});
+  // Trazabilidad simple: quién marcó esta pieza y cuándo -- antes no quedaba ningún registro de
+  // eso, salvo lo que se pudiera inferir mirando el plano entero. Se ve en el title de la fila de
+  // Vista rápida.
+  poligonos.push({nombreCompleto, nombreBase, capa, color, patron, puntos:[...puntosActuales], area,
+    creadoPor: sesionActual ? sesionActual.username : null, fechaCreacion: hoyISO()});
 
   // No cerramos la sesión de dibujo acá: dejamos "dibujando" activo y con el mismo nombre
   // cargado, para que se puedan ir marcando varios cuadros/polígonos SUELTOS (no una sola
@@ -28124,6 +28212,8 @@ function resolverInterferenciaConflicto(accion){
 }
 function guardarEdicion(){
   if(indiceEditando!==null && poligonos[indiceEditando]){
+    poligonos[indiceEditando].editadoPor = sesionActual ? sesionActual.username : null;
+    poligonos[indiceEditando].fechaEdicion = hoyISO();
     revisarSuperposicionEnCapa(poligonos[indiceEditando].nombreCompleto);
   }
   salirDeEdicion();
