@@ -35,12 +35,16 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
-<!-- Phosphor Icons -- librería MIT, gratis, sin descargar nada. Se cargan los 4 pesos de una vez
-     (son hojas de estilo livianas, esto no bloquea el arranque como sí lo haría un script sin defer). -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/bold/style.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/duotone/style.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<!-- Phosphor Icons -- librería MIT. Se sirven desde el propio sitio (carpeta phosphor/, solo
+     woff2 + los 4 pesos que usa la app) en vez de un CDN externo: el service worker (sw.js) solo
+     cachea pedidos al propio origen a propósito (ver su comentario), así que un ícono cargado
+     desde jsdelivr NUNCA quedaba disponible sin conexión -- en una obra con señal intermitente,
+     toda la barra de navegación se quedaba sin íconos (ni emoji ni SVG, vacía) apenas se cortaba
+     la señal. Sirviéndolo desde acá, la primera carga con señal lo deja cacheado para siempre. -->
+<link rel="stylesheet" href="phosphor/regular/style.css">
+<link rel="stylesheet" href="phosphor/bold/style.css">
+<link rel="stylesheet" href="phosphor/duotone/style.css">
+<link rel="stylesheet" href="phosphor/fill/style.css">
 <style>
 
 :root{
@@ -12970,7 +12974,12 @@ const PESOS_ICONO_PHOSPHOR = {regular:"ph", bold:"ph-bold", duotone:"ph-duotone"
 // "guardada" pero nunca vuelta a leer). Ahora se guarda en window.storage por usuario, igual que
 // navPosicion y temaColor, y se recarga de verdad en cargarPrefsNavUsuario() después del login.
 let temaBarraApp = "capsula";   // capsula | recta | dock | relieve
-let temaIconoApp = "emoji";     // emoji | regular | bold | duotone | fill | 3d
+// Default "regular" (íconos de línea Phosphor, servidos desde el propio sitio -- ver el <link>
+// de más arriba) en vez de "emoji": un emoji no se puede recolorear para combinar con el tema
+// claro/oscuro ni con el acento elegido, y se ve distinto según el teléfono/SO de cada uno.
+// Quien ya haya guardado una preferencia (acá abajo, o en cargarPrefsNavUsuario) la sigue viendo
+// tal cual -- esto solo cambia lo que ve alguien que nunca tocó "Personalización".
+let temaIconoApp = "regular";   // emoji | regular | bold | duotone | fill | 3d
 let temaColorApp = "verde";     // verde | morado | azul | naranja
 let bordeAnimadoActivo = false;
 let bordeAnimadoVariante = "linea";   // linea (base) | completo | resplandor
@@ -12980,13 +12989,13 @@ async function cargarPrefsNavUsuario(){
     const r = await window.storage.get("nav_temas_"+(sesionActual?sesionActual.username:"x"), true);
     const guardado = r && r.value ? JSON.parse(r.value) : null;
     temaBarraApp = (guardado && guardado.barra) || "capsula";
-    temaIconoApp = (guardado && guardado.icono) || "emoji";
+    temaIconoApp = (guardado && guardado.icono) || "regular";
     temaColorApp = (guardado && guardado.color) || "verde";
     bordeAnimadoActivo = !!(guardado && guardado.bordeActivo);
     bordeAnimadoVariante = (guardado && guardado.bordeVariante) || "linea";
     bordeAnimadoColor = (guardado && guardado.bordeColor) || "multicolor";
   }catch(e){
-    temaBarraApp = "capsula"; temaIconoApp = "emoji"; temaColorApp = "verde";
+    temaBarraApp = "capsula"; temaIconoApp = "regular"; temaColorApp = "verde";
     bordeAnimadoActivo = false; bordeAnimadoVariante = "linea"; bordeAnimadoColor = "multicolor";
   }
   aplicarTemaNavegacion();
