@@ -10004,6 +10004,15 @@ function actualizarIconosDashCards(){
   document.querySelectorAll("#view-dashboard .dash-card-icon[data-modulo]").forEach(el=>{
     el.innerHTML = temaIconoApp==="emoji" ? el.dataset.emoji : iconoModuloHtml(el.dataset.modulo);
   });
+  // Mismo repintado, para las 5 tarjetas de "Resumen" -- hace falta aparte porque
+  // cargarPrefsNavUsuario() (donde se llama esta función) puede terminar de leer la preferencia
+  // guardada DESPUÉS de que renderDashboard() ya haya dibujado esas tarjetas con el tema por
+  // default (son dos lecturas async en paralelo, sin orden garantizado) -- sin este repintado,
+  // la primera pantalla tras iniciar sesión podía quedar con el ícono "equivocado" hasta la
+  // próxima vez que se recalculara el Dashboard entero.
+  document.querySelectorAll("#dash-stats .stat-ico[data-stat]").forEach(el=>{
+    el.innerHTML = iconoStatDashboard(el.dataset.stat);
+  });
 }
 async function renderDashboard(){
   renderAvisosImportantesDash();
@@ -10095,35 +10104,35 @@ async function renderDashboard(){
 
   document.getElementById("dash-stats").innerHTML = `
     <div class="dash-stat" onclick="irA('trabajadores')">
-      <div class="stat-ico">👷</div>
+      <div class="stat-ico" data-stat="personal">${iconoStatDashboard('personal')}</div>
       <div class="num">${trabActivos}</div>
       <div class="lbl">Personal activo</div>
       ${htmlSpark(sparkPersonal)}
       <div class="tendencia">${tendenciaTxt(sparkPersonal)}</div>
     </div>
     <div class="dash-stat tono-b" onclick="irAPedidosFiltro('PendienteParcial')">
-      <div class="stat-ico">📦</div>
+      <div class="stat-ico" data-stat="pedidos">${iconoStatDashboard('pedidos')}</div>
       <div class="num">${pedPendientes}</div>
       <div class="lbl">Pedidos pendientes</div>
       ${htmlSpark(sparkPedidos)}
       <div class="tendencia">${sparkPedidos.reduce((a,b)=>a+b,0)} cargados esta semana</div>
     </div>
     <div class="dash-stat" onclick="irA('caja')">
-      <div class="stat-ico">💰</div>
+      <div class="stat-ico" data-stat="caja">${iconoStatDashboard('caja')}</div>
       <div class="num${saldoCaja<0?" negativo":""}">${formatoMoneda(saldoCaja)}</div>
       <div class="lbl">Saldo de Caja Chica</div>
       ${saldoCaja<0 ? `<div class="alerta-mini">⚠ Debés rendir cuentas</div>` : ``}
       ${sparkCaja.length>1 ? htmlSpark(sparkCaja) + `<div class="tendencia">${tendenciaTxt(sparkCaja)}</div>` : ``}
     </div>
     <div class="dash-stat tono-c" onclick="irA('clima')">
-      <div class="stat-ico">🌤</div>
+      <div class="stat-ico" data-stat="clima">${iconoStatDashboard('clima')}</div>
       <div class="num">${diasTrabajadosMes}</div>
       <div class="lbl">Días trabajados (mes)</div>
       ${htmlSpark(sparkClima)}
       <div class="tendencia">${sparkClima.reduce((a,b)=>a+b,0)}/7 días trabajados</div>
     </div>
     <div class="dash-stat" onclick="mostrarDetalleHerramientasPrestadas()">
-      <div class="stat-ico">🔧</div>
+      <div class="stat-ico" data-stat="herramientas">${iconoStatDashboard('herramientas')}</div>
       <div class="num">${herramientas.filter(h=>(obraVisible(h.obra)) && h.estado==="prestada").length}</div>
       <div class="lbl">Herramientas prestadas</div>
     </div>
@@ -12951,6 +12960,22 @@ const ICONOS_PHOSPHOR_MODULO = {
   pedidos:"package", planoavance:"ruler", presupuesto:"chart-bar", remitos:"truck",
   trabajadores:"users", mas:"dots-three-outline"
 };
+// Mismo sistema, para las 5 tarjetas de "Resumen" del Dashboard -- antes quedaban en emoji fijo
+// (👷📦💰🌤🔧) aunque el resto de la navegación ya respetara el tema elegido. No se puede
+// reusar iconoModuloHtml(viewId) tal cual para la de "Personal activo": navega a la vista
+// "trabajadores" (que es el módulo Configuración, con el ícono de engranaje ⚙ en el nav), pero
+// acá representa cantidad de PERSONAL, no "ir a Configuración" -- necesita su propio ícono.
+const ICONOS_STAT_DASHBOARD = {
+  personal:{emoji:"👷", nombreIco:"users"}, pedidos:{emoji:"📦", nombreIco:"package"},
+  caja:{emoji:"💰", nombreIco:"wallet"}, clima:{emoji:"🌤", nombreIco:"cloud-sun"},
+  herramientas:{emoji:"🔧", nombreIco:"wrench"}
+};
+function iconoStatDashboard(clave){
+  const {emoji, nombreIco} = ICONOS_STAT_DASHBOARD[clave];
+  if(temaIconoApp==="emoji") return emoji;
+  const peso = temaIconoApp==="3d" ? "ph-fill" : PESOS_ICONO_PHOSPHOR[temaIconoApp];
+  return `<i class="${peso} ph-${nombreIco}"></i>`;
+}
 // Mismo sistema, para las subpestañas de Configuración/Asistencia/Caja Chica/Certificados --
 // antes quedaban en emoji fijo aunque el resto de la navegación ya respetara el tema elegido.
 const ICONOS_PHOSPHOR_SUBTAB = {
