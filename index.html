@@ -3649,6 +3649,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
       <p class="vr-vacio" id="vr-vacio" style="display:none;">Todavía no marcaste nada en este plano.</p>
 
+      <button type="button" class="btn btn-outline" id="vr-btn-certificar" style="width:100%;margin-top:8px;display:none;" onclick="usarAvanceEnNuevoCertificado()">🧾 Usar en un certificado nuevo</button>
       <button type="button" class="btn btn-outline" id="vr-btn-compartir" style="width:100%;margin-top:8px;" onclick="compartirAvancePlano()">📤 Compartir avance</button>
       <button type="button" class="btn btn-primary" id="vr-btn-editar" style="width:100%;margin-top:8px;" onclick="entrarAEditarPlano()">✏️ Editar plano</button>
     </div>
@@ -21037,6 +21038,9 @@ function mostrarVistaRapidaPlano(){
   // "Compartir avance" dibuja la mini-leyenda de capas sobre la imagen -- un Plano Maestro no
   // tiene capas (solo pines), así que por ahora este botón es solo para planos de contratista.
   document.getElementById("vr-btn-compartir").style.display = modoPlanoMaestro ? "none" : "block";
+  // "Usar en un certificado nuevo" solo tiene sentido si este plano ya está vinculado a un
+  // contratista -- sin eso no hay a quién certificarle nada.
+  document.getElementById("vr-btn-certificar").style.display = (!modoPlanoMaestro && plano && plano.contratistaId) ? "block" : "none";
   if(modoPlanoMaestro) renderVistaRapidaMaestro();
   else renderVistaRapidaContratista();
 }
@@ -22218,6 +22222,19 @@ function descargarImagenDirecto(dataUrl, nombreArchivo){
   a.click();
   document.body.removeChild(a);
   showToast("✓ Imagen descargada");
+}
+// ---------------- Vista rápida → directo a "Nuevo certificado" ----------------
+// Antes, certificar el avance de un plano ya vinculado significaba ir a Certificados, buscar al
+// contratista en la lista y recién ahí tocar "+ Nuevo certificado" -- este botón hace los mismos
+// 3 pasos de una, reusando exactamente las mismas funciones (no hay un camino paralelo que
+// mantener).
+async function usarAvanceEnNuevoCertificado(){
+  const plano = planosIndex.find(p=>p.id===planoActualId);
+  const contratistaId = plano ? plano.contratistaId : null;
+  if(!contratistaId){ showToast("Este plano todavía no está vinculado a ningún contratista."); return; }
+  irA("certificados");
+  await abrirContratista(contratistaId);
+  abrirFormCertificado(contratistaId);
 }
 async function compartirAvancePlano(){
   if(!imagenPlano || !imagenPlano.width){ showToast("Esperá a que termine de cargar la imagen del plano."); return; }
