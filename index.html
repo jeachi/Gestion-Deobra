@@ -7265,6 +7265,12 @@ function mostrarBurbujaAsistente(){
   const fab = document.getElementById("fab-asistente");
   const burbuja = document.getElementById("fab-burbuja");
   if(!fab || fab.style.display==="none" || !burbuja) return; // solo si el botón está visible (admin)
+  // La píldora flotante de "Guardar" (Nueva minuta, Nuevo remito, etc.) ya se mostraba en la
+  // misma franja de abajo de la pantalla -- si está visible justo ahora, la burbuja terminaba
+  // tapándola (o quedando tapada por ella). Mejor no competir por ese espacio: la píldora de
+  // Guardar es una acción real que el usuario ya está por tomar, y el saludo es solo decorativo.
+  const guardarVisible = document.getElementById("fab-guardar-flotante");
+  if(guardarVisible && guardarVisible.style.display!=="none") return;
   burbuja.style.display = "block";
   requestAnimationFrame(()=>burbuja.classList.add("burbuja-visible"));
   // Puramente estético — si no la tocás en 4 segundos, se esfuma sola (antes eran 20, después 6,
@@ -13181,6 +13187,11 @@ function mostrarBotonFlotanteGuardar(texto, accion, icono){
   document.getElementById("fab-guardar-texto").textContent = texto;
   document.getElementById("fab-guardar-icono").textContent = icono || "💾";
   document.getElementById("fab-guardar-flotante").style.display = "flex";
+  // Mismo motivo que en mostrarBurbujaAsistente(): las dos piezas flotantes se disputan la misma
+  // franja de abajo de la pantalla -- si la burbuja de saludo ya estaba mostrándose (ej: recién
+  // logueado y entraste directo a "Nueva minuta" en los primeros segundos), se la saca de encima
+  // para dejarle el lugar a la píldora de Guardar, que sí importa.
+  if(typeof ocultarBurbujaAsistente==="function") ocultarBurbujaAsistente();
 }
 function ocultarBotonFlotanteGuardar(){
   document.getElementById("fab-guardar-flotante").style.display = "none";
