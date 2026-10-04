@@ -570,6 +570,8 @@ section.view.active{display:block;}
 .dash-contratista-pct{font-size:14px;font-weight:900;color:var(--verde-oscuro);width:auto;min-width:38px;text-align:right;}
 .dash-contratista-pct-m2{display:flex;flex-direction:column;align-items:flex-end;width:64px;min-width:64px;}
 .dash-contratista-m2{font-size:9.5px;font-weight:700;color:var(--verde);white-space:nowrap;}
+/* ---- Avance físico agregado de la obra (ideas Plano de avance) ---- */
+.dash-avance-obra-pct{font-size:32px;font-weight:900;color:var(--verde-oscuro);text-align:center;margin:4px 0 8px;}
 .row-flex{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
 .field{display:flex;flex-direction:column;gap:4px;}
 .field label{font-size:11.5px;font-weight:600;color:var(--tinta-suave);}
@@ -2612,6 +2614,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="esqueleto-carga alto"></div>
     </div>
     <div class="card" id="dash-contratistas"></div>
+    <div class="card" id="dash-plano-avance"></div>
     <div class="bento-tit">Módulos</div>
     <div class="dash-grid bento">
       <div class="dash-card" onclick="irA('asistencia')">
@@ -10179,6 +10182,51 @@ async function renderDashboard(){
   if(masRecienteCaja && saldoCaja>0) agregarAlertaCajaPrediccion(masRecienteCaja);
   actualizarClimaReferenciaReal();
   renderActividadRecienteDash();
+  renderAvanceObraPlanoDash();
+}
+// Avance físico agregado de la obra: combina el % de avance de TODOS los planos de avance
+// (no el Maestro, que no tiene capas propias) de las obras visibles, pesado por el área física
+// que representa cada uno -- así un plano grande que viene mal no queda "tapado" en el promedio
+// por uno chico que ya está al 100%, ni al revés. Es "fire and forget" (no se espera desde
+// renderDashboard): pide los polígonos de cada plano a Firestore, y en una obra con muchos planos
+// eso puede tardar más que el resto del Dashboard, que ya terminó de pintarse con datos que
+// estaban en memoria.
+async function renderAvanceObraPlanoDash(){
+  const cont = document.getElementById("dash-plano-avance");
+  if(!cont) return;
+  if(sesionActual && sesionActual.role!=="admin"){
+    const permisos = sesionActual.permisos || PERMISOS_CAPATAZ_DEFAULT;
+    if(!permisos.planoavance){ cont.innerHTML = ""; return; }
+  }
+  const filtroObra = dashboardObraFiltro;
+  const obrasVisibles = obrasActivas().filter(o=>!filtroObra || o===filtroObra);
+  let sumaPesada = 0, sumaAreas = 0, cantPlanos = 0;
+  for(const obra of obrasVisibles){
+    const planosIndex = await cargarPlanosDisponiblesParaCertificado(obra);
+    for(const p of planosIndex){
+      if(p.tipo==="maestro") continue;
+      const datos = await cargarPoligonosParaLink(obra, p.id);
+      const lineas = await cargarLineasParaLink(obra, p.id);
+      const porcentajes = [...calcularPorcentajesDeLista(datos), ...calcularPorcentajesLineasDeLista(lineas)];
+      if(porcentajes.length===0) continue;
+      const avancePlano = Math.round(porcentajes.reduce((s,x)=>s+x.pct,0)/porcentajes.length);
+      // Un plano solo con recorridos lineales (sin ninguna pieza de área "total") no tiene área
+      // física para pesar -- en vez de excluirlo del promedio, pesa como si fuera 1 m² (lo menos
+      // posible) para que no quede afuera, pero tampoco distorsione el peso de los demás.
+      const area = calcularAreaTotalDeLista(datos) || 1;
+      sumaPesada += avancePlano*area;
+      sumaAreas += area;
+      cantPlanos++;
+    }
+  }
+  if(cantPlanos===0){ cont.innerHTML = ""; return; }
+  const avanceObra = Math.max(0, Math.min(100, Math.round(sumaPesada/sumaAreas)));
+  cont.innerHTML = `
+    <h2>📐 Avance físico${filtroObra ? " — "+esc(filtroObra) : " de la obra"}</h2>
+    <div class="dash-avance-obra-pct">${avanceObra}%</div>
+    <div class="barra-bg"><div class="barra-fg" style="width:${avanceObra}%;background:var(--verde-oscuro);"></div></div>
+    <p class="tiny" style="text-align:center;margin-top:6px;">Combina ${cantPlanos} plano${cantPlanos===1?"":"s"} de avance, pesado por el área de cada uno -- no es un promedio simple entre planos.</p>
+  `;
 }
 // Gráfico de área con el % de asistencia general de los últimos 7 días, calculado con los
 // mismos datos reales que ya usa "Informes" — no inventa nada nuevo, solo lo resume visualmente.
@@ -21951,6 +21999,15 @@ function calcularPorcentajesGenerico(lista, campo){
 function calcularPorcentajesDeLista(listaPoligonos){
   return calcularPorcentajesGenerico(listaPoligonos, "area");
 }
+// Área física total que representa un plano (suma de las piezas "totales" de cada actividad, sin
+// contar capas, agrupadas por nombreBase igual que calcularPorcentajesGenerico) -- se usa como
+// peso para combinar el % de varios planos en un solo número: un plano de 2000 m² tiene que pesar
+// más que uno de 20 m², no promediarse 50/50 con él.
+function calcularAreaTotalDeLista(lista){
+  const bases = {};
+  (lista||[]).forEach(p=>{ if(!p.capa) bases[p.nombreBase] = (bases[p.nombreBase]||0) + (p.area||0); });
+  return Object.values(bases).reduce((s,a)=>s+a, 0);
+}
 function calcularPorcentajesActuales(){
   return calcularPorcentajesDeLista(poligonos);
 }
@@ -22955,6 +23012,17 @@ async function cargarPoligonosParaLink(obra, planoId){
   if(cachePoligonosOtrosPlanos[clave]) return cachePoligonosOtrosPlanos[clave];
   const datos = await cargarPoligonosDePlano(obra, planoId);
   cachePoligonosOtrosPlanos[clave] = datos;
+  return datos;
+}
+// Mismo cache que cargarPoligonosParaLink, pero para los recorridos lineales -- viven en una
+// clave de storage aparte (plano_avance_lineas_*, no plano_avance_poligonos_*), así que NO se
+// pueden sacar de los mismos datos.
+const cacheLineasOtrosPlanos = {};
+async function cargarLineasParaLink(obra, planoId){
+  const clave = obra+"_"+planoId;
+  if(cacheLineasOtrosPlanos[clave]) return cacheLineasOtrosPlanos[clave];
+  const datos = await cargarLineasAvance(obra, planoId);
+  cacheLineasOtrosPlanos[clave] = datos;
   return datos;
 }
 // Calcula el % de una capa puntual (nombreCompleto) dentro de un array de polígonos de OTRO plano
