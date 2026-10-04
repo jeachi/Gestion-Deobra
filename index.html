@@ -3815,6 +3815,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarFotoAvance();"><span class="ico"><i class="ph-bold ph-camera"></i></span><span class="lbl">Foto</span></button>
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarColocarTextoPlano();"><span class="ico"><i class="ph-bold ph-text-t"></i></span><span class="lbl">Texto</span></button>
           <button class="tool-card" id="btn-copiar-pieza-directo" onclick="cerrarFlyoutsAbiertos(); toggleModoCopiarPiezaDirecto();"><span class="ico"><i class="ph-bold ph-copy"></i></span><span class="lbl">Copiar pieza</span></button>
+          <button class="tool-card" id="btn-modo-exterior" onclick="toggleModoAltoContraste();" title="Sube el contraste del relleno y agrega un borde oscuro grueso a cada pieza -- para leer el plano bajo sol directo"><span class="ico">☀️</span><span class="lbl">Exterior</span></button>
         </div>
       </div>
 
@@ -24571,6 +24572,7 @@ function iniciarCanvas(){
   document.getElementById("card-actividades").style.display = modoPlanoMaestro ? "none" : "block";
   renderRielAdaptativo();
   actualizarBotonOrdenBadges();
+  actualizarBotonAltoContraste();
   redibujar();
   // Se espera 2 "frames" antes de medir el tamaño para ajustar el zoom -- si se mide en el mismo
   // instante en que recién se hizo visible el visor, el navegador todavía no terminó de acomodar
@@ -25100,6 +25102,22 @@ function toggleReferenciasPlano(){
   referenciasSnapActivo = !referenciasSnapActivo;
   document.getElementById("btn-referencias-plano").classList.toggle("btn-primary", referenciasSnapActivo);
   showToast(referenciasSnapActivo ? "📍 Referencias activadas (extremo, medio, intersección)" : "📍 Referencias desactivadas");
+}
+// Modo "exterior" -- sube el contraste del relleno y agrega un halo oscuro grueso debajo del
+// borde de color de cada pieza, para que se siga distinguiendo bajo sol directo (pantalla lavada).
+// Es una preferencia de cómo MIRAR el plano (no un dato de la obra), por eso se guarda en el
+// celular y queda igual la próxima vez, sea cual sea el plano que se abra.
+let modoAltoContrasteCad = false;
+try{ modoAltoContrasteCad = localStorage.getItem("plano_modo_exterior")==="1"; }catch(e){}
+function toggleModoAltoContraste(){
+  modoAltoContrasteCad = !modoAltoContrasteCad;
+  try{ localStorage.setItem("plano_modo_exterior", modoAltoContrasteCad?"1":"0"); }catch(e){}
+  actualizarBotonAltoContraste();
+  redibujar();
+}
+function actualizarBotonAltoContraste(){
+  const btn = document.getElementById("btn-modo-exterior");
+  if(btn) btn.classList.toggle("btn-primary", modoAltoContrasteCad);
 }
 // Punto MEDIO de cualquier lado ya trazado (de un polígono cerrado, o del que estás dibujando
 // ahora mismo) -- mismo radio de imán que el de "extremo".
@@ -25973,6 +25991,7 @@ function alternarPatronCapa(){
   const hidden = document.getElementById("input-patron-capa");
   hidden.value = hidden.value==="rayado" ? "solido" : "rayado";
   actualizarBotonPatronCapa();
+  avisarSiColorDeCapaParecido();
 }
 function actualizarBotonPatronCapa(){
   const hidden = document.getElementById("input-patron-capa");
@@ -26124,6 +26143,36 @@ function elegirColorPaleta(idInput, color){
   sincronizarPaletaColor(idInput);
   if(idInput==="input-color-poligono-capa") actualizarBotonPatronCapa();
 }
+// Distancia euclídea simple entre 2 colores hex -- alcanza para detectar "casi idénticos" sin
+// necesidad de un modelo de color más preciso (HSL, Lab, etc.), que sería de más para este uso.
+function hexARgb(hex){
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex||"").trim());
+  if(!m) return null;
+  const n = parseInt(m[1], 16);
+  return { r:(n>>16)&255, g:(n>>8)&255, b:n&255 };
+}
+function distanciaColor(hex1, hex2){
+  const a = hexARgb(hex1), b = hexARgb(hex2);
+  if(!a || !b) return Infinity;
+  return Math.sqrt((a.r-b.r)**2 + (a.g-b.g)**2 + (a.b-b.b)**2);
+}
+// Antes, distinguir visualmente 2 capas de la misma actividad con colores parecidos dependía 100%
+// de acordarse de activar "▨ Rayado" a mano. Esto avisa solo (sin bloquear) cuando el color recién
+// elegido para una capa nueva queda muy cerca del de OTRA capa hermana que ya tiene patrón sólido.
+function avisarSiColorDeCapaParecido(){
+  const seleccion = leerSelectorActividad();
+  if(seleccion.tipo!=="capa") return;
+  const patronNuevo = (document.getElementById("input-patron-capa")||{}).value;
+  if(patronNuevo==="rayado") return; // ya se distingue de otra forma, no hace falta avisar
+  const colorNuevo = (document.getElementById("input-color-poligono-capa")||{}).value;
+  const nombreCapaNueva = (document.getElementById("input-nombre-capa").value||"").trim().toLowerCase();
+  const hermanaParecida = poligonos.find(p=>p.capa && p.nombreBase===seleccion.base
+    && p.capa.trim().toLowerCase()!==nombreCapaNueva && p.patron!=="rayado"
+    && distanciaColor(p.color, colorNuevo) < 45);
+  if(hermanaParecida){
+    showToast(`⚠ Color muy parecido al de "${hermanaParecida.capa}" -- tocá "▨ Rayado" o elegí otro color para distinguirlas en el plano.`, 4200);
+  }
+}
 // Resalta el swatch que coincide con el valor actual del input (o ninguno, si es un color
 // personalizado elegido con el selector nativo) -- se llama después de cualquier cambio de color,
 // sea por tocar un swatch, abrir el selector nativo, o que el color se copie solo (actividad/capa
@@ -26137,6 +26186,7 @@ function sincronizarPaletaColor(idInput){
     sw.classList.toggle("sel", sw.title.toLowerCase()===valorActual);
   });
   input.classList.toggle("sel", !cont.querySelector(".paleta-swatch.sel"));
+  if(idInput==="input-color-poligono-capa") avisarSiColorDeCapaParecido();
 }
 inicializarPaletasColorPlano();
 // ---------------- Autocompletar el nombre de una actividad nueva con las de toda la obra ----------------
@@ -30201,7 +30251,7 @@ function redibujar(){
     if(p.patron==="rayado"){
       ctx.fillStyle = crearPatronRayado(p.color, grosor);
     }else{
-      ctx.fillStyle = p.color+"55";
+      ctx.fillStyle = p.color+(modoAltoContrasteCad ? "99" : "55");
     }
     ctx.fill();
     ctx.strokeStyle = p.color;
@@ -30218,6 +30268,16 @@ function redibujar(){
         anillo.forEach(([x,y],i)=> i===0?ctx.moveTo(x,y):ctx.lineTo(x,y));
         ctx.closePath();
       });
+    }
+    if(modoAltoContrasteCad){
+      // Halo oscuro grueso DEBAJO del borde de color -- bajo sol directo la pantalla se "lava" y
+      // un borde fino del mismo color del relleno casi no se distingue. Se traza con el mismo path
+      // ya armado arriba (stroke() no lo consume), antes del trazo de color final.
+      ctx.save();
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = grosor*2.4;
+      ctx.stroke();
+      ctx.restore();
     }
     ctx.stroke();
   });
