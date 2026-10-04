@@ -20469,8 +20469,34 @@ function guardarEnHistorial(){
   historialFuturo = []; // toda acción nueva invalida lo que se podía "rehacer" (igual que en Word/Excel)
   persistirHistorialPlano();
 }
+// Describe en pocas palabras QUÉ se va a deshacer si se toca "↩️ Deshacer" ahora -- comparando el
+// estado actual contra la última "foto" guardada en el historial, sin tener que etiquetar cada uno
+// de los ~25 lugares que llaman a guardarEnHistorial(). Antes el botón era ciego: no había forma de
+// saber qué acción se iba a revertir hasta tocarlo.
+function describirProximoDeshacer(){
+  if(historialPoligonos.length===0) return null;
+  try{
+    const snap = JSON.parse(historialPoligonos[historialPoligonos.length-1]);
+    const antes = snap.poligonos||[];
+    const ahora = poligonos;
+    const nombrePieza = p => p ? (p.nombreCompleto||p.nombreBase||"un área") : "un área";
+    if(ahora.length > antes.length) return `agregar "${nombrePieza(ahora[ahora.length-1])}"`;
+    if(ahora.length < antes.length) return `eliminar "${nombrePieza(antes[antes.length-1])}"`;
+    for(let i=0;i<ahora.length;i++){
+      if(JSON.stringify(ahora[i])!==JSON.stringify(antes[i])) return `editar "${nombrePieza(ahora[i])}"`;
+    }
+    const antesTxt = snap.anotacionesTexto||[], ahoraTxt = anotacionesTexto||[];
+    if(ahoraTxt.length > antesTxt.length) return "agregar un cuadro de texto";
+    if(ahoraTxt.length < antesTxt.length) return "borrar un cuadro de texto";
+    for(let i=0;i<ahoraTxt.length;i++){
+      if(JSON.stringify(ahoraTxt[i])!==JSON.stringify(antesTxt[i])) return "editar un cuadro de texto";
+    }
+  }catch(e){}
+  return "la última acción";
+}
 async function deshacerGeneral(){
   if(historialPoligonos.length===0){ showToast("No hay nada para deshacer todavía."); return; }
+  const descripcion = describirProximoDeshacer();
   historialFuturo.push(JSON.stringify({poligonos, anotacionesTexto}));
   if(historialFuturo.length > MAX_HISTORIAL_DESHACER) historialFuturo.shift();
   const snapshot = JSON.parse(historialPoligonos.pop());
@@ -20489,7 +20515,7 @@ async function deshacerGeneral(){
   renderActividades();
   await guardarPlanoAvancePoligonos();
   await guardarAnotacionesTexto();
-  showToast("↩️ Deshecho");
+  showToast(descripcion ? `↩️ Deshecho: ${descripcion}` : "↩️ Deshecho");
 }
 async function rehacerGeneral(){
   if(historialFuturo.length===0){ showToast("No hay nada para rehacer."); return; }
@@ -24325,7 +24351,11 @@ function activarTooltipRiel(btn, nombre){
   let timer = null;
   btn.addEventListener("pointerdown", ()=>{
     timer = setTimeout(()=>{
-      showToast(nombre, 1200);
+      // El botón "Deshacer" es el único cuyo mantener-presionado muestra algo DINÁMICO (qué se va
+      // a deshacer en este momento) en vez del nombre fijo del botón -- así se puede chequear antes
+      // de tocarlo de verdad, sin tener que deshacer "a ciegas" para enterarse.
+      const texto = (nombre==="DESHACER" && describirProximoDeshacer()) ? `↩️ Deshacer: ${describirProximoDeshacer()}` : nombre;
+      showToast(texto, 1600);
       if(navigator.vibrate) navigator.vibrate(10);
     }, 450);
   });
@@ -27250,10 +27280,18 @@ function cerrarPoligono(){
     return;
   }
   if(pasoAPasoAutoContorno) terminarPasoAPasoAutoContorno();
+  const area = areaPoligono(puntosActuales);
+  // Aviso suave si el área nueva es muy chica (menos del 1% de la superficie del plano) -- suele
+  // ser un toque accidental que deja una pieza "basura" suelta en la lista de Actividades. No
+  // bloquea: confirmar una vez alcanza para guardarla igual si de verdad es así de chica.
+  const canvasPlanoCierre = document.getElementById("canvas-plano");
+  const areaTotalImagenCierre = canvasPlanoCierre ? canvasPlanoCierre.width*canvasPlanoCierre.height : 0;
+  if(areaTotalImagenCierre>0 && area/areaTotalImagenCierre < 0.01){
+    if(!confirm("Esta área quedó muy chica (menos del 1% del plano) -- ¿seguro que no fue un toque accidental? Confirmá para guardarla igual si está bien así.")) return;
+  }
   guardarEnHistorial();
   const {nombreBase, capa, color, patron} = resolverDatosPiezaActual();
   const nombreCompleto = capa ? `${nombreBase} - ${capa}` : nombreBase;
-  const area = areaPoligono(puntosActuales);
   poligonos.push({nombreCompleto, nombreBase, capa, color, patron, puntos:[...puntosActuales], area});
 
   // No cerramos la sesión de dibujo acá: dejamos "dibujando" activo y con el mismo nombre
