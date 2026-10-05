@@ -1776,7 +1776,16 @@ input.input-alerta.input-difiere-plano{border-color:var(--rojo-borde) !important
 .foot-actions .btn-danger{grid-column:1 / -1;}
 .foot-actions-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
 .foot-actions-grid .btn{width:100%;box-sizing:border-box;}
-.empty-msg{padding:30px 16px;text-align:center;color:var(--tinta-suave);font-size:13.5px;}
+.empty-msg{padding:30px 16px;text-align:center;color:var(--tinta-suave);font-size:13.5px;line-height:1.5;}
+/* Un tacho/bandeja vacía sutil arriba del texto -- mismo mensaje de siempre, pero con algo de
+   peso visual en vez de quedar como una línea de texto perdida en medio de la pantalla. Se
+   reusa directamente la fuente de Phosphor (sin pasar por la clase .ph ni por iconoModuloHtml)
+   porque esto es una ilustración decorativa de "vacío", no un ícono de navegación -- aparece
+   igual sin importar el tema de ícono que haya elegido cada usuario. */
+.empty-msg::before{
+  font-family:"Phosphor";font-style:normal;font-weight:normal;line-height:1;
+  content:"\e4aa";display:block;font-size:34px;color:var(--borde);margin-bottom:10px;
+}
 /* ---- Tablero de decisión diaria (Dashboard) ---- */
 .dash-resumen-tira{display:flex;gap:8px;margin-bottom:14px;}
 .dash-resumen-item{flex:1;background:var(--papel);border:1px solid var(--borde);border-radius:12px;padding:10px 6px;text-align:center;}
