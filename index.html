@@ -579,12 +579,12 @@ section.view.active{display:block;}
 .row-flex{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
 .field{display:flex;flex-direction:column;gap:4px;}
 .field label{font-size:11.5px;font-weight:600;color:var(--tinta-suave);}
-.field input,.field select{
+.field input,.field select,.field textarea{
   border:1px solid var(--borde);border-radius:var(--radius-sm);
   padding:9px 10px;font-size:14px;font-family:inherit;background:var(--papel);color:var(--tinta);
   min-width:0;
 }
-.field input:focus,.field select:focus{outline:2px solid var(--verde);outline-offset:1px;}
+.field input:focus,.field select:focus,.field textarea:focus{outline:2px solid var(--verde);outline-offset:1px;}
 /* Brillo cian de foco -- aplica a CUALQUIER campo de toda la app (no solo los envueltos en
    .field), para que tocar/tabular a un campo se sienta igual de "premium" en todos lados sin
    tener que retocar cada input suelto uno por uno. Also ayuda a accesibilidad con teclado. */
