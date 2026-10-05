@@ -2094,6 +2094,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 #barra-mover-pieza button{width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:16px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
 #barra-mover-pieza button.cerrar-paso{background:rgba(0,0,0,.25);}
 #barra-mover-pieza .txt-paso{color:#fff;font-size:11px;font-weight:700;padding:0 6px;white-space:nowrap;}
+#barra-mover-elementos{position:fixed;display:flex;gap:6px;align-items:center;background:#3B82F6;border-radius:999px;padding:6px 10px;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:610;transform:translateX(-50%);top:16px;left:50%;}
+#barra-mover-elementos button{width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:16px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+#barra-mover-elementos button.cerrar-paso{background:rgba(0,0,0,.25);}
+#barra-mover-elementos .txt-paso{color:#fff;font-size:11px;font-weight:700;padding:0 6px;white-space:nowrap;}
 #barra-ancla-foto{position:fixed;display:flex;gap:8px;align-items:center;background:#3B82F6;border-radius:999px;padding:7px 8px 7px 16px;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:610;transform:translateX(-50%);top:16px;left:50%;}
 #barra-ancla-foto .txt-paso{color:#fff;font-size:11.5px;font-weight:800;white-space:nowrap;}
 #barra-ancla-foto button{width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,.25);color:#fff;font-size:14px;font-weight:800;flex-shrink:0;}
@@ -3909,6 +3913,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <span class="txt-paso">Arrastrá la pieza a su lugar</span>
         <button class="cerrar-paso" onclick="confirmarMoverPieza()" title="Dejarla acá">✓</button>
         <button onclick="cancelarMoverPieza()" title="Cancelar, vuelve a su lugar original">✕</button>
+      </div>
+      <div id="barra-mover-elementos" style="display:none;">
+        <span class="txt-paso" id="txt-mover-elementos">Tocá lo que querés mover</span>
+        <button class="cerrar-paso" id="btn-confirmar-mover-elementos" onclick="alConfirmarBarraMoverElementos()" title="Confirmar" style="display:none;">✓</button>
+        <button onclick="alCancelarBarraMoverElementos()" title="Cancelar">✕</button>
       </div>
       <div id="barra-ancla-foto" style="display:none;">
         <span class="txt-paso">📸 Tocá el plano donde estás parado</span>
@@ -20950,6 +20959,11 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   modoColocarReferencia = false;
   modoAnclaTextoPlano = false;
   modoMoverEtiquetaIdx = null;
+  modoMoverTapSeleccionando = false;
+  moviendoGrupoActivo = false;
+  etiquetasParaMoverSeleccionadas = new Set();
+  moviendoGrupoOriginal = null;
+  seleccionAreaResultado = [];
   modoCinta = false;
   puntosCinta = [];
   pasoAPasoAutoContorno = false;
@@ -21274,6 +21288,11 @@ function volverASelectorPlanos(){
   modoColocarReferencia = false;
   modoAnclaTextoPlano = false;
   modoMoverEtiquetaIdx = null;
+  modoMoverTapSeleccionando = false;
+  moviendoGrupoActivo = false;
+  etiquetasParaMoverSeleccionadas = new Set();
+  moviendoGrupoOriginal = null;
+  seleccionAreaResultado = [];
   modoCinta = false;
   puntosCinta = [];
   pasoAPasoAutoContorno = false;
@@ -23298,6 +23317,8 @@ function snapAGrid(x, y){
   return {x: sx, y: sy};
 }
 function iniciarArrastrePin(e, pinId){
+  if(moviendoGrupoActivo){ iniciarColocarPunto(e); return; } // arrastrando el grupo del botón "Mover" -- el toque cae sobre un pin, pero el gesto es para todo el grupo
+  if(modoMoverTapSeleccionando){ e.preventDefault(); e.stopPropagation(); alternarPinParaMover(pinId); return; }
   if(modoSeleccionRectangulo || modoSeleccionLibre){ iniciarColocarPunto(e); return; }
   if(e.touches && e.touches.length>=2){ iniciarPinch(e); return; } // pellizco con 2 dedos que arrancó justo sobre el pin -- es zoom, no mover el pin
   e.preventDefault();
@@ -24822,6 +24843,7 @@ function renderRielAdaptativo(){
       <button class="cad-riel-btn" data-nombre-corto="INFORME" onclick="abrirInformeMaestro()" title="Ver todos los pendientes de todas las zonas juntos"><span class="ico"><i class="ph-bold ph-clipboard-text"></i></span></button>
       <button class="cad-riel-btn" data-nombre-corto="LISTA" onclick="abrirResumenPines()" title="Lista de todos los pines para saltar directo a cualquiera, sin buscarlo en el mapa"><span class="ico"><i class="ph-bold ph-list-checks"></i></span></button>
       <div class="cad-riel-sep"></div>
+      <button class="cad-riel-btn" id="btn-mover-elementos" data-nombre-corto="MOVER" onclick="iniciarMoverElementos()" title="Mover: elegí uno o varios pines y desplazalos juntos"><span class="ico"><i class="ph-bold ph-arrows-out-cardinal"></i></span></button>
       <button class="cad-riel-btn" data-nombre-corto="DESHACER" onclick="deshacerGeneral()" title="Deshacer"><span class="ico"><i class="ph-bold ph-arrow-u-up-left"></i></span></button>
       <div class="cad-riel-sep"></div>
       <button class="cad-riel-btn" id="btn-drawer-herramientas-maestro" data-nombre-corto="HERRAM." onclick="toggleDrawerHerramientas('herramientasMaestro')" title="Semáforo, selección por recuadro/forma libre, detección automática de habitaciones"><span class="ico"><i class="ph-bold ph-wrench"></i></span></button>
@@ -24844,6 +24866,7 @@ function renderRielAdaptativo(){
     <button class="cad-riel-btn" id="btn-drawer-revisar" data-nombre-corto="REVISAR" onclick="toggleDrawerHerramientas('revisar')" title="Selección y revisión: recuadro, forma libre, interferencias"><span class="ico"><i class="ph-bold ph-check-square"></i></span></button>
     <button class="cad-riel-btn" id="btn-drawer-etiquetas" data-nombre-corto="ETIQUETAS" onclick="toggleDrawerHerramientas('etiquetas')" title="Etiquetas: colocar texto, cuadro de medidas, revisar en lote"><span class="ico"><i class="ph-bold ph-tag"></i></span></button>
     <div class="cad-riel-sep"></div>
+    <button class="cad-riel-btn" id="btn-mover-elementos" data-nombre-corto="MOVER" onclick="iniciarMoverElementos()" title="Mover: elegí una o varias piezas/etiquetas y desplazalas juntas"><span class="ico"><i class="ph-bold ph-arrows-out-cardinal"></i></span></button>
     <button class="cad-riel-btn" data-nombre-corto="DESHACER" onclick="deshacerGeneral()" title="Deshace la última acción (cerrar área, editar, eliminar, duplicar, ajustar %, mover o borrar un cuadro de texto)"><span class="ico"><i class="ph-bold ph-arrow-u-up-left"></i></span></button>
     <button class="cad-riel-btn" data-nombre-corto="REHACER" onclick="rehacerGeneral()" title="Rehace lo último que deshiciste (se pierde si después hacés algo nuevo)"><span class="ico"><i class="ph-bold ph-arrow-u-up-right"></i></span></button>
     <div class="cad-riel-sep"></div>
@@ -26077,6 +26100,8 @@ function iniciarColocarPunto(e){
   if(modoAnclaTextoPlano){ confirmarAnclaTextoPlano(e); return; }
   if(modoAnclaFotoAvance){ confirmarAnclaFotoAvance(e); return; }
   if(moviendoPiezaIdx!==null){ iniciarArrastrePiezaCompleta(e); return; }
+  if(moviendoGrupoActivo){ iniciarArrastreGrupo(e); return; }
+  if(modoMoverTapSeleccionando){ manejarTapParaElegirMover(e); return; }
   if(!dibujando || modoMoverActivo){
     // En modo "Mover", mientras hay un área en construcción NO se procesa el doble-tap para
     // editar otra zona: si al desplazar el dedo para paniar el plano dos toques caían por
@@ -29973,7 +29998,8 @@ function activarArrastreAnotacion(btn, idx){
   let timer = null, moviendo = false, inicioX = 0, inicioY = 0;
   const UMBRAL_MOV = 10;
   btn.addEventListener("pointerdown", (e)=>{
-    if(modoSeleccionMultiple) return; // en modo selección no se arma el temporizador de mover -- un toque siempre es "marcar/desmarcar"
+    if(moviendoGrupoActivo){ iniciarColocarPunto(e); return; } // arrastrando el grupo del botón "Mover" -- el toque cae sobre una etiqueta, pero el gesto es para todo el grupo
+    if(modoSeleccionMultiple || modoMoverTapSeleccionando) return; // en modo selección no se arma el temporizador de mover -- un toque siempre es "marcar/desmarcar"
     inicioX = e.clientX; inicioY = e.clientY;
     moviendo = false;
     timer = setTimeout(()=>{
@@ -29995,6 +30021,7 @@ function activarArrastreAnotacion(btn, idx){
   });
   btn.addEventListener("pointerup", async (e)=>{
     clearTimeout(timer);
+    if(modoMoverTapSeleccionando){ alternarEtiquetaParaMover(idx); return; }
     if(modoSeleccionMultiple){ alternarSeleccionEtiqueta(idx); return; }
     if(moviendo){
       moviendo = false;
@@ -30763,6 +30790,216 @@ function cancelarMoverPieza(){
   redibujar();
   renderPorcentajesFlotantes();
 }
+// ---------------- Mover varios elementos juntos (botón "MOVER" del riel, siempre a mano) ----------------
+// A diferencia de "Mover" del panel de propiedades (una sola pieza) o "Mover" de una etiqueta (una
+// sola etiqueta), este es el botón general del riel -- igual de siempre-visible que "Deshacer" --
+// para elegir CUALQUIER combinación de piezas/etiquetas (Plano de avance) o pines (Plano Maestro) y
+// desplazarlos todos juntos de una sola vez. Dos pasos: 1) tocar para elegir (uno o varios, cada
+// toque suma o saca), con un botón "Confirmar" recién habilitado cuando hay al menos uno elegido;
+// 2) arrastrar en el plano -- todo lo elegido se mueve junto, por el mismo desplazamiento -- y
+// confirmar la posición final o cancelar (vuelve todo a su lugar original).
+let modoMoverTapSeleccionando = false; // paso 1: tocando elementos para elegir
+let etiquetasParaMoverSeleccionadas = new Set(); // etiquetas elegidas (solo Plano de avance -- Maestro no tiene etiquetas)
+let moviendoGrupoActivo = false; // paso 2: ya confirmada la selección, arrastrando el grupo
+let moviendoGrupoOriginal = null; // snapshot de antes de mover, para poder cancelar
+let moviendoGrupoUltimoPunto = null;
+function iniciarMoverElementos(){
+  if(dibujando){ showToast("Terminá o cancelá el dibujo en curso antes de mover elementos."); return; }
+  ocultarPanelPropiedades();
+  cerrarFlyoutsAbiertos();
+  seleccionAreaResultado = [];
+  etiquetasParaMoverSeleccionadas = new Set();
+  modoMoverTapSeleccionando = true;
+  document.getElementById("cad-riel").style.display = "none";
+  actualizarBarraMoverElementos();
+}
+function totalElegidosParaMover(){
+  return seleccionAreaResultado.length + etiquetasParaMoverSeleccionadas.size;
+}
+function actualizarBarraMoverElementos(){
+  const barra = document.getElementById("barra-mover-elementos");
+  const txt = document.getElementById("txt-mover-elementos");
+  const btnConfirmar = document.getElementById("btn-confirmar-mover-elementos");
+  if(!barra || !txt || !btnConfirmar) return;
+  barra.style.display = "flex";
+  if(moviendoGrupoActivo){
+    txt.textContent = "Arrastrá para mover";
+    btnConfirmar.style.display = "flex";
+    return;
+  }
+  const n = totalElegidosParaMover();
+  txt.textContent = n===0
+    ? `Tocá ${modoPlanoMaestro?"los pines":"las piezas o etiquetas"} que querés mover`
+    : `${n} elegido${n===1?"":"s"} -- tocá más, o confirmá`;
+  btnConfirmar.style.display = n>0 ? "flex" : "none";
+}
+// Toca una pieza (dentro del canvas, no sobre una etiqueta) mientras se está eligiendo qué mover --
+// mismo criterio de "qué pieza es" que detectarDobleTapEnArea (capas primero, de la más reciente
+// hacia atrás; si no hay ninguna, se prueba entre las áreas totales).
+function manejarTapParaElegirMover(e){
+  if(modoPlanoMaestro) return; // los pines se eligen tocando el pin en sí -- ver alternarPinParaMover()
+  const punto = e.touches ? e.touches[0] : e;
+  if(!punto) return;
+  const canvas = document.getElementById("canvas-plano");
+  const rect = canvas.getBoundingClientRect();
+  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
+  const x = (punto.clientX-rect.left)*escalaX, y = (punto.clientY-rect.top)*escalaY;
+  let idxEncontrado = -1;
+  for(let i=poligonos.length-1; i>=0; i--){
+    if(poligonos[i].capa && anillosDe(poligonos[i]).some(an=>puntoDentroDePoligono(x, y, an))){ idxEncontrado = i; break; }
+  }
+  if(idxEncontrado===-1){
+    for(let i=poligonos.length-1; i>=0; i--){
+      if(!poligonos[i].capa && anillosDe(poligonos[i]).some(an=>puntoDentroDePoligono(x, y, an))){ idxEncontrado = i; break; }
+    }
+  }
+  if(idxEncontrado===-1) return;
+  alternarPiezaParaMover(idxEncontrado);
+}
+function alternarPiezaParaMover(idx){
+  const pos = seleccionAreaResultado.indexOf(idx);
+  if(pos===-1) seleccionAreaResultado.push(idx); else seleccionAreaResultado.splice(pos,1);
+  asegurarAnimacionSeleccion();
+  redibujar();
+  actualizarBarraMoverElementos();
+}
+function alternarEtiquetaParaMover(idx){
+  if(etiquetasParaMoverSeleccionadas.has(idx)) etiquetasParaMoverSeleccionadas.delete(idx);
+  else etiquetasParaMoverSeleccionadas.add(idx);
+  redibujar();
+  actualizarBarraMoverElementos();
+}
+function alternarPinParaMover(id){
+  const pos = seleccionAreaResultado.indexOf(id);
+  if(pos===-1) seleccionAreaResultado.push(id); else seleccionAreaResultado.splice(pos,1);
+  renderPinesMaestro();
+  actualizarBarraMoverElementos();
+}
+function alConfirmarBarraMoverElementos(){
+  if(moviendoGrupoActivo) confirmarMoverGrupo();
+  else confirmarSeleccionParaMover();
+}
+function alCancelarBarraMoverElementos(){
+  if(moviendoGrupoActivo) cancelarMoverGrupo();
+  else cerrarModoMoverGrupo();
+}
+function confirmarSeleccionParaMover(){
+  if(totalElegidosParaMover()===0) return;
+  modoMoverTapSeleccionando = false;
+  moviendoGrupoActivo = true;
+  moviendoGrupoOriginal = {
+    poligonos: !modoPlanoMaestro ? seleccionAreaResultado.map(idx=>({
+      idx,
+      puntos: poligonos[idx].puntos.map(p=>[...p]),
+      piezasExtra: (poligonos[idx].piezasExtra||[]).map(an=>an.map(p=>[...p])),
+    })) : [],
+    etiquetas: [...etiquetasParaMoverSeleccionadas].map(idx=>({idx, x:anotacionesTexto[idx].x, y:anotacionesTexto[idx].y})),
+    pines: modoPlanoMaestro ? seleccionAreaResultado.map(id=>{
+      const p = pinesMaestro.find(pp=>pp.id===id);
+      return {id, x:p.x, y:p.y};
+    }) : [],
+  };
+  actualizarBarraMoverElementos();
+}
+function iniciarArrastreGrupo(e){
+  e.preventDefault();
+  const punto = e.touches ? e.touches[0] : e;
+  if(!punto) return;
+  const canvas = document.getElementById("canvas-plano");
+  const rect = canvas.getBoundingClientRect();
+  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
+  const x = (punto.clientX-rect.left)*escalaX, y = (punto.clientY-rect.top)*escalaY;
+  moviendoGrupoUltimoPunto = {x, y};
+  document.addEventListener("mousemove", moverArrastreGrupo);
+  document.addEventListener("touchmove", moverArrastreGrupo, {passive:false});
+  document.addEventListener("mouseup", terminarArrastreGrupo);
+  document.addEventListener("touchend", terminarArrastreGrupo);
+}
+function moverArrastreGrupo(e){
+  if(!moviendoGrupoActivo || !moviendoGrupoUltimoPunto) return;
+  e.preventDefault();
+  const punto = e.touches ? e.touches[0] : e;
+  if(!punto) return;
+  const canvas = document.getElementById("canvas-plano");
+  const rect = canvas.getBoundingClientRect();
+  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
+  const x = (punto.clientX-rect.left)*escalaX, y = (punto.clientY-rect.top)*escalaY;
+  const dx = x - moviendoGrupoUltimoPunto.x, dy = y - moviendoGrupoUltimoPunto.y;
+  moviendoGrupoOriginal.poligonos.forEach(({idx})=>{
+    const p = poligonos[idx];
+    if(!p) return;
+    p.puntos = p.puntos.map(([px,py])=>[px+dx, py+dy]);
+    if(p.piezasExtra && p.piezasExtra.length) p.piezasExtra = p.piezasExtra.map(anillo=>anillo.map(([px,py])=>[px+dx,py+dy]));
+    p.area = anillosDe(p).reduce((s,an)=>s+areaPoligono(an),0);
+  });
+  moviendoGrupoOriginal.etiquetas.forEach(({idx})=>{
+    const a = anotacionesTexto[idx];
+    if(a){ a.x += dx; a.y += dy; }
+  });
+  moviendoGrupoOriginal.pines.forEach(({id})=>{
+    const p = pinesMaestro.find(pp=>pp.id===id);
+    if(p){ p.x += dx; p.y += dy; }
+  });
+  moviendoGrupoUltimoPunto = {x, y};
+  redibujar();
+  if(modoPlanoMaestro) renderPinesMaestro();
+}
+function terminarArrastreGrupo(){
+  document.removeEventListener("mousemove", moverArrastreGrupo);
+  document.removeEventListener("touchmove", moverArrastreGrupo);
+  document.removeEventListener("mouseup", terminarArrastreGrupo);
+  document.removeEventListener("touchend", terminarArrastreGrupo);
+  moviendoGrupoUltimoPunto = null;
+}
+function cerrarModoMoverGrupo(){
+  modoMoverTapSeleccionando = false;
+  moviendoGrupoActivo = false;
+  seleccionAreaResultado = [];
+  etiquetasParaMoverSeleccionadas = new Set();
+  moviendoGrupoOriginal = null;
+  detenerAnimacionSeleccion();
+  const barra = document.getElementById("barra-mover-elementos");
+  if(barra) barra.style.display = "none";
+  document.getElementById("cad-riel").style.display = "flex";
+}
+async function confirmarMoverGrupo(){
+  if(!moviendoGrupoActivo || !moviendoGrupoOriginal) return;
+  const nPiezas = moviendoGrupoOriginal.poligonos.length;
+  const nEtiquetas = moviendoGrupoOriginal.etiquetas.length;
+  const nPines = moviendoGrupoOriginal.pines.length;
+  if(nPiezas>0 || nEtiquetas>0) guardarEnHistorial();
+  cerrarModoMoverGrupo();
+  redibujar();
+  renderPorcentajesFlotantes();
+  if(nPiezas>0) await guardarPlanoAvancePoligonos();
+  if(nEtiquetas>0) await guardarAnotacionesTexto();
+  if(nPines>0){ await guardarPinesMaestro(); renderPinesMaestro(); }
+  const total = nPiezas+nEtiquetas+nPines;
+  showToast(`✓ ${total} elemento${total===1?"":"s"} movido${total===1?"":"s"}`);
+}
+function cancelarMoverGrupo(){
+  if(moviendoGrupoOriginal){
+    moviendoGrupoOriginal.poligonos.forEach(({idx, puntos, piezasExtra})=>{
+      const p = poligonos[idx];
+      if(!p) return;
+      p.puntos = puntos;
+      p.piezasExtra = piezasExtra;
+      p.area = anillosDe(p).reduce((s,an)=>s+areaPoligono(an),0);
+    });
+    moviendoGrupoOriginal.etiquetas.forEach(({idx, x, y})=>{
+      const a = anotacionesTexto[idx];
+      if(a){ a.x = x; a.y = y; }
+    });
+    moviendoGrupoOriginal.pines.forEach(({id, x, y})=>{
+      const p = pinesMaestro.find(pp=>pp.id===id);
+      if(p){ p.x = x; p.y = y; }
+    });
+  }
+  cerrarModoMoverGrupo();
+  redibujar();
+  renderPorcentajesFlotantes();
+  if(modoPlanoMaestro) renderPinesMaestro();
+}
 // ---------------- Mantener pulsado sobre un área para abrir el mismo menú mini ----------------
 // Doble toque ya lo abría -- esto suma una segunda forma de activarlo para quien prefiera
 // mantener el dedo quieto en vez de tocar dos veces rápido. Se cancela solo si el dedo se mueve
@@ -31058,7 +31295,7 @@ function redibujar(){
   // La pista de doble-tap/mantener-pulsado solo tiene sentido cuando no hay nada en curso --
   // mientras se dibuja, se editan vértices, o hay un modo especial armado (que ahora comparte
   // este mismo espacio en pantalla vía cad-modo-flotante), tapa información y ya no aplica.
-  const hayModoEspecialArmado = modoCopiarContorno || modoAutoContorno || modoSeguirPared || modoBorrarPunto || modoUnificarPiezas;
+  const hayModoEspecialArmado = modoCopiarContorno || modoAutoContorno || modoSeguirPared || modoBorrarPunto || modoUnificarPiezas || modoMoverTapSeleccionando || moviendoGrupoActivo;
   const hint = document.getElementById("cad-hint-idle");
   if(hint){
     hint.style.display = (dibujando || indiceEditando!==null || hayModoEspecialArmado) ? "none" : "block";
@@ -31203,9 +31440,13 @@ function redibujar(){
     const color = estadoObj ? estadoObj.color : "#8B5CF6";
     const cajaX = a.x-anchoTexto/2-padX, cajaY = a.y-fontSize/2-padY, cajaW = anchoTexto+padX*2, cajaH = fontSize+padY*2;
     // En modo selección múltiple, la seleccionada se destaca con un aro verde grueso alrededor
-    // (además del fondo, para que se note incluso a simple vista sin tener que tocarla).
+    // (además del fondo, para que se note incluso a simple vista sin tener que tocarla). Mismo aro,
+    // en azul, cuando está elegida para el botón "Mover" del riel (grupo de piezas/etiquetas).
     if(modoSeleccionMultiple && anotacionesSeleccionadas.has(idxAnot)){
       ctx.strokeStyle = "#0E9488"; ctx.lineWidth = Math.max(3, grosor*1.4);
+      ctx.strokeRect(cajaX-4, cajaY-4, cajaW+8, cajaH+8);
+    }else if((modoMoverTapSeleccionando || moviendoGrupoActivo) && etiquetasParaMoverSeleccionadas.has(idxAnot)){
+      ctx.strokeStyle = "#3B82F6"; ctx.lineWidth = Math.max(3, grosor*1.4);
       ctx.strokeRect(cajaX-4, cajaY-4, cajaW+8, cajaH+8);
     }
     ctx.fillStyle = "rgba(255,255,255,.92)";
