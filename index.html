@@ -29357,7 +29357,11 @@ function salirModoSeleccionMultiple(){
   redibujar();
 }
 function seleccionarTodasLasEtiquetas(){
-  anotacionesTexto.forEach((a,i)=>{ if(a.tipo==="numero") anotacionesSeleccionadas.add(i); });
+  // ANTES solo se agregaban las de tipo "numero" (las medidas/marcas numeradas), dejando afuera
+  // los cuadros de texto libre (notas sueltas) -- "Todas" no seleccionaba todas de verdad. La
+  // selección individual (alternarSeleccionEtiqueta) y el resaltado al dibujar (redibujar) ya
+  // soportan cualquier tipo por igual, así que acá no hace falta filtrar por tipo tampoco.
+  anotacionesTexto.forEach((a,i)=>anotacionesSeleccionadas.add(i));
   actualizarTextoSeleccionMultiple();
   redibujar();
 }
