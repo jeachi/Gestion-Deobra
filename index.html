@@ -3760,11 +3760,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="cad-flyout" id="drawer-vista" style="display:none;">
         <div class="cad-flyout-titulo">Vista <span class="mono" id="zoom-pct" style="float:right;color:var(--cian);">100%</span></div>
         <div class="grid-tools">
-          <button class="tool-card" onclick="zoomOut()"><span class="ico">−</span><span class="lbl">Alejar</span></button>
-          <button class="tool-card" onclick="zoomIn()"><span class="ico">+</span><span class="lbl">Acercar</span></button>
-          <button class="tool-card" onclick="zoomAjustar()"><span class="ico">⛶</span><span class="lbl">Ajustar</span></button>
-          <button class="tool-card" onclick="zoom100()"><span class="ico">1:1</span><span class="lbl">Real</span></button>
-          <button class="tool-card" id="btn-modo-mover" onclick="toggleModoMover()"><span class="ico"><i class="ph-bold ph-hand"></i></span><span class="lbl">Mover</span></button>
+          <button class="tool-card" onclick="zoomOut()" title="Aleja la vista -- ves más plano, más chico"><span class="ico">−</span><span class="lbl">Alejar</span></button>
+          <button class="tool-card" onclick="zoomIn()" title="Acerca la vista -- ves menos plano, más grande"><span class="ico">+</span><span class="lbl">Acercar</span></button>
+          <button class="tool-card" onclick="zoomAjustar()" title="Ajusta el zoom para que entre todo el plano en la pantalla"><span class="ico">⛶</span><span class="lbl">Ajustar</span></button>
+          <button class="tool-card" onclick="zoom100()" title="Zoom 1:1 -- tamaño real del plano, sin escalar"><span class="ico">1:1</span><span class="lbl">Real</span></button>
+          <button class="tool-card" id="btn-modo-mover" onclick="toggleModoMover()" title="Activa el paniado: arrastrá con el dedo para desplazar la VISTA del plano (no mueve ninguna pieza)"><span class="ico"><i class="ph-bold ph-hand"></i></span><span class="lbl">Mover</span></button>
         </div>
         <div class="cad-flyout-nota">Pellizcá con dos dedos para acercar/alejar y mover. El modo ortogonal, la cuadrícula y las referencias ahora están en la barra de abajo (tocá "⋯").</div>
       </div>
@@ -3806,21 +3806,21 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
         <div class="grupo-herramientas-tit">Formas</div>
         <div class="grid-tools">
-          <button class="tool-card destacado" onclick="iniciarDibujo()"><span class="ico"><i class="ph-bold ph-shapes"></i></span><span class="lbl" id="lbl-marcar-nuevo">Marcar área</span></button>
-          <button class="tool-card destacado" onclick="iniciarDibujoRectangulo()"><span class="ico"><i class="ph-bold ph-rectangle"></i></span><span class="lbl">Rectángulo</span></button>
-          <button class="tool-card" onclick="iniciarRecorridoLineal()"><span class="ico"><i class="ph-bold ph-flow-arrow"></i></span><span class="lbl">Recorrido lineal</span></button>
+          <button class="tool-card destacado" onclick="iniciarDibujo()" title="Traza el contorno de una pieza nueva tocando cada esquina, una por una"><span class="ico"><i class="ph-bold ph-shapes"></i></span><span class="lbl" id="lbl-marcar-nuevo">Marcar área</span></button>
+          <button class="tool-card destacado" onclick="iniciarDibujoRectangulo()" title="Traza un rectángulo tocando dos esquinas opuestas"><span class="ico"><i class="ph-bold ph-rectangle"></i></span><span class="lbl">Rectángulo</span></button>
+          <button class="tool-card" onclick="iniciarRecorridoLineal()" title="Traza una línea (no un área cerrada) para medir un recorrido, ej: una cañería"><span class="ico"><i class="ph-bold ph-flow-arrow"></i></span><span class="lbl">Recorrido lineal</span></button>
         </div>
         <div class="grupo-herramientas-tit">Modificar</div>
         <div class="grid-tools">
-          <button class="tool-card" onclick="iniciarModoRecorte()"><span class="ico"><i class="ph-bold ph-scissors"></i></span><span class="lbl">Recortar</span></button>
-          <button class="tool-card" id="btn-copiar-contorno" onclick="toggleModoCopiarContorno()"><span class="ico"><i class="ph-bold ph-stamp"></i></span><span class="lbl">Copiar contorno</span></button>
-          <button class="tool-card" id="btn-auto-contorno" onclick="toggleModoAutoContorno()"><span class="ico"><i class="ph-bold ph-magic-wand"></i></span><span class="lbl">Auto contorno</span></button>
+          <button class="tool-card" onclick="iniciarModoRecorte()" title="Marcá una zona para recortarla de cualquier área que la toque, sea de la actividad que sea"><span class="ico"><i class="ph-bold ph-scissors"></i></span><span class="lbl">Recortar</span></button>
+          <button class="tool-card" id="btn-copiar-contorno" onclick="toggleModoCopiarContorno()" title="Copia el contorno exacto de otra pieza ya dibujada -- tocá este botón y después la pieza a copiar"><span class="ico"><i class="ph-bold ph-stamp"></i></span><span class="lbl">Copiar contorno</span></button>
+          <button class="tool-card" id="btn-auto-contorno" onclick="toggleModoAutoContorno()" title="Tocá cerca de una línea del plano y sigue todo el contorno solo, hasta cerrarlo"><span class="ico"><i class="ph-bold ph-magic-wand"></i></span><span class="lbl">Auto contorno</span></button>
         </div>
         <div class="grupo-herramientas-tit">Ayudas de trazado</div>
         <div class="grid-tools">
-          <button class="tool-card" id="btn-seguir-pared" onclick="toggleModoSeguirPared()"><span class="ico">🧱</span><span class="lbl">Seguir pared</span></button>
-          <button class="tool-card" id="btn-borrar-punto" onclick="toggleModoBorrarPunto()"><span class="ico"><i class="ph-bold ph-eraser"></i></span><span class="lbl">Borrar punto</span></button>
-          <button class="tool-card" onclick="deshacerPunto()"><span class="ico">↩</span><span class="lbl">Deshacer pto</span></button>
+          <button class="tool-card" id="btn-seguir-pared" onclick="toggleModoSeguirPared()" title="Mientras dibujás, sugiere el próximo vértice siguiendo la pared detectada en el plano"><span class="ico">🧱</span><span class="lbl">Seguir pared</span></button>
+          <button class="tool-card" id="btn-borrar-punto" onclick="toggleModoBorrarPunto()" title="Tocá un vértice ya puesto en el dibujo actual para borrarlo"><span class="ico"><i class="ph-bold ph-eraser"></i></span><span class="lbl">Borrar punto</span></button>
+          <button class="tool-card" onclick="deshacerPunto()" title="Deshace el último punto puesto en el dibujo actual (no toda la pieza)"><span class="ico">↩</span><span class="lbl">Deshacer pto</span></button>
         </div>
       </div>
 
@@ -3828,9 +3828,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="cad-flyout" id="drawer-medir" style="display:none;">
         <div class="cad-flyout-titulo">Medir y alinear</div>
         <div class="grid-tools">
-          <button class="tool-card" onclick="iniciarCintaMetrica()"><span class="ico"><i class="ph-bold ph-ruler"></i></span><span class="lbl">Cinta métrica</span></button>
-          <button class="tool-card" id="btn-colocar-referencia" onclick="iniciarOEditarReferencia()"><span class="ico"><i class="ph-bold ph-crosshair-simple"></i></span><span class="lbl">Ejes</span></button>
-          <button class="tool-card" onclick="iniciarCalibracionEscala()"><span class="ico"><i class="ph-bold ph-arrows-horizontal"></i></span><span class="lbl">Escala</span></button>
+          <button class="tool-card" onclick="iniciarCintaMetrica()" title="Medí una distancia tocando dos puntos del plano"><span class="ico"><i class="ph-bold ph-ruler"></i></span><span class="lbl">Cinta métrica</span></button>
+          <button class="tool-card" id="btn-colocar-referencia" onclick="iniciarOEditarReferencia()" title="Poné líneas de referencia para alinear cortes -- se pueden borrar después"><span class="ico"><i class="ph-bold ph-crosshair-simple"></i></span><span class="lbl">Ejes</span></button>
+          <button class="tool-card" onclick="iniciarCalibracionEscala()" title="Calibrá la escala real del plano para que se muestren m² aproximados"><span class="ico"><i class="ph-bold ph-arrows-horizontal"></i></span><span class="lbl">Escala</span></button>
         </div>
       </div>
 
@@ -3838,9 +3838,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="cad-flyout" id="drawer-revisar" style="display:none;">
         <div class="cad-flyout-titulo">Selección y revisión</div>
         <div class="grid-tools">
-          <button class="tool-card" onclick="iniciarSeleccionRectangulo()"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
-          <button class="tool-card" onclick="iniciarSeleccionLibre()"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
-          <button class="tool-card" onclick="verificarInterferenciasPlano()"><span class="ico"><i class="ph-bold ph-warning"></i></span><span class="lbl">Interferencias</span></button>
+          <button class="tool-card" onclick="iniciarSeleccionRectangulo()" title="Elegí varias piezas a la vez marcando un recuadro alrededor"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
+          <button class="tool-card" onclick="iniciarSeleccionLibre()" title="Elegí varias piezas a la vez dibujando una forma libre alrededor"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
+          <button class="tool-card" onclick="verificarInterferenciasPlano()" title="Busca piezas que se superponen entre sí, para revisarlas una por una"><span class="ico"><i class="ph-bold ph-warning"></i></span><span class="lbl">Interferencias</span></button>
         </div>
       </div>
 
@@ -3851,9 +3851,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="cad-flyout" id="drawer-etiquetas" style="display:none;">
         <div class="cad-flyout-titulo">Etiquetas</div>
         <div class="grid-tools">
-          <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarColocarTextoPlano();"><span class="ico"><i class="ph-bold ph-text-t"></i></span><span class="lbl">Texto</span></button>
-          <button class="tool-card" onclick="abrirTablaMedidas()"><span class="ico"><i class="ph-bold ph-table"></i></span><span class="lbl">Medidas</span></button>
-          <button class="tool-card" onclick="iniciarModoSeleccionMultiple()"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Revisar</span></button>
+          <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarColocarTextoPlano();" title="Coloca un cuadro de texto nuevo: una medida o una nota libre"><span class="ico"><i class="ph-bold ph-text-t"></i></span><span class="lbl">Texto</span></button>
+          <button class="tool-card" onclick="abrirTablaMedidas()" title="Ve el resumen de todas las medidas cargadas en este plano"><span class="ico"><i class="ph-bold ph-table"></i></span><span class="lbl">Medidas</span></button>
+          <button class="tool-card" onclick="iniciarModoSeleccionMultiple()" title="Elegí varias etiquetas tocándolas, para cambiarles la categoría o el estado juntas"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Revisar</span></button>
         </div>
       </div>
 
@@ -3861,9 +3861,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="cad-flyout" id="drawer-mas" style="display:none;">
         <div class="cad-flyout-titulo">Más herramientas</div>
         <div class="grid-tools">
-          <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); generarReportePlanoAvancePDF();"><span class="ico"><i class="ph-bold ph-printer"></i></span><span class="lbl">Reporte</span></button>
-          <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarFotoAvance();"><span class="ico"><i class="ph-bold ph-camera"></i></span><span class="lbl">Foto</span></button>
-          <button class="tool-card" id="btn-copiar-pieza-directo" onclick="cerrarFlyoutsAbiertos(); toggleModoCopiarPiezaDirecto();"><span class="ico"><i class="ph-bold ph-copy"></i></span><span class="lbl">Copiar pieza</span></button>
+          <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); generarReportePlanoAvancePDF();" title="Genera un PDF (o lo manda por WhatsApp) con el resumen de avance de este plano"><span class="ico"><i class="ph-bold ph-printer"></i></span><span class="lbl">Reporte</span></button>
+          <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarFotoAvance();" title="Sacá una foto y que la IA reconozca el avance para marcarlo sola"><span class="ico"><i class="ph-bold ph-camera"></i></span><span class="lbl">Foto</span></button>
+          <button class="tool-card" id="btn-copiar-pieza-directo" onclick="cerrarFlyoutsAbiertos(); toggleModoCopiarPiezaDirecto();" title="Tocá este botón y después tocá la pieza que querés copiar"><span class="ico"><i class="ph-bold ph-copy"></i></span><span class="lbl">Copiar pieza</span></button>
           <button class="tool-card" id="btn-modo-exterior" onclick="toggleModoAltoContraste();" title="Sube el contraste del relleno y agrega un borde oscuro grueso a cada pieza -- para leer el plano bajo sol directo"><span class="ico">☀️</span><span class="lbl">Exterior</span></button>
           <button class="tool-card" id="btn-guia-fantasma" onclick="toggleGuiaFantasma();" title="Muestra de fondo, en punteado, el contorno de la última semana cerrada -- para no re-trazar lo mismo ni dejar huecos mientras marcás el avance de hoy"><span class="ico">👻</span><span class="lbl">Guía semana ant.</span></button>
         </div>
@@ -3873,10 +3873,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="cad-flyout" id="drawer-herramientasMaestro" style="display:none;">
         <div class="cad-flyout-titulo">Herramientas</div>
         <div class="grid-tools">
-          <button class="tool-card" id="btn-semaforo-maestro" onclick="toggleModoSemaforo()"><span class="ico">🔥</span><span class="lbl">Semáforo</span></button>
-          <button class="tool-card" onclick="iniciarSeleccionRectangulo()"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
-          <button class="tool-card" onclick="iniciarSeleccionLibre()"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
-          <button class="tool-card" onclick="detectarHabitacionesAutomatico()"><span class="ico"><i class="ph-bold ph-magic-wand"></i></span><span class="lbl">Detectar habitaciones</span></button>
+          <button class="tool-card" id="btn-semaforo-maestro" onclick="toggleModoSemaforo()" title="Muestra un resplandor de color alrededor de cada pin según su urgencia: rojo, naranja o verde"><span class="ico">🔥</span><span class="lbl">Semáforo</span></button>
+          <button class="tool-card" onclick="iniciarSeleccionRectangulo()" title="Elegí varios pines a la vez marcando un recuadro alrededor"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
+          <button class="tool-card" onclick="iniciarSeleccionLibre()" title="Elegí varios pines a la vez dibujando una forma libre alrededor"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
+          <button class="tool-card" onclick="detectarHabitacionesAutomatico()" title="Detecta automáticamente los contornos de las habitaciones del plano, siguiendo sus líneas"><span class="ico"><i class="ph-bold ph-magic-wand"></i></span><span class="lbl">Detectar habitaciones</span></button>
         </div>
       </div>
 
@@ -23195,6 +23195,9 @@ function toggleModoSemaforo(){
   const btn = document.getElementById("btn-semaforo-maestro");
   if(btn) btn.classList.toggle("btn-primary", modoSemaforo);
   renderSemaforoMaestro();
+  showToast(modoSemaforo
+    ? "🔥 Semáforo activado -- un resplandor de color alrededor de cada pin según su urgencia: rojo, naranja o verde"
+    : "Semáforo desactivado", 3000);
 }
 function renderSemaforoMaestro(){
   const cont = document.getElementById("capa-semaforo-maestro");
@@ -24907,6 +24910,22 @@ function activarTooltipRiel(btn, nombre){
   btn.addEventListener("pointerup", ()=>clearTimeout(timer));
   btn.addEventListener("pointerleave", ()=>clearTimeout(timer));
 }
+// Mismo recordatorio que el de arriba (mantener presionado antes de soltar, para ver qué hace el
+// botón antes de tocarlo de verdad), pero para TODOS los botones de herramienta de los cajones del
+// plano (.tool-card con title) de una sola vez -- un único listener delegado en vez de engancharlo
+// botón por botón, así también cubre a los que se arman de nuevo dinámicamente (ej: Capas). El
+// toque normal (más corto) sigue ejecutando la acción del botón como siempre.
+let _timerTooltipToolCard = null;
+document.addEventListener("pointerdown", (e)=>{
+  const btn = e.target.closest(".tool-card[title]");
+  if(!btn) return;
+  const texto = btn.getAttribute("title");
+  _timerTooltipToolCard = setTimeout(()=>{
+    showToast(texto, 2800);
+    if(navigator.vibrate) navigator.vibrate(10);
+  }, 450);
+});
+["pointerup","pointercancel"].forEach(ev=>document.addEventListener(ev, ()=>clearTimeout(_timerTooltipToolCard)));
 function toggleDrawerHerramientas(cual){
   const drawers = {vista:"drawer-vista", capas:"drawer-capas", dibujar:"drawer-dibujar", medir:"drawer-medir", revisar:"drawer-revisar", etiquetas:"drawer-etiquetas", mas:"drawer-mas", herramientasMaestro:"drawer-herramientasMaestro"};
   const botones = {vista:"btn-drawer-vista", capas:"btn-drawer-capas", dibujar:"btn-drawer-dibujar", medir:"btn-drawer-medir", revisar:"btn-drawer-revisar", etiquetas:"btn-drawer-etiquetas", mas:"btn-drawer-mas", herramientasMaestro:"btn-drawer-herramientas-maestro"};
@@ -25753,6 +25772,9 @@ function toggleModoAltoContraste(){
   try{ localStorage.setItem("plano_modo_exterior", modoAltoContrasteCad?"1":"0"); }catch(e){}
   actualizarBotonAltoContraste();
   redibujar();
+  showToast(modoAltoContrasteCad
+    ? "☀️ Modo exterior activado -- más contraste y borde oscuro en cada pieza, para leer el plano bajo sol directo"
+    : "Modo exterior desactivado", 3000);
 }
 function actualizarBotonAltoContraste(){
   const btn = document.getElementById("btn-modo-exterior");
@@ -25769,7 +25791,9 @@ function toggleGuiaFantasma(){
   }
   guiaFantasmaActiva = !guiaFantasmaActiva;
   actualizarBotonGuiaFantasma();
-  if(guiaFantasmaActiva) showToast("👻 Mostrando de fondo el contorno de la última semana cerrada", 3500);
+  showToast(guiaFantasmaActiva
+    ? "👻 Guía fantasma activada -- se ve en punteado, de fondo, el contorno de la última semana cerrada, para no re-trazar lo mismo"
+    : "Guía fantasma desactivada", 3000);
   redibujar();
 }
 function actualizarBotonGuiaFantasma(){
