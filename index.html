@@ -3827,7 +3827,6 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button class="tool-card" onclick="iniciarCintaMetrica()"><span class="ico"><i class="ph-bold ph-ruler"></i></span><span class="lbl">Cinta métrica</span></button>
           <button class="tool-card" id="btn-colocar-referencia" onclick="iniciarOEditarReferencia()"><span class="ico"><i class="ph-bold ph-crosshair-simple"></i></span><span class="lbl">Ejes</span></button>
           <button class="tool-card" onclick="iniciarCalibracionEscala()"><span class="ico"><i class="ph-bold ph-arrows-horizontal"></i></span><span class="lbl">Escala</span></button>
-          <button class="tool-card" onclick="abrirTablaMedidas()"><span class="ico"><i class="ph-bold ph-table"></i></span><span class="lbl">Medidas</span></button>
         </div>
       </div>
 
@@ -3838,17 +3837,28 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button class="tool-card" onclick="iniciarSeleccionRectangulo()"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
           <button class="tool-card" onclick="iniciarSeleccionLibre()"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
           <button class="tool-card" onclick="verificarInterferenciasPlano()"><span class="ico"><i class="ph-bold ph-warning"></i></span><span class="lbl">Interferencias</span></button>
-          <button class="tool-card" onclick="iniciarModoSeleccionMultiple()"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Etiquetas</span></button>
         </div>
       </div>
 
-      <!-- ---- Cajón "Más" -- ahora con contenido fijo (Reporte, Foto, Texto, Copiar pieza) ---- -->
+      <!-- ---- Cajón Etiquetas -- agrupa todo lo que tiene que ver con etiquetas/anotaciones: crear
+           (Texto, antes en "Más"), el cuadro de medidas (antes en "Medir") y la revisión en lote
+           (antes en "Revisar") -- antes estaban repartidas en 3 cajones distintos sin relación entre
+           sí a simple vista. ---- -->
+      <div class="cad-flyout" id="drawer-etiquetas" style="display:none;">
+        <div class="cad-flyout-titulo">Etiquetas</div>
+        <div class="grid-tools">
+          <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarColocarTextoPlano();"><span class="ico"><i class="ph-bold ph-text-t"></i></span><span class="lbl">Texto</span></button>
+          <button class="tool-card" onclick="abrirTablaMedidas()"><span class="ico"><i class="ph-bold ph-table"></i></span><span class="lbl">Medidas</span></button>
+          <button class="tool-card" onclick="iniciarModoSeleccionMultiple()"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Revisar</span></button>
+        </div>
+      </div>
+
+      <!-- ---- Cajón "Más" -- ahora con contenido fijo (Reporte, Foto, Copiar pieza) ---- -->
       <div class="cad-flyout" id="drawer-mas" style="display:none;">
         <div class="cad-flyout-titulo">Más herramientas</div>
         <div class="grid-tools">
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); generarReportePlanoAvancePDF();"><span class="ico"><i class="ph-bold ph-printer"></i></span><span class="lbl">Reporte</span></button>
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarFotoAvance();"><span class="ico"><i class="ph-bold ph-camera"></i></span><span class="lbl">Foto</span></button>
-          <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarColocarTextoPlano();"><span class="ico"><i class="ph-bold ph-text-t"></i></span><span class="lbl">Texto</span></button>
           <button class="tool-card" id="btn-copiar-pieza-directo" onclick="cerrarFlyoutsAbiertos(); toggleModoCopiarPiezaDirecto();"><span class="ico"><i class="ph-bold ph-copy"></i></span><span class="lbl">Copiar pieza</span></button>
           <button class="tool-card" id="btn-modo-exterior" onclick="toggleModoAltoContraste();" title="Sube el contraste del relleno y agrega un borde oscuro grueso a cada pieza -- para leer el plano bajo sol directo"><span class="ico">☀️</span><span class="lbl">Exterior</span></button>
           <button class="tool-card" id="btn-guia-fantasma" onclick="toggleGuiaFantasma();" title="Muestra de fondo, en punteado, el contorno de la última semana cerrada -- para no re-trazar lo mismo ni dejar huecos mientras marcás el avance de hoy"><span class="ico">👻</span><span class="lbl">Guía semana ant.</span></button>
@@ -4033,6 +4043,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <button class="btn btn-danger" id="btn-borrar-texto-plano" style="display:none;" onclick="borrarAnotacionTextoActual()">🗑</button>
       <button class="btn btn-primary" onclick="confirmarPromptTextoPlano()">✓ Colocar</button>
     </div>
+    <button class="btn btn-outline" id="btn-mover-texto-plano" style="display:none;width:100%;margin-top:8px;" onclick="moverEtiquetaTextoPlanoActual()">📍 Mover esta etiqueta a otro lugar</button>
     <button class="btn btn-outline" id="btn-copiar-texto-plano" style="display:none;width:100%;margin-top:8px;" onclick="copiarEtiquetaTextoPlano()">📋 Copiar esta etiqueta a otro lugar</button>
   </div>
 </div>
@@ -20938,6 +20949,7 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   // escuchando para siempre.
   modoColocarReferencia = false;
   modoAnclaTextoPlano = false;
+  modoMoverEtiquetaIdx = null;
   modoCinta = false;
   puntosCinta = [];
   pasoAPasoAutoContorno = false;
@@ -21261,6 +21273,7 @@ function volverASelectorPlanos(){
   // reutilizado) dejaba la trampa lista para el PRÓXIMO plano que se abriera.
   modoColocarReferencia = false;
   modoAnclaTextoPlano = false;
+  modoMoverEtiquetaIdx = null;
   modoCinta = false;
   puntosCinta = [];
   pasoAPasoAutoContorno = false;
@@ -24827,8 +24840,9 @@ function renderRielAdaptativo(){
     <button class="cad-riel-btn" id="btn-drawer-vista" data-nombre-corto="VISTA" onclick="toggleDrawerHerramientas('vista')" title="Vista: acercar, alejar, ajustar, mover"><span class="ico"><i class="ph-bold ph-magnifying-glass"></i></span></button>
     <button class="cad-riel-btn" id="btn-drawer-capas" data-nombre-corto="CAPAS" onclick="toggleDrawerHerramientas('capas')" title="Capas: mostrar u ocultar actividades"><span class="ico"><i class="ph-bold ph-stack"></i></span></button>
     <button class="cad-riel-btn" id="btn-drawer-dibujar" data-nombre-corto="DIBUJAR" onclick="toggleDrawerHerramientas('dibujar')" title="Dibujar: marcar un área nueva"><span class="ico"><i class="ph-bold ph-pencil-simple"></i></span></button>
-    <button class="cad-riel-btn" id="btn-drawer-medir" data-nombre-corto="MEDIR" onclick="toggleDrawerHerramientas('medir')" title="Medir y alinear: cinta métrica, ejes, escala, tabla de medidas"><span class="ico"><i class="ph-bold ph-ruler"></i></span></button>
-    <button class="cad-riel-btn" id="btn-drawer-revisar" data-nombre-corto="REVISAR" onclick="toggleDrawerHerramientas('revisar')" title="Selección y revisión: recuadro, forma libre, interferencias, etiquetas"><span class="ico"><i class="ph-bold ph-check-square"></i></span></button>
+    <button class="cad-riel-btn" id="btn-drawer-medir" data-nombre-corto="MEDIR" onclick="toggleDrawerHerramientas('medir')" title="Medir y alinear: cinta métrica, ejes, escala"><span class="ico"><i class="ph-bold ph-ruler"></i></span></button>
+    <button class="cad-riel-btn" id="btn-drawer-revisar" data-nombre-corto="REVISAR" onclick="toggleDrawerHerramientas('revisar')" title="Selección y revisión: recuadro, forma libre, interferencias"><span class="ico"><i class="ph-bold ph-check-square"></i></span></button>
+    <button class="cad-riel-btn" id="btn-drawer-etiquetas" data-nombre-corto="ETIQUETAS" onclick="toggleDrawerHerramientas('etiquetas')" title="Etiquetas: colocar texto, cuadro de medidas, revisar en lote"><span class="ico"><i class="ph-bold ph-tag"></i></span></button>
     <div class="cad-riel-sep"></div>
     <button class="cad-riel-btn" data-nombre-corto="DESHACER" onclick="deshacerGeneral()" title="Deshace la última acción (cerrar área, editar, eliminar, duplicar, ajustar %, mover o borrar un cuadro de texto)"><span class="ico"><i class="ph-bold ph-arrow-u-up-left"></i></span></button>
     <button class="cad-riel-btn" data-nombre-corto="REHACER" onclick="rehacerGeneral()" title="Rehace lo último que deshiciste (se pierde si después hacés algo nuevo)"><span class="ico"><i class="ph-bold ph-arrow-u-up-right"></i></span></button>
@@ -24871,8 +24885,8 @@ function activarTooltipRiel(btn, nombre){
   btn.addEventListener("pointerleave", ()=>clearTimeout(timer));
 }
 function toggleDrawerHerramientas(cual){
-  const drawers = {vista:"drawer-vista", capas:"drawer-capas", dibujar:"drawer-dibujar", medir:"drawer-medir", revisar:"drawer-revisar", mas:"drawer-mas", herramientasMaestro:"drawer-herramientasMaestro"};
-  const botones = {vista:"btn-drawer-vista", capas:"btn-drawer-capas", dibujar:"btn-drawer-dibujar", medir:"btn-drawer-medir", revisar:"btn-drawer-revisar", mas:"btn-drawer-mas", herramientasMaestro:"btn-drawer-herramientas-maestro"};
+  const drawers = {vista:"drawer-vista", capas:"drawer-capas", dibujar:"drawer-dibujar", medir:"drawer-medir", revisar:"drawer-revisar", etiquetas:"drawer-etiquetas", mas:"drawer-mas", herramientasMaestro:"drawer-herramientasMaestro"};
+  const botones = {vista:"btn-drawer-vista", capas:"btn-drawer-capas", dibujar:"btn-drawer-dibujar", medir:"btn-drawer-medir", revisar:"btn-drawer-revisar", etiquetas:"btn-drawer-etiquetas", mas:"btn-drawer-mas", herramientasMaestro:"btn-drawer-herramientas-maestro"};
   Object.keys(drawers).forEach(k=>{
     const el = document.getElementById(drawers[k]);
     const btn = document.getElementById(botones[k]);
@@ -24889,11 +24903,11 @@ function toggleDrawerHerramientas(cual){
 // cierra solo apenas se toca afuera de él (sin bloquear el toque -- el plano igual responde
 // normal al mismo toque que lo cerró).
 function cerrarFlyoutsAbiertos(){
-  ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-herramientasMaestro"].forEach(id=>{
+  ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro"].forEach(id=>{
     const el = document.getElementById(id);
     if(el && el.style.display!=="none") el.style.display = "none";
   });
-  ["btn-drawer-vista","btn-drawer-capas","btn-drawer-dibujar","btn-drawer-medir","btn-drawer-revisar","btn-drawer-herramientas-maestro"].forEach(id=>{
+  ["btn-drawer-vista","btn-drawer-capas","btn-drawer-dibujar","btn-drawer-medir","btn-drawer-revisar","btn-drawer-etiquetas","btn-drawer-herramientas-maestro"].forEach(id=>{
     const btn = document.getElementById(id);
     if(btn) btn.classList.remove("abierto");
   });
@@ -24901,7 +24915,7 @@ function cerrarFlyoutsAbiertos(){
 (function inicializarCierreFlyoutsPlano(){
   document.addEventListener("pointerdown", (e)=>{
     if(e.target.closest(".cad-flyout, .cad-riel, .cad-type-selector")) return; // el toque fue adentro de un cajón/riel/la píldora que los abre -- no cerrar
-    const hayAlgunoAbierto = ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-herramientasMaestro"].some(id=>{
+    const hayAlgunoAbierto = ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro"].some(id=>{
       const el = document.getElementById(id);
       return el && el.style.display!=="none";
     });
@@ -29338,6 +29352,7 @@ let modoAnclaTextoPlano = false;
 let idxAnotacionEditando = null; // null = colocando una nueva; número = editando una ya existente
 let etiquetaTextoParaCopiar = null; // si viene de "Copiar", se planta directo sin volver a preguntar
 let modoCopiaMultiple = false; // en modo "Copiar", se queda pegado colocando copias hasta que se toque ✕
+let modoMoverEtiquetaIdx = null; // si no es null, el próximo toque en el plano reubica esta etiqueta en vez de crear/copiar una
 // ---------------- Selección múltiple de etiquetas -- para cambiar categoría/estado en lote ----------------
 let modoSeleccionMultiple = false;
 let anotacionesSeleccionadas = new Set(); // guarda ÍNDICES de anotacionesTexto
@@ -29506,6 +29521,7 @@ document.addEventListener("click", (e)=>{
 function iniciarColocarTextoPlano(){
   if(dibujando){ showToast("Terminá o cancelá el dibujo en curso antes de agregar un cuadro de texto."); return; }
   modoAnclaTextoPlano = true;
+  modoMoverEtiquetaIdx = null;
   idxAnotacionEditando = null;
   etiquetaTextoParaCopiar = null;
   modoCopiaMultiple = false;
@@ -29513,8 +29529,23 @@ function iniciarColocarTextoPlano(){
   document.getElementById("barra-ancla-texto").style.display = "flex";
   document.querySelector("#barra-ancla-texto .txt-paso").textContent = "🔤 Tocá dónde va el cuadro de texto";
 }
+// Igual que "Copiar" (misma barra de anclaje, un solo toque para elegir el lugar), pero en vez de
+// plantar una copia nueva, reubica esta misma etiqueta -- la forma explícita de mover que faltaba
+// para quien no descubre que mantener pulsado el cartel también la arrastra.
+function iniciarMoverEtiquetaTextoPlano(idx){
+  if(dibujando){ showToast("Terminá o cancelá el dibujo en curso antes de mover una etiqueta."); return; }
+  modoAnclaTextoPlano = true;
+  modoMoverEtiquetaIdx = idx;
+  idxAnotacionEditando = null;
+  etiquetaTextoParaCopiar = null;
+  modoCopiaMultiple = false;
+  document.getElementById("cad-riel").style.display = "none";
+  document.getElementById("barra-ancla-texto").style.display = "flex";
+  document.querySelector("#barra-ancla-texto .txt-paso").textContent = "📍 Tocá el nuevo lugar para la etiqueta";
+}
 function cancelarAnclaTextoPlano(){
   modoAnclaTextoPlano = false;
+  modoMoverEtiquetaIdx = null;
   modoCopiaMultiple = false;
   etiquetaTextoParaCopiar = null;
   document.getElementById("cad-riel").style.display = "flex";
@@ -29527,6 +29558,21 @@ async function confirmarAnclaTextoPlano(e){
   const rect = canvas.getBoundingClientRect();
   const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
   const x = (punto.clientX-rect.left)*escalaX, y = (punto.clientY-rect.top)*escalaY;
+  if(modoMoverEtiquetaIdx!==null){
+    const idxMover = modoMoverEtiquetaIdx;
+    modoAnclaTextoPlano = false;
+    modoMoverEtiquetaIdx = null;
+    document.getElementById("cad-riel").style.display = "flex";
+    document.getElementById("barra-ancla-texto").style.display = "none";
+    const a = anotacionesTexto[idxMover];
+    if(!a) return;
+    guardarEnHistorial();
+    a.x = x; a.y = y;
+    redibujar();
+    await guardarAnotacionesTexto();
+    showToast("✓ Etiqueta movida");
+    return;
+  }
   if(etiquetaTextoParaCopiar){
     guardarEnHistorial();
     // Cada copia mantiene el MISMO código que la original (ej: todas "V1") -- no se genera uno
@@ -29587,6 +29633,7 @@ function abrirPromptTextoPlano(anclaONull, idxExistente){
     inputOtraCategoria.value = categoriaGuardada;
   }
   document.getElementById("btn-borrar-texto-plano").style.display = esEdicion ? "" : "none";
+  document.getElementById("btn-mover-texto-plano").style.display = esEdicion ? "" : "none";
   document.getElementById("btn-copiar-texto-plano").style.display = esEdicion ? "" : "none";
   document.getElementById("prompt-texto-plano-overlay").style.display = "flex";
   document.getElementById("prompt-texto-plano-overlay").dataset.ancla = anclaONull ? JSON.stringify(anclaONull) : "";
@@ -29730,6 +29777,12 @@ async function borrarAnotacionTextoActual(){
 // y en vez de guardarlos ahí mismo, pasa directo al modo "tocá dónde va" para plantar copias en
 // otros lugares del plano, sin tener que volver a escribir nada. Se queda "pegado" copiando --
 // cada toque planta una copia más -- hasta que se toca ✕ para terminar.
+function moverEtiquetaTextoPlanoActual(){
+  if(idxAnotacionEditando===null) return;
+  const idx = idxAnotacionEditando;
+  cerrarPromptTextoPlano();
+  iniciarMoverEtiquetaTextoPlano(idx);
+}
 function copiarEtiquetaTextoPlano(){
   if(idxAnotacionEditando===null) return;
   const datos = {...anotacionesTexto[idxAnotacionEditando]};
@@ -29757,6 +29810,7 @@ function abrirSelectorEstadoRapido(idx){
     <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Tocá el estado -- se guarda solo.</p>
     <div id="lista-estado-rapido"></div>
     <div class="row-flex" style="margin-top:10px;gap:8px;">
+      <button onclick="moverDesdeSelectorRapido(${idx})" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #10B981;background:transparent;color:#10B981;font-weight:800;font-size:12px;">📍 Mover</button>
       <button onclick="copiarDesdeSelectorRapido(${idx})" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #8B5CF6;background:transparent;color:#8B5CF6;font-weight:800;font-size:12px;">📋 Copiar</button>
       <button id="btn-borrar-rapido" onclick="borrarDesdeSelectorRapido(${idx}, this)" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #DC5A5A;background:transparent;color:#DC5A5A;font-weight:800;font-size:12px;">🗑 Eliminar</button>
     </div>
@@ -29780,8 +29834,12 @@ async function elegirEstadoRapido(idx, estadoId){
   cerrarFotoAvanceOverlay();
   showToast("✓ Estado actualizado");
 }
-// "Copiar" y "Eliminar" directo desde el cuadro rápido -- ya no hace falta entrar a "Editar
-// todo" para esas dos acciones, que son las que más se repiten al ir cargando el plano.
+// "Mover", "Copiar" y "Eliminar" directo desde el cuadro rápido -- ya no hace falta entrar a
+// "Editar todo" para esas acciones, que son las que más se repiten al ir cargando el plano.
+function moverDesdeSelectorRapido(idx){
+  cerrarFotoAvanceOverlay();
+  iniciarMoverEtiquetaTextoPlano(idx);
+}
 function copiarDesdeSelectorRapido(idx){
   cerrarFotoAvanceOverlay();
   idxAnotacionEditando = idx; // copiarEtiquetaTextoPlano() toma la etiqueta desde acá
