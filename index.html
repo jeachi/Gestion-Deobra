@@ -6293,14 +6293,25 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId, diaForzado){
   const trabajadorDeLaFila = trabajadores.find(tt=>tt.id===trabajadorId);
   const obraBaseDeEsteMes = existente.obra || (trabajadorDeLaFila ? trabajadorDeLaFila.obra : "") || "";
   const esPrestamo = !!(filtroActivo && obraBaseDeEsteMes && obraBaseDeEsteMes!==filtroActivo);
-  if(esPrestamo){
+  // Bug real reportado: "seleccioné a alguien que no está activo en la obra (de Baja/Transferido),
+  // confirmo y la fila desaparece". Pasa cuando esa persona es de la MISMA obra que se está
+  // filtrando (no es un préstamo de otra obra -- es alguien de Baja/Transferido que el capataz
+  // quiere traer de vuelta un día puntual): obraBaseDeEsteMes===filtroActivo, así que esPrestamo
+  // salía FALSE y nunca se marcaba prestamoObraActiva/diasObra. Pero filasParaMes() exige
+  // justamente esa marca para no excluir a alguien de Baja/Transferido en un mes posterior a su
+  // baja/transferencia -- sin ella, la fila quedaba afuera apenas se confirmaba y se volvía a
+  // renderizar. El arreglo: la marca "quedate visible bajo este filtro" se pone SIEMPRE que se usa
+  // este flujo explícito (no solo cuando la obra de base es distinta) -- total, el único motivo
+  // para estar usando "Agregar trabajador prestado" en primer lugar es traer a alguien que NO
+  // aparecería solo bajo este filtro, sea por ser de otra obra o por estar de Baja/Transferido.
+  if(filtroActivo){
     diasNuevos.forEach(d=>{ existente.diasObra[d] = filtroActivo; });
     // Además de los días ya tipeados en el instante de elegirlo, se guarda que esta fila quedó
     // prestada a esta obra -- en la Grilla completa (a diferencia de la Carga por día) no hay un
     // solo "día" para forzar, así que si todavía no se tipeó ninguno, diasNuevos queda vacío y sin
     // esto filasParaMes() hacía desaparecer la fila al toque, antes de poder cargarle nada.
     existente.prestamoObraActiva = filtroActivo;
-    if(!existente.obra) existente.obra = obraBaseDeEsteMes;
+    if(!existente.obra) existente.obra = obraBaseDeEsteMes || filtroActivo;
   }else if(!existente.obra){
     existente.obra = reg.obra || filtroActivo || "";
   }
