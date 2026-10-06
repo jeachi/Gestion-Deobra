@@ -3650,7 +3650,14 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <button type="button" id="btn-buscar-actividad-obra" onclick="abrirBuscadorActividadesObra()" style="display:none;width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--vidrio-borde);border-radius:9px;font-size:12.5px;background:rgba(255,255,255,.05);color:#e7eef1;font-weight:700;text-align:left;">🔍 Buscar una actividad en TODOS los planos de la obra...</button>
       <input type="text" id="buscador-planos" placeholder="🔎 Buscar plano por nombre..." oninput="renderSelectorPlanos()" style="display:none;width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--vidrio-borde);border-radius:9px;font-size:12.5px;background:rgba(255,255,255,.05);color:#e7eef1;">
       <div id="pa-selector-planos" style="margin-bottom:10px;"></div>
-      <input type="file" id="input-plano" accept="application/pdf,image/*,.dxf" style="display:none;" onchange="cargarPlano(this.files[0])">
+      <!-- Sin "accept" a propósito: mezclar tipos MIME (application/pdf, image/*) con una
+           extensión suelta (.dxf) en el mismo atributo es un problema conocido en varios
+           navegadores/WebViews de celular -- sobre todo en la app instalada (ícono en pantalla de
+           inicio) -- que directamente deja de abrir el selector nativo de archivos. Confirmado
+           como regresión real: antes de agregar ".dxf" acá abría bien. La validación de qué
+           archivo es (PDF, imagen o DXF) ya la hace procesarNuevoPlano() en JS después de elegirlo,
+           así que no hace falta filtrar en el selector del sistema operativo. -->
+      <input type="file" id="input-plano" style="display:none;" onchange="cargarPlano(this.files[0])">
     </div>
 
     <!-- ---- Vista rápida: lo primero que se ve al elegir un plano -- solo lectura, liviana, sin
