@@ -6330,19 +6330,23 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId, diaForzado){
 // si coincide con alguien ya cargado (sin importar mayúsculas/espacios) se usa ese, y si no, se da
 // de alta de una sola vez (sin tener que ir primero a la pestaña Trabajadores) para no frenar la
 // carga de asistencia de alguien que todavía no está en el listado.
+// Devuelve true/false según si de verdad quedó alguien asignado -- el llamador (más abajo) lo usa
+// para decidir si puede borrar el borrador del nombre tipeado sin perder nada: si acá pasa algo
+// raro y no se asigna a nadie, el borrador tiene que SOBREVIVIR (ver confirmarNombreFilaPrestado).
 async function asignarOCrearTrabajadorAFila(filaId, nombreTexto, dia){
   const nombre = (nombreTexto||"").trim();
-  if(!nombre) return;
+  if(!nombre) return false;
   const existente = trabajadores.find(t=>t.nombre.trim().toLowerCase()===nombre.toLowerCase());
   if(existente){
     asignarTrabajadorAFila(filaId, existente.id, dia);
-    return;
+    return true;
   }
   const filtroEl = document.getElementById("asis-filtro-obra");
   const filtroActivo = filtroEl ? filtroEl.value : "";
   await agregarTrabajadorConfirmado(nombre, "", filtroActivo || obraPredeterminada || "");
   const nuevo = trabajadores.find(t=>t.nombre.trim().toLowerCase()===nombre.toLowerCase());
-  if(nuevo) asignarTrabajadorAFila(filaId, nuevo.id, dia);
+  if(nuevo){ asignarTrabajadorAFila(filaId, nuevo.id, dia); return true; }
+  return false;
 }
 // Historia de este campo (varias vueltas tratando de "adivinar" cuándo aplicar la asignación sola
 // mientras el usuario tipea o elige una sugerencia): primero con "change" nada más, después
@@ -6374,10 +6378,21 @@ async function confirmarNombreFilaPrestado(el, filaId, dia){
   if(!valor){ showToast("Escribí o elegí un nombre primero"); return; }
   if(filasConfirmandoNombrePrestado.has(filaId)) return; // evita doble click mientras se procesa
   filasConfirmandoNombrePrestado.add(filaId);
+  // Antes, si algo fallaba acá (sin conexión al dar de alta a alguien nuevo, cualquier error
+  // inesperado), el borrador se borraba IGUAL al terminar el intento -- el nombre tipeado
+  // desaparecía del campo sin haber quedado asignado a nadie y sin ningún aviso de qué pasó. Ahora
+  // el borrador solo se borra si la asignación realmente se concretó, y cualquier error queda a la
+  // vista (toast) en vez de perderse en silencio -- así, si vuelve a fallar, el aviso dice por qué.
   try{
-    await asignarOCrearTrabajadorAFila(filaId, valor, dia);
-    delete borradorNombrePrestado[filaId];
-  } finally{ filasConfirmandoNombrePrestado.delete(filaId); }
+    const asignado = await asignarOCrearTrabajadorAFila(filaId, valor, dia);
+    if(asignado){
+      delete borradorNombrePrestado[filaId];
+    }else{
+      showToast("⚠ No se pudo confirmar -- probá de nuevo (el nombre sigue en el campo)");
+    }
+  }catch(e){
+    showToast("⚠ Error al confirmar: "+(e && e.message ? e.message : e)+" -- el nombre sigue en el campo, probá de nuevo");
+  }finally{ filasConfirmandoNombrePrestado.delete(filaId); }
 }
 function agregarFilaAsistencia(){
   filasExtra++;
