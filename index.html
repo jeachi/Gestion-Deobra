@@ -3025,6 +3025,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       </div>
       <p class="helper">Escribí un número = horas trabajadas, o un código de la leyenda. El total y las bajas se calculan solos.</p>
       <div class="scroll-hint">👉 Deslizá la tabla hacia la izquierda para ver los días <span class="arrow">→</span></div>
+      <datalist id="lista-grid-nombres-trabajadores"></datalist>
       <div class="grid-wrap">
         <table class="grid" id="tabla-asistencia"></table>
       </div>
@@ -6038,6 +6039,14 @@ async function renderAsistencia(){
   });
   thead += `<th style="min-width:150px;">Observaciones</th><th style="min-width:70px;">Total hs</th><th></th></tr></thead>`;
 
+  // Mismo datalist que ya usa la Carga por día (lista-dia-nombres-trabajadores): sugiere los
+  // nombres ya cargados para elegir rápido, pero el campo de la fila sin trabajador asignado
+  // también acepta escribir el nombre de alguien que todavía no está en el listado. Antes esta
+  // vista usaba un <select> con TODOS los trabajadores -- sin buscador y sin ninguna forma de
+  // escribir un nombre nuevo, a diferencia de la Carga por día.
+  const listaNombresGrid = document.getElementById("lista-grid-nombres-trabajadores");
+  if(listaNombresGrid) listaNombresGrid.innerHTML = trabajadores.map(tt=>`<option value="${esc(tt.nombre)}">`).join("");
+
   const filas = filasParaMes(mesActual);
   let filasHtml = filas.map((f,i)=>{
     const t = f.trabajador;
@@ -6046,10 +6055,10 @@ async function renderAsistencia(){
     const baja = t && esBajaVigente(t);
     const nombreCell = t
       ? `<input class="nombre-input" value="${esc(t.nombre)}" disabled title="Editá el nombre desde la pestaña Trabajadores">`
-      : `<select class="nombre-input" onchange="asignarTrabajadorAFila('${f.id}', this.value)">
-           <option value="">— elegir —</option>
-           ${trabajadores.map(tt=>`<option value="${tt.id}">${esc(tt.nombre)}</option>`).join("")}
-         </select>`;
+      : `<input class="nombre-input" type="text" list="lista-grid-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
+           oninput="onInputNombreFilaDia(this, '${f.id}')"
+           onchange="onChangeNombreFilaDia(this, '${f.id}')" autocomplete="off"
+           onkeydown="if(event.key==='Enter'){ this.blur(); }">`;
     const catCell = t ? esc(t.categoria) : "";
     const obraVal = reg.obra || (t?t.obra:"");
     let diasHtml = "";
@@ -6313,20 +6322,31 @@ async function asignarOCrearTrabajadorAFila(filaId, nombreTexto, dia){
 // "data-asignado" en el propio campo evita además que un "input" y un "change" que lleguen los dos
 // terminen aplicando la asignación dos veces.
 const timersAsignacionNombreFilaDia = {};
-function intentarAsignarNombreFilaDia(el, filaId, dia){
+// "permitirCrear" distingue las dos situaciones: mientras se sigue tipeando (oninput, con el
+// debounce de abajo) solo se auto-asigna si YA hay una coincidencia EXACTA con alguien cargado --
+// así no se crea gente nueva a mitad de tecleo. Pero al SALIR del campo (onchange, se terminó de
+// escribir) había un bug real: si el nombre no coincidía con nadie -- el caso de un trabajador
+// prestado nuevo, que es justamente para lo que existe este campo de texto libre -- esta función
+// cortaba igual sin hacer nada, así que asignarOCrearTrabajadorAFila() (pensada para dar de alta
+// al que no coincide) nunca se llegaba a usar. El nombre tipeado se perdía sin guardar nada --
+// "se desaparece del formulario diario" apenas se pasa a otro campo o de día, porque el input de
+// texto no tiene un valor propio guardado en ningún lado para volver a mostrarlo.
+function intentarAsignarNombreFilaDia(el, filaId, dia, permitirCrear){
   if(el.dataset.asignado) return;
-  const valor = (el.value||"").trim().toLowerCase();
-  if(!valor || !trabajadores.some(tt=>tt.nombre.trim().toLowerCase()===valor)) return;
+  const valor = (el.value||"").trim();
+  if(!valor) return;
+  const yaExiste = trabajadores.some(tt=>tt.nombre.trim().toLowerCase()===valor.toLowerCase());
+  if(!yaExiste && !permitirCrear) return;
   el.dataset.asignado = "1";
-  asignarOCrearTrabajadorAFila(filaId, el.value, dia);
+  asignarOCrearTrabajadorAFila(filaId, valor, dia);
 }
 function onInputNombreFilaDia(el, filaId, dia){
   clearTimeout(timersAsignacionNombreFilaDia[filaId]);
-  timersAsignacionNombreFilaDia[filaId] = setTimeout(()=>intentarAsignarNombreFilaDia(el, filaId, dia), 350);
+  timersAsignacionNombreFilaDia[filaId] = setTimeout(()=>intentarAsignarNombreFilaDia(el, filaId, dia, false), 350);
 }
 function onChangeNombreFilaDia(el, filaId, dia){
   clearTimeout(timersAsignacionNombreFilaDia[filaId]);
-  intentarAsignarNombreFilaDia(el, filaId, dia);
+  intentarAsignarNombreFilaDia(el, filaId, dia, true);
 }
 function agregarFilaAsistencia(){
   filasExtra++;
@@ -6496,6 +6516,7 @@ function renderVistaDia(){
     const nombreHtml = t ? esc(t.nombre) : `<input type="text" list="lista-dia-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
           oninput="onInputNombreFilaDia(this, '${f.id}', ${diaS})"
           onchange="onChangeNombreFilaDia(this, '${f.id}', ${diaS})" autocomplete="off"
+          onkeydown="if(event.key==='Enter'){ this.blur(); }"
           style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;width:100%;">`;
     // Serenos solo trabajan por turno (día/noche) — no tiene sentido ofrecerles horas numéricas
     // ni feriado/lluvia como al resto, así que su fila de atajos queda más corta.
