@@ -6055,10 +6055,13 @@ async function renderAsistencia(){
     const baja = t && esBajaVigente(t);
     const nombreCell = t
       ? `<input class="nombre-input" value="${esc(t.nombre)}" disabled title="Editá el nombre desde la pestaña Trabajadores">`
-      : `<input class="nombre-input" type="text" list="lista-grid-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
-           oninput="onInputNombreFilaDia(this, '${f.id}')"
-           onchange="onChangeNombreFilaDia(this, '${f.id}')" autocomplete="off"
-           onkeydown="if(event.key==='Enter'){ this.blur(); }">`;
+      : `<div style="display:flex;gap:4px;align-items:center;">
+           <input class="nombre-input" type="text" list="lista-grid-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
+             autocomplete="off" style="flex:1;min-width:0;"
+             onkeydown="if(event.key==='Enter'){ event.preventDefault(); confirmarNombreFilaPrestado(this, '${f.id}'); }">
+           <button type="button" title="Confirmar trabajador prestado" onclick="confirmarNombreFilaPrestado(this.previousElementSibling, '${f.id}')"
+             style="flex-shrink:0;width:26px;height:26px;border-radius:50%;border:none;background:#8B5CF6;color:#fff;font-weight:800;font-size:13px;line-height:1;">✓</button>
+         </div>`;
     const catCell = t ? esc(t.categoria) : "";
     const obraVal = reg.obra || (t?t.obra:"");
     let diasHtml = "";
@@ -6307,46 +6310,25 @@ async function asignarOCrearTrabajadorAFila(filaId, nombreTexto, dia){
   const nuevo = trabajadores.find(t=>t.nombre.trim().toLowerCase()===nombre.toLowerCase());
   if(nuevo) asignarTrabajadorAFila(filaId, nuevo.id, dia);
 }
-// Bug real (reportado en Android, tanto tipeando el nombre a mano como tocando una sugerencia del
-// datalist): si alguien YA cargado tiene un nombre que es PREFIJO exacto de otro (ej. "Daniel" y
-// "Daniel Mesa"), tipear "Daniel Mesa" letra por letra pasa, a mitad de camino, por el valor exacto
-// "Daniel" -- y el chequeo de "¿ya coincide con alguien?" de abajo se disparaba en ESE instante,
-// asignando a la persona equivocada (la del nombre corto) y volviendo a dibujar toda la lista a
-// mitad de tecleo, con lo que el campo donde se seguía escribiendo "desaparecía" de golpe. Lo mismo
-// podía pasar al tocar una sugerencia si el navegador/teclado del celular dispara el evento "input"
-// más de una vez durante la selección (con un valor intermedio antes del definitivo).
-// El arreglo: en vez de aplicar la asignación apenas se detecta una coincidencia, se espera un
-// toque (debounce, reiniciado en cada tecleo) y, YA EN ESE MOMENTO, se vuelve a leer el valor actual
-// del campo y se confirma que la coincidencia SIGUE siendo exacta -- si mientras tanto se siguió
-// escribiendo (p.ej. ya dice "Daniel Mesa" y no "Daniel"), no se aplica nada todavía. Un
-// "data-asignado" en el propio campo evita además que un "input" y un "change" que lleguen los dos
-// terminen aplicando la asignación dos veces.
-const timersAsignacionNombreFilaDia = {};
-// "permitirCrear" distingue las dos situaciones: mientras se sigue tipeando (oninput, con el
-// debounce de abajo) solo se auto-asigna si YA hay una coincidencia EXACTA con alguien cargado --
-// así no se crea gente nueva a mitad de tecleo. Pero al SALIR del campo (onchange, se terminó de
-// escribir) había un bug real: si el nombre no coincidía con nadie -- el caso de un trabajador
-// prestado nuevo, que es justamente para lo que existe este campo de texto libre -- esta función
-// cortaba igual sin hacer nada, así que asignarOCrearTrabajadorAFila() (pensada para dar de alta
-// al que no coincide) nunca se llegaba a usar. El nombre tipeado se perdía sin guardar nada --
-// "se desaparece del formulario diario" apenas se pasa a otro campo o de día, porque el input de
-// texto no tiene un valor propio guardado en ningún lado para volver a mostrarlo.
-function intentarAsignarNombreFilaDia(el, filaId, dia, permitirCrear){
-  if(el.dataset.asignado) return;
+// Historia de este campo (varias vueltas tratando de "adivinar" cuándo aplicar la asignación sola
+// mientras el usuario tipea o elige una sugerencia): primero con "change" nada más, después
+// agregando "input" con coincidencia exacta, después con debounce + reconfirmación -- cada vuelta
+// arreglaba un caso puntual pero el reporte seguía siendo el mismo: "se desaparece al escribir o
+// seleccionar", en los dos formularios. El problema de fondo era tratar de ADIVINAR la intención
+// del usuario a partir de eventos del navegador (input/change/blur), que varían entre navegador,
+// teclado y si se tipea a mano o se toca una sugerencia -- cualquier timing raro entre esos eventos
+// y el re-render (que reconstruye toda la fila de cero) podía cortar la asignación a mitad de
+// camino. Ahora es UNA sola acción explícita, sin adivinar nada: escribís o elegís el nombre, y
+// recién al tocar el botón ✓ (o Enter) se confirma. Ya no hace falta debounce, ni distinguir
+// "mientras tipea" de "ya terminó", ni ningún flag para evitar aplicar la asignación dos veces.
+const filasConfirmandoNombrePrestado = new Set();
+async function confirmarNombreFilaPrestado(el, filaId, dia){
   const valor = (el.value||"").trim();
-  if(!valor) return;
-  const yaExiste = trabajadores.some(tt=>tt.nombre.trim().toLowerCase()===valor.toLowerCase());
-  if(!yaExiste && !permitirCrear) return;
-  el.dataset.asignado = "1";
-  asignarOCrearTrabajadorAFila(filaId, valor, dia);
-}
-function onInputNombreFilaDia(el, filaId, dia){
-  clearTimeout(timersAsignacionNombreFilaDia[filaId]);
-  timersAsignacionNombreFilaDia[filaId] = setTimeout(()=>intentarAsignarNombreFilaDia(el, filaId, dia, false), 350);
-}
-function onChangeNombreFilaDia(el, filaId, dia){
-  clearTimeout(timersAsignacionNombreFilaDia[filaId]);
-  intentarAsignarNombreFilaDia(el, filaId, dia, true);
+  if(!valor){ showToast("Escribí o elegí un nombre primero"); return; }
+  if(filasConfirmandoNombrePrestado.has(filaId)) return; // evita doble click mientras se procesa
+  filasConfirmandoNombrePrestado.add(filaId);
+  try{ await asignarOCrearTrabajadorAFila(filaId, valor, dia); }
+  finally{ filasConfirmandoNombrePrestado.delete(filaId); }
 }
 function agregarFilaAsistencia(){
   filasExtra++;
@@ -6505,19 +6487,16 @@ function renderVistaDia(){
     // es un campo de TEXTO LIBRE, no un <select> -- con el datalist de arriba sugiere los nombres
     // ya cargados para elegir rápido, pero también se puede escribir el nombre de alguien que
     // todavía no está en el listado (se da de alta de una sola vez, sin ir antes a Trabajadores).
-    // OJO: elegir una sugerencia del datalist con el mouse dispara "input" pero NO "change" hasta
-    // que el campo pierde el foco (comportamiento de los navegadores) -- quedaba la sensación de
-    // que "no aplicaba" porque había que tocar afuera para que surtiera efecto. Por eso además de
-    // "onchange" (cubre cuando se termina de escribir un nombre nuevo y se sale del campo) se
-    // chequea con cada tecleo ("oninput") si el texto ya coincide EXACTO con alguien del listado --
-    // si coincide, se aplica solo, sin tener que salir del campo. Ver intentarAsignarNombreFilaDia
-    // (más arriba) por qué esto espera un toque (debounce) y vuelve a confirmar la coincidencia
-    // recién en ese momento, en vez de aplicar apenas se detecta.
-    const nombreHtml = t ? esc(t.nombre) : `<input type="text" list="lista-dia-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
-          oninput="onInputNombreFilaDia(this, '${f.id}', ${diaS})"
-          onchange="onChangeNombreFilaDia(this, '${f.id}', ${diaS})" autocomplete="off"
-          onkeydown="if(event.key==='Enter'){ this.blur(); }"
-          style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;width:100%;">`;
+    // Escribir o elegir una sugerencia solo LLENA el campo -- la asignación de verdad recién pasa
+    // al tocar el botón ✓ (o Enter), una sola acción explícita en vez de adivinar a partir de
+    // input/change/blur (ver confirmarNombreFilaPrestado, más arriba).
+    const nombreHtml = t ? esc(t.nombre) : `<div style="display:flex;gap:6px;align-items:center;">
+          <input type="text" list="lista-dia-nombres-trabajadores" placeholder="Elegí o escribí un nombre" autocomplete="off"
+            onkeydown="if(event.key==='Enter'){ event.preventDefault(); confirmarNombreFilaPrestado(this, '${f.id}', ${diaS}); }"
+            style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;flex:1;min-width:0;">
+          <button type="button" title="Confirmar trabajador prestado" onclick="confirmarNombreFilaPrestado(this.previousElementSibling, '${f.id}', ${diaS})"
+            style="flex-shrink:0;width:28px;height:28px;border-radius:50%;border:none;background:#8B5CF6;color:#fff;font-weight:800;font-size:14px;line-height:1;">✓</button>
+        </div>`;
     // Serenos solo trabajan por turno (día/noche) — no tiene sentido ofrecerles horas numéricas
     // ni feriado/lluvia como al resto, así que su fila de atajos queda más corta.
     const chips = esSereno
@@ -25295,12 +25274,38 @@ function iniciarCanvas(){
   construirMapaBordes();
 }
 // ---------------- Imán a los bordes de la imagen (líneas del plano) ----------------
-// Se analiza el plano UNA sola vez al cargarlo -- marca qué píxeles son "línea" (oscuros) contra
-// el fondo blanco. Funciona mejor cuanto más limpio sea el PDF: los exportados de AutoCAD son el
-// caso ideal (líneas continuas, buen contraste), a diferencia de una foto o un escaneo con ruido.
-// Se arma a partir de la imagen SOLA (un canvas aparte), nunca del canvas visible -- si lo
-// sacáramos de ahí, se mezclaría con los polígonos que ya dibujaste encima.
+// Bug real reportado por el usuario ("Seguir pared"/"Auto contorno" no funcionan): el plano no es
+// el PDF/DWG limpio directo -- es UNA FOTO de ese PDF, sacada con el celular en la obra. Un umbral
+// FIJO (180 de siempre) no aguanta la variación real de brillo entre fotos: una foto sacada con
+// poca luz (el celular sube el brillo general con auto-exposición) sobre una línea que en el PDF
+// ya no era negro puro (cierta capa/grosor en gris medio) termina con la "pared" en un gris más
+// claro que el umbral fijo -- construirMapaBordes() no la marca como línea NUNCA, y a partir de
+// ahí buscarBordeCercano/detectarDireccionPared no tienen nada para encontrar. Confirmado con una
+// foto simulada realista (línea gris + desenfoque + más brillo + jpeg de whatsapp): el gris final
+// de la pared terminaba en ~206, por encima del 180 fijo, y "no se encontraba ningún borde".
+// El arreglo: en vez de un número fijo, el umbral se calcula CON el método de Otsu a partir del
+// histograma de grises de ESTA foto en particular -- separa automáticamente "lo oscuro" de "lo
+// claro" según el contraste real que haya, sea cual sea el brillo general con que se sacó la foto.
 let mapaBordesPlano = null;
+function calcularUmbralOtsu(histograma, totalPx){
+  if(!totalPx) return 180;
+  let sumaTotal = 0;
+  for(let i=0;i<256;i++) sumaTotal += i*histograma[i];
+  let pesoOscuro=0, sumaOscuro=0, mejorVarianza=0, mejorUmbral=180;
+  for(let t=0;t<256;t++){
+    pesoOscuro += histograma[t];
+    sumaOscuro += t*histograma[t];
+    const pesoClaro = totalPx - pesoOscuro;
+    if(pesoOscuro===0 || pesoClaro===0) continue;
+    const mediaOscuro = sumaOscuro/pesoOscuro;
+    const mediaClaro = (sumaTotal-sumaOscuro)/pesoClaro;
+    const varianzaEntre = pesoOscuro*pesoClaro*(mediaOscuro-mediaClaro)*(mediaOscuro-mediaClaro);
+    if(varianzaEntre>mejorVarianza){ mejorVarianza=varianzaEntre; mejorUmbral=t; }
+  }
+  // Límites defensivos: si la foto no tiene de verdad dos grupos (todo parejo, sin líneas), Otsu
+  // puede devolver cualquier cosa sin sentido -- no se deja ir a extremos inútiles.
+  return Math.min(235, Math.max(120, mejorUmbral));
+}
 function construirMapaBordes(){
   if(!imagenPlano){ mapaBordesPlano = null; return; }
   const w = imagenPlano.width, h = imagenPlano.height;
@@ -25311,12 +25316,17 @@ function construirMapaBordes(){
   let datos;
   try{ datos = tctx.getImageData(0,0,w,h).data; }
   catch(e){ mapaBordesPlano = null; return; }
-  const mapa = new Uint8Array(w*h);
-  const UMBRAL_OSCURO = 180; // 0-255 -- por debajo de esto, se considera parte de una línea (más permisivo, para que las líneas finas que se aclaran un poco al comprimir a JPEG igual se detecten)
+  const totalPx = w*h;
+  const grises = new Uint8ClampedArray(totalPx);
+  const histograma = new Uint32Array(256);
   for(let i=0, p=0; i<datos.length; i+=4, p++){
-    const gris = datos[i]*0.3 + datos[i+1]*0.59 + datos[i+2]*0.11;
-    if(gris < UMBRAL_OSCURO) mapa[p] = 1;
+    const gris = Math.round(datos[i]*0.3 + datos[i+1]*0.59 + datos[i+2]*0.11);
+    grises[p] = gris;
+    histograma[gris]++;
   }
+  const umbral = calcularUmbralOtsu(histograma, totalPx);
+  const mapa = new Uint8Array(totalPx);
+  for(let p=0; p<totalPx; p++){ if(grises[p] < umbral) mapa[p] = 1; }
   mapaBordesPlano = {datos: mapa, w, h};
 }
 // Busca el píxel de línea más cercano a (x,y), dentro de un radio en píxeles DE PANTALLA (se
