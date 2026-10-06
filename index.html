@@ -5957,7 +5957,16 @@ function actualizarAyudaFiltroObraAsistencia(){
 // completa (donde no hay un solo "día" forzado como en Carga por día) hacía que la fila
 // desapareciera al toque, antes de poder escribirle ni un solo valor.
 function trabajadorTienePrestamoEnObra(reg, obra){
-  if(!obra || !reg) return false;
+  if(!reg) return false;
+  // Bug real reportado: con el filtro de obra en "Todas las obras" (obra===""), esta función
+  // devolvía false de entrada SIN IMPORTAR si el trabajador de verdad tenía un préstamo marcado --
+  // asignarTrabajadorAFila() guarda bien los datos (diasObra/prestamoObraActiva), pero
+  // filasParaMes() exige este chequeo para no excluir a alguien de Baja/Transferido, así que la
+  // fila desaparecía al toque, en silencio (sin ningún error ni toast, porque nada falló: el dato
+  // se guardó bien, solo quedó invisible). Sin un filtro puntual contra qué comparar, cualquier
+  // préstamo activo (sea a la obra que sea) alcanza para no excluir la fila -- se está viendo
+  // "todo", así que un préstamo a cualquier obra cuenta como "está acá".
+  if(!obra) return !!reg.prestamoObraActiva || !!(reg.diasObra && Object.keys(reg.diasObra).length>0);
   if(reg.prestamoObraActiva===obra) return true;
   return !!(reg.diasObra && Object.values(reg.diasObra).includes(obra));
 }
@@ -6306,16 +6315,25 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId, diaForzado){
   // este flujo explícito (no solo cuando la obra de base es distinta) -- total, el único motivo
   // para estar usando "Agregar trabajador prestado" en primer lugar es traer a alguien que NO
   // aparecería solo bajo este filtro, sea por ser de otra obra o por estar de Baja/Transferido.
-  if(filtroActivo){
-    diasNuevos.forEach(d=>{ existente.diasObra[d] = filtroActivo; });
+  //
+  // Segunda vuelta de este mismo bug: lo de arriba seguía exigiendo "filtroActivo" (una obra
+  // PUNTUAL puesta en el selector) para marcar nada -- con el filtro en "Todas las obras"
+  // (filtroActivo===""), nunca se marcaba diasObra/prestamoObraActiva, así que alguien de
+  // Baja/Transferido reactivado como préstamo volvía a desaparecer al confirmar, otra vez SIN
+  // ningún error ni toast (el dato se guardaba bien, solo quedaba invisible). Se usa obraDestino
+  // -- el filtro puntual si hay uno puesto, si no la obra por defecto del capataz -- para poder
+  // marcar la excepción igual aunque no haya ningún filtro activo en ese momento.
+  const obraDestino = filtroActivo || obraPredeterminada || obraBaseDeEsteMes || "";
+  if(obraDestino){
+    diasNuevos.forEach(d=>{ existente.diasObra[d] = obraDestino; });
     // Además de los días ya tipeados en el instante de elegirlo, se guarda que esta fila quedó
     // prestada a esta obra -- en la Grilla completa (a diferencia de la Carga por día) no hay un
     // solo "día" para forzar, así que si todavía no se tipeó ninguno, diasNuevos queda vacío y sin
     // esto filasParaMes() hacía desaparecer la fila al toque, antes de poder cargarle nada.
-    existente.prestamoObraActiva = filtroActivo;
-    if(!existente.obra) existente.obra = obraBaseDeEsteMes || filtroActivo;
+    existente.prestamoObraActiva = obraDestino;
+    if(!existente.obra) existente.obra = obraBaseDeEsteMes || obraDestino;
   }else if(!existente.obra){
-    existente.obra = reg.obra || filtroActivo || "";
+    existente.obra = reg.obra || "";
   }
   existente.days = {...(existente.days||{}), ...(reg.days||{})};
   existente.notaQ1 = existente.notaQ1 || reg.notaQ1 || "";
