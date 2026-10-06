@@ -6073,6 +6073,8 @@ async function renderAsistencia(){
       : `<div style="display:flex;gap:4px;align-items:center;">
            <input class="nombre-input" type="text" list="lista-grid-nombres-trabajadores" placeholder="Elegí o escribí un nombre"
              autocomplete="off" style="flex:1;min-width:0;"
+             value="${esc(borradorNombrePrestado[f.id]||"")}"
+             oninput="recordarBorradorNombrePrestado(this, '${f.id}')"
              onkeydown="if(event.key==='Enter'){ event.preventDefault(); confirmarNombreFilaPrestado(this, '${f.id}'); }">
            <button type="button" title="Confirmar trabajador prestado" onclick="confirmarNombreFilaPrestado(this.previousElementSibling, '${f.id}')"
              style="flex-shrink:0;width:26px;height:26px;border-radius:50%;border:none;background:#8B5CF6;color:#fff;font-weight:800;font-size:13px;line-height:1;">✓</button>
@@ -6354,13 +6356,28 @@ async function asignarOCrearTrabajadorAFila(filaId, nombreTexto, dia){
 // recién al tocar el botón ✓ (o Enter) se confirma. Ya no hace falta debounce, ni distinguir
 // "mientras tipea" de "ya terminó", ni ningún flag para evitar aplicar la asignación dos veces.
 const filasConfirmandoNombrePrestado = new Set();
+// Bug real (reportado con capturas de pantalla): "seleccioné el nombre, apliqué horas, toqué el
+// botón ✓ y se borró todo". Pasaba porque CUALQUIER celda de horas, al tipearla, dispara setDia()
+// -- que termina en renderAsistencia()/renderVistaDia(), reconstruyendo TODA la fila de cero. El
+// campo de texto libre del nombre no tenía ningún "value" guardado mientras no se confirmaba, así
+// que ese re-render lo dejaba en blanco sin que el capataz lo notara -- al tocar ✓ después, ya no
+// había nada que confirmar. El orden "elijo el nombre, después cargo las horas" es perfectamente
+// natural (las capturas lo muestran así), así que el campo tiene que sobrevivir cualquier re-render
+// mientras no se confirmó -- se guarda el borrador acá, en memoria, por fila, y se usa como "value"
+// al volver a dibujar el campo (ver nombreHtml/nombreCell).
+const borradorNombrePrestado = {};
+function recordarBorradorNombrePrestado(el, filaId){
+  borradorNombrePrestado[filaId] = el.value;
+}
 async function confirmarNombreFilaPrestado(el, filaId, dia){
   const valor = (el.value||"").trim();
   if(!valor){ showToast("Escribí o elegí un nombre primero"); return; }
   if(filasConfirmandoNombrePrestado.has(filaId)) return; // evita doble click mientras se procesa
   filasConfirmandoNombrePrestado.add(filaId);
-  try{ await asignarOCrearTrabajadorAFila(filaId, valor, dia); }
-  finally{ filasConfirmandoNombrePrestado.delete(filaId); }
+  try{
+    await asignarOCrearTrabajadorAFila(filaId, valor, dia);
+    delete borradorNombrePrestado[filaId];
+  } finally{ filasConfirmandoNombrePrestado.delete(filaId); }
 }
 function agregarFilaAsistencia(){
   filasExtra++;
@@ -6395,6 +6412,7 @@ function quitarFila(filaId){
   const esFilaVacia = String(filaId).startsWith("extra_") && (!reg || Object.values(reg.days||{}).every(v=>String(v||"").trim()===""));
   if(!esFilaVacia && !confirm("¿Seguro que querés quitar esta fila? Se va a borrar toda la asistencia cargada este mes para esta persona.")) return;
   delete asistenciaCache[mesActual][filaId];
+  delete borradorNombrePrestado[filaId];
   // Las filas "extra" (agregarFilaAsistencia) no tienen identidad propia más allá de cuántas hay --
   // filasParaMes() siempre genera "extra_0".."extra_(filasExtra-1)". Sin bajar el contador acá, una
   // fila extra recién creada (todavía sin trabajador elegido) no se iba de la lista al tocar "×":
@@ -6534,6 +6552,8 @@ function renderVistaDia(){
     // input/change/blur (ver confirmarNombreFilaPrestado, más arriba).
     const nombreHtml = t ? esc(t.nombre) : `<div style="display:flex;gap:6px;align-items:center;">
           <input type="text" list="lista-dia-nombres-trabajadores" placeholder="Elegí o escribí un nombre" autocomplete="off"
+            value="${esc(borradorNombrePrestado[f.id]||"")}"
+            oninput="recordarBorradorNombrePrestado(this, '${f.id}')"
             onkeydown="if(event.key==='Enter'){ event.preventDefault(); confirmarNombreFilaPrestado(this, '${f.id}', ${diaS}); }"
             style="font-weight:700;border:1px solid var(--borde);border-radius:6px;padding:5px;flex:1;min-width:0;">
           <button type="button" title="Confirmar trabajador prestado" onclick="confirmarNombreFilaPrestado(this.previousElementSibling, '${f.id}', ${diaS})"
