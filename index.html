@@ -1857,6 +1857,10 @@ input.input-alerta.input-difiere-plano{border-color:var(--rojo-borde) !important
 /* ---- Fila de "Por día" rediseñada: avatar + chips rápidos, mismo dato de siempre ---- */
 .dia-fila-v2{border:1px solid var(--borde);border-radius:12px;padding:11px 12px;margin-bottom:9px;background:var(--papel);}
 .dia-fila-v2.fila-baja{background:var(--rojo-baja);border-color:var(--rojo-borde);}
+.fila-separador-prestado td{
+  background:#F3EEFF;color:#8B5CF6;font-weight:800;font-size:12.5px;
+  padding:7px 10px;border-top:2px dashed #8B5CF6;
+}
 .dia-fila-v2.weekend{border-left:4px solid #B5651D;}
 .dia-fila-top{display:flex;align-items:center;gap:10px;}
 .avatar-mini{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--verde),var(--cian));flex-shrink:0;}
@@ -1878,6 +1882,11 @@ input.input-alerta.input-difiere-plano{border-color:var(--rojo-borde) !important
   padding:9px 12px;border-radius:var(--radius-sm);margin-bottom:10px;font-size:14px;
 }
 .dia-header-banner.weekend{background:var(--weekend);color:#8A4413;}
+.separador-prestado{
+  display:flex;align-items:center;gap:8px;
+  margin:14px 0 8px;font-size:12.5px;font-weight:800;color:#8B5CF6;
+  border-top:2px dashed #8B5CF6;padding-top:10px;
+}
 .toast{
   position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
   background:var(--tinta);color:#fff;padding:10px 18px;border-radius:14px;font-size:13px;
@@ -6048,10 +6057,16 @@ async function renderAsistencia(){
   if(listaNombresGrid) listaNombresGrid.innerHTML = trabajadores.map(tt=>`<option value="${esc(tt.nombre)}">`).join("");
 
   const filas = filasParaMes(mesActual);
-  let filasHtml = filas.map((f,i)=>{
+  // Mismo criterio que en la Carga por día: el trabajador prestado queda en un grupo aparte, con
+  // su propio encabezado, en vez de mezclado sin aviso entre el plantel de siempre.
+  const filtroObraGrilla = document.getElementById("asis-filtro-obra")?.value || "";
+  filas.forEach(f=>{ if(!data[f.id]) data[f.id] = {obra:(f.trabajador?f.trabajador.obra:""), days:{}, notaQ1:"", notaQ2:""}; });
+  const filaEsPrestamoOPendienteGrilla = f => !f.trabajador || trabajadorTienePrestamoEnObra(data[f.id], filtroObraGrilla);
+  const filasPlantelGrilla = filas.filter(f=>!filaEsPrestamoOPendienteGrilla(f));
+  const filasPrestadasGrilla = filas.filter(filaEsPrestamoOPendienteGrilla);
+  const renderizarFilaGrid = (f, i) => {
     const t = f.trabajador;
-    const reg = data[f.id] || {obra:(t?t.obra:""), days:{}, notaQ1:"", notaQ2:""};
-    data[f.id] = reg; // asegurar existencia
+    const reg = data[f.id];
     const baja = t && esBajaVigente(t);
     const nombreCell = t
       ? `<input class="nombre-input" value="${esc(t.nombre)}" disabled title="Editá el nombre desde la pestaña Trabajadores">`
@@ -6086,7 +6101,13 @@ async function renderAsistencia(){
       <td class="total-cell">${total}</td>
       <td><button class="btn btn-danger btn-sm" onclick="quitarFila('${f.id}')" title="Quitar esta fila del mes">×</button></td>
     </tr>`;
-  }).join("");
+  };
+  const htmlPlantelGrilla = filasPlantelGrilla.map((f,i)=>renderizarFilaGrid(f,i)).join("");
+  const separadorPrestadosGrilla = filasPrestadasGrilla.length>0
+    ? `<tr class="fila-separador-prestado"><td colspan="30">🔁 Trabajador prestado</td></tr>`
+    : "";
+  const htmlPrestadasGrilla = filasPrestadasGrilla.map((f,i)=>renderizarFilaGrid(f, filasPlantelGrilla.length+i)).join("");
+  const filasHtml = htmlPlantelGrilla + separadorPrestadosGrilla + htmlPrestadasGrilla;
 
   tabla.innerHTML = thead + `<tbody>${filasHtml || '<tr><td colspan="20" class="empty-msg">Agregá una fila para empezar a cargar asistencia.</td></tr>'}</tbody>`;
 }
@@ -6475,10 +6496,20 @@ function renderVistaDia(){
   // ya cargados (para elegir rápido) pero el campo acepta cualquier otro nombre escrito a mano.
   const datalistNombres = `<datalist id="lista-dia-nombres-trabajadores">${trabajadores.map(tt=>`<option value="${esc(tt.nombre)}">`).join("")}</datalist>`;
   let html = datalistNombres + avisoFaltas + avisoLluvia + `<div class="dia-header-banner ${finde?'weekend':''}"><span>${nombreFecha}${finde?' · Fin de semana':''}</span><span>${filas.length} persona(s)</span></div>`;
-  html += filas.map(f=>{
+  // El trabajador prestado se mezclaba en el mismo listado que el plantel de siempre, con nada que
+  // lo distinguiera salvo un texto chico adentro de la fila -- fácil de no ver, y confuso cuando la
+  // fila "en blanco" para agregarlo (sin nadie elegido todavía) estaba intercalada entre gente real.
+  // Ahora el plantel de la obra y los préstamos del día quedan en DOS grupos separados, con un
+  // encabezado propio -- mismo criterio que ya usa un PDF o planilla impresa para separar "personal
+  // propio" de "personal de otra obra". Primero se asegura data[f.id] para cada fila (antes de
+  // filtrar) -- si no, una fila recién creada (todavía sin entrada en el cache) se clasificaba mal.
+  filas.forEach(f=>{ if(!data[f.id]) data[f.id] = {obra:(f.trabajador?f.trabajador.obra:""), days:{}, notaQ1:"", notaQ2:""}; });
+  const filaEsPrestamoOPendiente = f => !f.trabajador || !!(data[f.id].diasObra && data[f.id].diasObra[diaS]);
+  const filasPlantel = filas.filter(f=>!filaEsPrestamoOPendiente(f));
+  const filasPrestadas = filas.filter(filaEsPrestamoOPendiente);
+  const renderizarFilaDia = f => {
     const t = f.trabajador;
-    const reg = data[f.id] || {obra:(t?t.obra:""), days:{}, notaQ1:"", notaQ2:""};
-    data[f.id] = reg;
+    const reg = data[f.id];
     const baja = t && esBajaVigente(t);
     const val = reg.days[diaS] || "";
     const cls = claseCodigo(val);
@@ -6538,7 +6569,12 @@ function renderVistaDia(){
         ${chips.map(([lbl,c])=>`<div class="chip-rapido-dia" onclick="aplicarChipDia('${f.id}',${diaS},'${lbl}')">${lbl}</div>`).join("")}
       </div>`}
     </div>`;
-  }).join("") || `<p class="empty-msg">Agregá trabajadores primero en la pestaña Trabajadores.</p>`;
+  };
+  const htmlPlantel = filasPlantel.map(renderizarFilaDia).join("");
+  const htmlPrestadas = filasPrestadas.map(renderizarFilaDia).join("");
+  const separadorPrestados = filasPrestadas.length>0 ? `<div class="separador-prestado">🔁 Trabajador prestado</div>` : "";
+  html += htmlPlantel + separadorPrestados + htmlPrestadas;
+  if(filas.length===0) html += `<p class="empty-msg">Agregá trabajadores primero en la pestaña Trabajadores.</p>`;
   document.getElementById("lista-dia").innerHTML = html;
 }
 // Completa de una sola vez, con "LL", el casillero de este día de cada trabajador cuya obra Clima
@@ -25287,24 +25323,58 @@ function iniciarCanvas(){
 // histograma de grises de ESTA foto en particular -- separa automáticamente "lo oscuro" de "lo
 // claro" según el contraste real que haya, sea cual sea el brillo general con que se sacó la foto.
 let mapaBordesPlano = null;
-function calcularUmbralOtsu(histograma, totalPx){
-  if(!totalPx) return 180;
+function calcularUmbralOtsu(histograma, totalPx, numBins, clampMin, clampMax, valorPorDefecto){
+  numBins = numBins || 256;
+  clampMin = clampMin===undefined ? 120 : clampMin;
+  clampMax = clampMax===undefined ? 235 : clampMax;
+  valorPorDefecto = valorPorDefecto===undefined ? 180 : valorPorDefecto;
+  if(!totalPx) return valorPorDefecto;
   let sumaTotal = 0;
-  for(let i=0;i<256;i++) sumaTotal += i*histograma[i];
-  let pesoOscuro=0, sumaOscuro=0, mejorVarianza=0, mejorUmbral=180;
-  for(let t=0;t<256;t++){
-    pesoOscuro += histograma[t];
-    sumaOscuro += t*histograma[t];
-    const pesoClaro = totalPx - pesoOscuro;
-    if(pesoOscuro===0 || pesoClaro===0) continue;
-    const mediaOscuro = sumaOscuro/pesoOscuro;
-    const mediaClaro = (sumaTotal-sumaOscuro)/pesoClaro;
-    const varianzaEntre = pesoOscuro*pesoClaro*(mediaOscuro-mediaClaro)*(mediaOscuro-mediaClaro);
+  for(let i=0;i<numBins;i++) sumaTotal += i*histograma[i];
+  let pesoBajo=0, sumaBajo=0, mejorVarianza=0, mejorUmbral=valorPorDefecto;
+  for(let t=0;t<numBins;t++){
+    pesoBajo += histograma[t];
+    sumaBajo += t*histograma[t];
+    const pesoAlto = totalPx - pesoBajo;
+    if(pesoBajo===0 || pesoAlto===0) continue;
+    const mediaBajo = sumaBajo/pesoBajo;
+    const mediaAlto = (sumaTotal-sumaBajo)/pesoAlto;
+    const varianzaEntre = pesoBajo*pesoAlto*(mediaBajo-mediaAlto)*(mediaBajo-mediaAlto);
     if(varianzaEntre>mejorVarianza){ mejorVarianza=varianzaEntre; mejorUmbral=t; }
   }
   // Límites defensivos: si la foto no tiene de verdad dos grupos (todo parejo, sin líneas), Otsu
   // puede devolver cualquier cosa sin sentido -- no se deja ir a extremos inútiles.
-  return Math.min(235, Math.max(120, mejorUmbral));
+  return Math.min(clampMax, Math.max(clampMin, mejorUmbral));
+}
+// Bug real reportado por el usuario: "el auto contorno sigue fallando, el plano está en colores".
+// El umbral de Otsu de arriba seguía mirando solo la LUMINANCIA (brillo en escala de grises) de
+// cada píxel -- eso descarta el color por completo. Una línea de un color pastel/claro (celeste,
+// amarillo, verde clarito -- típico de cómo AutoCAD pinta cada capa) puede tener una luminancia
+// parecida a la del fondo aunque sea una línea perfectamente visible a simple vista, porque el
+// OJO sí distingue el color aunque el brillo sea similar. Un umbral que solo mira brillo nunca
+// iba a poder separar eso del fondo, por más adaptativo que sea. El arreglo: en vez de luminancia,
+// se mide qué tan LEJOS está cada píxel del color de fondo real de la foto (no se asume blanco
+// puro -- se estima con estimarColorDeFondo(), por si el papel/pantalla tiene un tono crema o
+// grisáceo) usando distancia de color (RGB), y Otsu decide el umbral sobre ESA distancia -- así
+// cualquier color claramente distinto del fondo cuenta como "línea", sin importar si es oscuro o
+// un color clarito con buen contraste visual pero poca diferencia de brillo.
+function estimarColorDeFondo(datos, w, h){
+  const baldes = new Map();
+  const pasoX = Math.max(1, Math.floor(w/150)), pasoY = Math.max(1, Math.floor(h/150));
+  for(let y=0; y<h; y+=pasoY){
+    for(let x=0; x<w; x+=pasoX){
+      const i = (y*w+x)*4;
+      const r=datos[i], g=datos[i+1], b=datos[i+2];
+      const clave = (r>>4)+","+(g>>4)+","+(b>>4); // agrupa colores parecidos (16 niveles por canal)
+      const act = baldes.get(clave);
+      if(act){ act.n++; act.r+=r; act.g+=g; act.b+=b; }
+      else baldes.set(clave, {n:1, r, g, b});
+    }
+  }
+  let mejor = null;
+  for(const v of baldes.values()){ if(!mejor || v.n>mejor.n) mejor = v; }
+  if(!mejor) return {r:255,g:255,b:255};
+  return { r: mejor.r/mejor.n, g: mejor.g/mejor.n, b: mejor.b/mejor.n };
 }
 function construirMapaBordes(){
   if(!imagenPlano){ mapaBordesPlano = null; return; }
@@ -25317,16 +25387,19 @@ function construirMapaBordes(){
   try{ datos = tctx.getImageData(0,0,w,h).data; }
   catch(e){ mapaBordesPlano = null; return; }
   const totalPx = w*h;
-  const grises = new Uint8ClampedArray(totalPx);
-  const histograma = new Uint32Array(256);
+  const fondo = estimarColorDeFondo(datos, w, h);
+  const DIST_MAX = 441; // distancia euclídea máxima posible entre dos colores RGB (negro-blanco)
+  const distancias = new Uint16Array(totalPx);
+  const histograma = new Uint32Array(DIST_MAX+1);
   for(let i=0, p=0; i<datos.length; i+=4, p++){
-    const gris = Math.round(datos[i]*0.3 + datos[i+1]*0.59 + datos[i+2]*0.11);
-    grises[p] = gris;
-    histograma[gris]++;
+    const dr = datos[i]-fondo.r, dg = datos[i+1]-fondo.g, db = datos[i+2]-fondo.b;
+    const dist = Math.min(DIST_MAX, Math.round(Math.sqrt(dr*dr+dg*dg+db*db)));
+    distancias[p] = dist;
+    histograma[dist]++;
   }
-  const umbral = calcularUmbralOtsu(histograma, totalPx);
+  const umbral = calcularUmbralOtsu(histograma, totalPx, DIST_MAX+1, 35, 400, 70);
   const mapa = new Uint8Array(totalPx);
-  for(let p=0; p<totalPx; p++){ if(grises[p] < umbral) mapa[p] = 1; }
+  for(let p=0; p<totalPx; p++){ if(distancias[p] > umbral) mapa[p] = 1; }
   mapaBordesPlano = {datos: mapa, w, h};
 }
 // Busca el píxel de línea más cercano a (x,y), dentro de un radio en píxeles DE PANTALLA (se
