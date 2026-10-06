@@ -2098,6 +2098,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 #barra-mover-elementos button{width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:16px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
 #barra-mover-elementos button.cerrar-paso{background:rgba(0,0,0,.25);}
 #barra-mover-elementos .txt-paso{color:#fff;font-size:11px;font-weight:700;padding:0 6px;white-space:nowrap;}
+#barra-contorno-interno{position:fixed;display:flex;gap:6px;align-items:center;background:#10B981;border-radius:999px;padding:6px 10px;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:610;transform:translateX(-50%);top:16px;left:50%;}
+#barra-contorno-interno button{width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.18);color:#fff;font-size:16px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+#barra-contorno-interno button.cerrar-paso{background:rgba(0,0,0,.25);}
+#barra-contorno-interno .txt-paso{color:#fff;font-size:11px;font-weight:700;padding:0 6px;white-space:nowrap;}
 #barra-ancla-foto{position:fixed;display:flex;gap:8px;align-items:center;background:#3B82F6;border-radius:999px;padding:7px 8px 7px 16px;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:610;transform:translateX(-50%);top:16px;left:50%;}
 #barra-ancla-foto .txt-paso{color:#fff;font-size:11.5px;font-weight:800;white-space:nowrap;}
 #barra-ancla-foto button{width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,.25);color:#fff;font-size:14px;font-weight:800;flex-shrink:0;}
@@ -3815,6 +3819,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button class="tool-card" onclick="iniciarModoRecorte()" title="Marcá una zona para recortarla de cualquier área que la toque, sea de la actividad que sea"><span class="ico"><i class="ph-bold ph-scissors"></i></span><span class="lbl">Recortar</span></button>
           <button class="tool-card" id="btn-copiar-contorno" onclick="toggleModoCopiarContorno()" title="Copia el contorno exacto de otra pieza ya dibujada -- tocá este botón y después la pieza a copiar"><span class="ico"><i class="ph-bold ph-stamp"></i></span><span class="lbl">Copiar contorno</span></button>
           <button class="tool-card" id="btn-auto-contorno" onclick="toggleModoAutoContorno()" title="Tocá cerca de una línea del plano y sigue todo el contorno solo, hasta cerrarlo"><span class="ico"><i class="ph-bold ph-magic-wand"></i></span><span class="lbl">Auto contorno</span></button>
+          <button class="tool-card" id="btn-contorno-interno" onclick="iniciarContornoPorPuntoInterno()" title="Tocá un punto ADENTRO de una zona cerrada por líneas (como el balde de pintura/HATCH de un CAD) y se detecta el contorno completo de una sola vez -- te muestra una previsualización antes de aplicarlo"><span class="ico"><i class="ph-bold ph-paint-bucket"></i></span><span class="lbl">Contorno interno</span></button>
         </div>
         <div class="grupo-herramientas-tit">Ayudas de trazado</div>
         <div class="grid-tools">
@@ -3918,6 +3923,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <span class="txt-paso" id="txt-mover-elementos">Tocá lo que querés mover</span>
         <button class="cerrar-paso" id="btn-confirmar-mover-elementos" onclick="alConfirmarBarraMoverElementos()" title="Confirmar" style="display:none;">✓</button>
         <button onclick="alCancelarBarraMoverElementos()" title="Cancelar">✕</button>
+      </div>
+      <div id="barra-contorno-interno" style="display:none;">
+        <span class="txt-paso">¿Usar este contorno?</span>
+        <button class="cerrar-paso" onclick="confirmarContornoInterno()" title="Usar este contorno">✓</button>
+        <button onclick="cancelarContornoInterno()" title="Cancelar">✕</button>
       </div>
       <div id="barra-ancla-foto" style="display:none;">
         <span class="txt-paso">📸 Tocá el plano donde estás parado</span>
@@ -5931,6 +5941,16 @@ function actualizarAyudaFiltroObraAsistencia(){
   const ayuda = document.getElementById("asis-filtro-obra-ayuda");
   if(filtroEl && ayuda) ayuda.style.display = filtroEl.value ? "block" : "none";
 }
+// Un trabajador cuenta como "prestado" a una obra si algún día de este mes ya quedó marcado para
+// ella (reg.diasObra) O si se lo acaba de elegir bajo ese filtro todavía sin ningún día tipeado
+// (reg.prestamoObraActiva, ver asignarTrabajadorAFila) -- sin esto último, elegirlo en la Grilla
+// completa (donde no hay un solo "día" forzado como en Carga por día) hacía que la fila
+// desapareciera al toque, antes de poder escribirle ni un solo valor.
+function trabajadorTienePrestamoEnObra(reg, obra){
+  if(!obra || !reg) return false;
+  if(reg.prestamoObraActiva===obra) return true;
+  return !!(reg.diasObra && Object.values(reg.diasObra).includes(obra));
+}
 function filasParaMes(mes){
   const data = asistenciaCache[mes] || {};
   const filtroEl = document.getElementById("asis-filtro-obra");
@@ -5949,7 +5969,7 @@ function filasParaMes(mes){
       // llegar al de más abajo (que sí entiende los préstamos).
       if(mes > mesBaja){
         const reg = data[t.id];
-        const tienePrestamoEnEstaObra = !!(filtroObra && reg && reg.diasObra && Object.values(reg.diasObra).includes(filtroObra));
+        const tienePrestamoEnEstaObra = trabajadorTienePrestamoEnObra(reg, filtroObra);
         if(!tienePrestamoEnEstaObra) return false;
       }
     }
@@ -5967,7 +5987,7 @@ function filasParaMes(mes){
       const mesTransferido = t.fechaTransferido.slice(0,7);
       if(mes > mesTransferido && filtroObra!==t.obra){
         const reg = data[t.id];
-        const tienePrestamoEnEstaObra = !!(filtroObra && reg && reg.diasObra && Object.values(reg.diasObra).includes(filtroObra));
+        const tienePrestamoEnEstaObra = trabajadorTienePrestamoEnObra(reg, filtroObra);
         if(!tienePrestamoEnEstaObra) return false;
       }
     }
@@ -5979,7 +5999,7 @@ function filasParaMes(mes){
     if(filtroObra){
       const reg = data[t.id];
       const obraDeEsteMes = (reg && reg.obra) || t.obra || "";
-      const tienePrestamoEnEstaObra = !!(reg && reg.diasObra && Object.values(reg.diasObra).includes(filtroObra));
+      const tienePrestamoEnEstaObra = trabajadorTienePrestamoEnObra(reg, filtroObra);
       if(obraDeEsteMes!==filtroObra && !tienePrestamoEnEstaObra) return false;
     }
     return true;
@@ -6125,6 +6145,22 @@ function registrarActividadAsistenciaDebounced(){
   ultimoRegistroAsistencia = ahora;
   registrarActividad(`cargó/actualizó asistencia del mes ${mesActual}`);
 }
+// El préstamo de un trabajador a otra obra se marcaba SOLO en el instante de elegirlo en la lista
+// (asignarTrabajadorAFila), con los días que ya tuvieran algo tipeado en ese momento -- un préstamo
+// de varios días seguidos (ej. lunes a jueves) quedaba marcado nada más que el primer día, porque
+// cada día siguiente se tipea acá, en setDia(), que nunca tocaba reg.diasObra. A partir del segundo
+// día no aparecía el aviso "Trabajador prestado" ni el botón para desactivarlo ese día puntual, aun
+// con la fila igual visible (filasParaMes ya no corta por día, corta por el mes entero).
+function marcarDiaComoPrestamoSiCorresponde(reg, trabajador, dia){
+  if(!trabajador) return;
+  const filtroEl = document.getElementById("asis-filtro-obra");
+  const filtroActivo = filtroEl ? filtroEl.value : "";
+  if(!filtroActivo) return;
+  const obraBaseDeEsteMes = reg.obra || trabajador.obra || "";
+  if(!obraBaseDeEsteMes || obraBaseDeEsteMes===filtroActivo) return;
+  if(!reg.diasObra) reg.diasObra = {};
+  reg.diasObra[dia] = filtroActivo;
+}
 function setDia(filaId, dia, valor){
   const val = (valor||"").trim();
   const trabajador = trabajadores.find(t=>t.id===filaId);
@@ -6144,6 +6180,7 @@ function setDia(filaId, dia, valor){
     const reg2 = asistenciaCache[mesActual][filaId];
     if(!reg2) return;
     reg2.days[dia] = valUpper==="PN" ? "Pn" : "Pd";
+    marcarDiaComoPrestamoSiCorresponde(reg2, trabajador, dia);
     guardarAsistenciaMes(mesActual);
     registrarActividadAsistenciaDebounced();
     renderAsistencia();
@@ -6161,6 +6198,7 @@ function setDia(filaId, dia, valor){
   // Se normaliza la coma decimal a punto al guardar -- así el resto del código (totalHorasRango,
   // clasificarValorDia, exportaciones) no tiene que volver a lidiar con las dos notaciones.
   reg.days[dia] = esNumeroPuro(val) ? val.replace(",",".") : valor;
+  if(val!=="") marcarDiaComoPrestamoSiCorresponde(reg, trabajador, dia);
   guardarAsistenciaMes(mesActual);
   registrarActividadAsistenciaDebounced();
   renderAsistencia();
@@ -6224,6 +6262,11 @@ function asignarTrabajadorAFila(filaTempId, trabajadorId, diaForzado){
   const esPrestamo = !!(filtroActivo && obraBaseDeEsteMes && obraBaseDeEsteMes!==filtroActivo);
   if(esPrestamo){
     diasNuevos.forEach(d=>{ existente.diasObra[d] = filtroActivo; });
+    // Además de los días ya tipeados en el instante de elegirlo, se guarda que esta fila quedó
+    // prestada a esta obra -- en la Grilla completa (a diferencia de la Carga por día) no hay un
+    // solo "día" para forzar, así que si todavía no se tipeó ninguno, diasNuevos queda vacío y sin
+    // esto filasParaMes() hacía desaparecer la fila al toque, antes de poder cargarle nada.
+    existente.prestamoObraActiva = filtroActivo;
     if(!existente.obra) existente.obra = obraBaseDeEsteMes;
   }else if(!existente.obra){
     existente.obra = reg.obra || filtroActivo || "";
@@ -6297,6 +6340,12 @@ function desactivarPrestamoDia(filaId, dia){
   const reg = asistenciaCache[mesActual] && asistenciaCache[mesActual][filaId];
   if(!reg || !reg.diasObra || !reg.diasObra[dia]) return;
   delete reg.diasObra[dia];
+  // Si ya no queda ningún día apuntando a la obra que lo había recibido, se saca también la marca
+  // "elegido bajo este filtro, todavía sin días" -- si no, la fila podía seguir apareciendo vacía
+  // para siempre bajo ese filtro aunque el préstamo entero ya se haya desactivado.
+  if(reg.prestamoObraActiva && !Object.values(reg.diasObra).includes(reg.prestamoObraActiva)){
+    delete reg.prestamoObraActiva;
+  }
   guardarAsistenciaMes(mesActual);
   renderAsistencia();
   renderVistaDia();
@@ -20964,6 +21013,8 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   etiquetasParaMoverSeleccionadas = new Set();
   moviendoGrupoOriginal = null;
   seleccionAreaResultado = [];
+  modoContornoInterno = false;
+  previewContornoInterno = null;
   modoCinta = false;
   puntosCinta = [];
   pasoAPasoAutoContorno = false;
@@ -21293,6 +21344,8 @@ function volverASelectorPlanos(){
   etiquetasParaMoverSeleccionadas = new Set();
   moviendoGrupoOriginal = null;
   seleccionAreaResultado = [];
+  modoContornoInterno = false;
+  previewContornoInterno = null;
   modoCinta = false;
   puntosCinta = [];
   pasoAPasoAutoContorno = false;
@@ -25425,6 +25478,196 @@ function autoTrazarContornoCompleto(xTap, yTap){
   }
   return {ok:false, motivo:`Pasé de ${MAX_ESQUINAS} esquinas sin volver al inicio`, puntos};
 }
+// ---------------- Contorno por punto interno (tipo HATCH/boundary de AutoCAD) ----------------
+// A diferencia de "Auto contorno" (que arranca de un punto CERCA de una línea y camina esquina por
+// esquina, paso a paso, confirmando cada vértice), esto detecta el perímetro COMPLETO de una zona
+// cerrada por líneas con un solo toque ADENTRO de ella -- se "inunda" el área libre desde ese punto
+// (como el balde de pintura/hatch de un programa de CAD) y se traza el contorno de lo inundado. Se
+// muestra como previsualización punteada animada (mismo resaltado "hormigas marchando" que ya usa
+// la selección) antes de aplicarlo, con un botón para confirmar o cancelar.
+let modoContornoInterno = false; // esperando el toque del punto interno
+let previewContornoInterno = null; // puntos del contorno ya detectado, mientras se previsualiza
+function iniciarContornoPorPuntoInterno(){
+  if(dibujando){ showToast("Terminá o cancelá el dibujo en curso antes."); return; }
+  if(!mapaBordesPlano){ showToast("No se pudo analizar este plano para detectar líneas -- probá recargarlo, o marcá el área a mano."); return; }
+  const nombreParaMostrar = prepararInicioDibujo();
+  if(!nombreParaMostrar) return;
+  modoContornoInterno = true;
+  const est = document.getElementById("estado-dibujo");
+  est.style.display = "block";
+  est.textContent = `🪣 Tocá un punto ADENTRO de "${nombreParaMostrar}" -- rodeado de líneas por todos lados, no sobre una línea.`;
+}
+function manejarTapContornoInterno(e){
+  e.preventDefault();
+  const punto = e.touches ? e.touches[0] : e;
+  if(!punto) return;
+  const canvas = document.getElementById("canvas-plano");
+  const rect = canvas.getBoundingClientRect();
+  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
+  const x = Math.round((punto.clientX-rect.left)*escalaX), y = Math.round((punto.clientY-rect.top)*escalaY);
+  const resultado = detectarContornoPorPuntoInterno(x, y);
+  if(!resultado.ok){
+    showToast(resultado.motivo, 4200);
+    return; // se queda esperando otro toque -- no cancela todo el flujo por un toque que no encontró nada
+  }
+  previewContornoInterno = resultado.puntos;
+  modoContornoInterno = false;
+  document.getElementById("estado-dibujo").style.display = "none"; // la barra de confirmar de arriba ya dice qué hacer -- la indicación de "tocá un punto" de acá abajo quedaría desactualizada
+  asegurarAnimacionSeleccion();
+  redibujar();
+  mostrarBarraContornoInterno();
+}
+// Recorre el área libre (sin pisar ninguna línea) conectada al punto de partida, con un presupuesto
+// máximo de píxeles -- si se excede, es que la zona NO está realmente cerrada (se escapa por algún
+// hueco en las paredes) y se corta ahí en vez de inundar el plano entero.
+function inundarAreaLibre(datos, w, h, xSeed, ySeed, presupuestoMax){
+  const dentro = new Uint8Array(w*h);
+  dentro[ySeed*w+xSeed] = 1;
+  const pilaX = [xSeed], pilaY = [ySeed];
+  let contador = 1, minX=xSeed, maxX=xSeed, minY=ySeed, maxY=ySeed, tocoElBorde = false;
+  while(pilaX.length){
+    const x = pilaX.pop(), y = pilaY.pop();
+    const vecinos = [[x+1,y],[x-1,y],[x,y+1],[x,y-1]];
+    for(let i=0;i<4;i++){
+      const nx = vecinos[i][0], ny = vecinos[i][1];
+      if(nx<0||nx>=w||ny<0||ny>=h){ tocoElBorde = true; continue; }
+      const idx = ny*w+nx;
+      if(dentro[idx] || datos[idx]) continue; // ya visitado, o es parte de una línea
+      dentro[idx] = 1;
+      contador++;
+      if(contador > presupuestoMax) return {excedido:true};
+      if(nx<minX) minX=nx; if(nx>maxX) maxX=nx;
+      if(ny<minY) minY=ny; if(ny>maxY) maxY=ny;
+      pilaX.push(nx); pilaY.push(ny);
+    }
+  }
+  return {dentro, contador, minX, maxX, minY, maxY, tocoElBorde};
+}
+// Traza el perímetro de la máscara ya inundada, píxel a píxel, con el algoritmo clásico de
+// seguimiento de contorno "Moore-neighbor": arranca en el píxel relleno más arriba-e-izquierda (que
+// siempre queda sobre el borde exterior) y va girando alrededor, en sentido horario, pegado al
+// borde de la mancha, hasta volver al punto de partida.
+function trazarContornoDesdeMascara(dentro, w, h, minX, minY, maxX, maxY){
+  let xIni=-1, yIni=-1;
+  for(let y=minY; y<=maxY && xIni===-1; y++){
+    for(let x=minX; x<=maxX; x++){
+      if(dentro[y*w+x]){ xIni=x; yIni=y; break; }
+    }
+  }
+  if(xIni===-1) return null;
+  const DIRS = [[0,-1],[1,-1],[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1]]; // 8 direcciones, sentido horario
+  const estaDentro = (x,y)=> x>=0&&x<w&&y>=0&&y<h&&dentro[y*w+x];
+  const puntos = [];
+  let x = xIni, y = yIni;
+  let dirBusqueda = 6; // arranca mirando hacia la izquierda (de donde "venimos" al encontrar este píxel escaneando)
+  const MAX_PASOS = (maxX-minX+maxY-minY+4) * 8 + 2000;
+  let pasos = 0;
+  do{
+    puntos.push([x,y]);
+    let encontrado = false;
+    for(let i=0;i<8;i++){
+      const dIdx = (dirBusqueda+i)%8;
+      const nx = x+DIRS[dIdx][0], ny = y+DIRS[dIdx][1];
+      if(estaDentro(nx,ny)){
+        x=nx; y=ny;
+        dirBusqueda = (dIdx+6)%8; // la próxima búsqueda arranca "mirando para atrás" desde por dónde se entró
+        encontrado = true;
+        break;
+      }
+    }
+    if(!encontrado) break; // píxel aislado -- no debería pasar sobre una mancha ya rellenada
+    pasos++;
+  }while((x!==xIni || y!==yIni) && pasos<MAX_PASOS);
+  return puntos;
+}
+// Saca los puntos "de paso" que quedan exactamente en línea recta entre el anterior y el siguiente
+// -- un contorno trazado píxel a píxel tiene miles de esos en cada pared derecha, y sin esto el
+// polígono resultante sería imposible de editar a mano después.
+function simplificarColineales(puntos){
+  if(puntos.length<3) return puntos;
+  const out = [];
+  const n = puntos.length;
+  for(let i=0;i<n;i++){
+    const [x0,y0] = puntos[(i-1+n)%n];
+    const [x1,y1] = puntos[i];
+    const [x2,y2] = puntos[(i+1)%n];
+    const dx1=x1-x0, dy1=y1-y0, dx2=x2-x1, dy2=y2-y1;
+    const cruz = dx1*dy2 - dy1*dx2;
+    if(cruz!==0 || dx1*dx2+dy1*dy2<0) out.push(puntos[i]); // esquina real, o un vértice donde se da vuelta -- se conserva
+  }
+  return out.length>=3 ? out : puntos;
+}
+function distanciaPuntoSegmento(px,py, x1,y1, x2,y2){
+  const dx=x2-x1, dy=y2-y1;
+  const largo2 = dx*dx+dy*dy;
+  if(largo2===0) return Math.hypot(px-x1, py-y1);
+  let t = ((px-x1)*dx + (py-y1)*dy) / largo2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px-(x1+t*dx), py-(y1+t*dy));
+}
+function douglasPeuckerAbierto(puntos, tolerancia){
+  if(puntos.length<3) return puntos;
+  let distMax=0, idxMax=0;
+  const [x1,y1]=puntos[0], [x2,y2]=puntos[puntos.length-1];
+  for(let i=1;i<puntos.length-1;i++){
+    const d = distanciaPuntoSegmento(puntos[i][0],puntos[i][1], x1,y1,x2,y2);
+    if(d>distMax){ distMax=d; idxMax=i; }
+  }
+  if(distMax<=tolerancia) return [puntos[0], puntos[puntos.length-1]];
+  const izq = douglasPeuckerAbierto(puntos.slice(0,idxMax+1), tolerancia);
+  const der = douglasPeuckerAbierto(puntos.slice(idxMax), tolerancia);
+  return izq.slice(0,-1).concat(der);
+}
+// Un Douglas-Peucker normal está pensado para una polilínea ABIERTA -- aplicado tal cual a un
+// anillo cerrado no simplifica bien la "costura" entre el primer y el último punto. Se parte el
+// anillo en dos tramos, usando como anclas los puntos de X mínima y X máxima (bien separados entre
+// sí en cualquier forma razonable), se simplifica cada tramo por separado y se los vuelve a unir.
+function simplificarContornoCerrado(puntos, tolerancia){
+  if(puntos.length<=4) return puntos;
+  let idxA=0, idxB=0, minX=puntos[0][0], maxX=puntos[0][0];
+  puntos.forEach(([x,y],i)=>{ if(x<minX){minX=x; idxA=i;} if(x>maxX){maxX=x; idxB=i;} });
+  if(idxA===idxB) return puntos;
+  const [i1,i2] = idxA<idxB ? [idxA,idxB] : [idxB,idxA];
+  const tramo1 = puntos.slice(i1, i2+1);
+  const tramo2 = puntos.slice(i2).concat(puntos.slice(0,i1+1));
+  const s1 = douglasPeuckerAbierto(tramo1, tolerancia);
+  const s2 = douglasPeuckerAbierto(tramo2, tolerancia);
+  const resultado = s1.slice(0,-1).concat(s2.slice(0,-1));
+  return resultado.length>=3 ? resultado : puntos;
+}
+function detectarContornoPorPuntoInterno(xSeed, ySeed){
+  if(!mapaBordesPlano) return {ok:false, motivo:"No hay un mapa de líneas armado para este plano."};
+  const {datos, w, h} = mapaBordesPlano;
+  if(xSeed<0||xSeed>=w||ySeed<0||ySeed>=h) return {ok:false, motivo:"Ese punto quedó fuera del plano."};
+  if(datos[ySeed*w+xSeed]) return {ok:false, motivo:"Tocaste justo sobre una línea -- tocá un punto LIBRE, adentro de la zona."};
+  const PRESUPUESTO_MAX = 4000000;
+  const relleno = inundarAreaLibre(datos, w, h, xSeed, ySeed, PRESUPUESTO_MAX);
+  if(relleno.excedido) return {ok:false, motivo:"La zona no parece estar cerrada (se escapa por algún hueco) -- revisá que las paredes se toquen entre sí, o marcá el área a mano."};
+  if(relleno.tocoElBorde) return {ok:false, motivo:"La zona toca el borde del plano -- no está del todo cerrada por líneas. Marcála a mano si hace falta."};
+  if(relleno.contador < 20) return {ok:false, motivo:"La zona encontrada es demasiado chica -- probá un punto más adentro."};
+  const crudo = trazarContornoDesdeMascara(relleno.dentro, w, h, relleno.minX, relleno.minY, relleno.maxX, relleno.maxY);
+  if(!crudo || crudo.length<3) return {ok:false, motivo:"No se pudo trazar un contorno válido ahí."};
+  const colineal = simplificarColineales(crudo);
+  const simplificado = simplificarContornoCerrado(colineal, 2.5);
+  if(simplificado.length<3) return {ok:false, motivo:"No se pudo trazar un contorno válido ahí."};
+  return {ok:true, puntos:simplificado};
+}
+function mostrarBarraContornoInterno(){
+  const barra = document.getElementById("barra-contorno-interno");
+  if(barra) barra.style.display = "flex";
+}
+function cancelarContornoInterno(){
+  cancelarDibujo(); // ya se ocupa de limpiar modoContornoInterno/previewContornoInterno y de ocultar esta barra
+}
+function confirmarContornoInterno(){
+  if(!previewContornoInterno) return;
+  puntosActuales = previewContornoInterno;
+  previewContornoInterno = null;
+  detenerAnimacionSeleccion();
+  const barra = document.getElementById("barra-contorno-interno");
+  if(barra) barra.style.display = "none";
+  cerrarPoligono();
+}
 let modoAutoContorno = false;
 // ---------------- Seguimiento automático PASO A PASO ----------------
 // En vez de trazar todo el contorno de una sola vez (y arriesgarse a que se desvíe varias
@@ -26126,6 +26369,7 @@ function iniciarColocarPunto(e){
   if(moviendoPiezaIdx!==null){ iniciarArrastrePiezaCompleta(e); return; }
   if(moviendoGrupoActivo){ iniciarArrastreGrupo(e); return; }
   if(modoMoverTapSeleccionando){ manejarTapParaElegirMover(e); return; }
+  if(modoContornoInterno){ manejarTapContornoInterno(e); return; }
   if(!dibujando || modoMoverActivo){
     // En modo "Mover", mientras hay un área en construcción NO se procesa el doble-tap para
     // editar otra zona: si al desplazar el dedo para paniar el plano dos toques caían por
@@ -28109,6 +28353,11 @@ function cancelarDibujo(){
   contadorPiezasActividadActual = 0;
   terminarPasoAPasoAutoContorno();
   if(modoCopiarContorno){ modoCopiarContorno = false; document.getElementById("btn-copiar-contorno").classList.remove("btn-primary"); actualizarModoFlotante(); }
+  modoContornoInterno = false;
+  previewContornoInterno = null;
+  detenerAnimacionSeleccion();
+  const barraContornoInterno = document.getElementById("barra-contorno-interno");
+  if(barraContornoInterno) barraContornoInterno.style.display = "none";
   document.getElementById("estado-dibujo").style.display = "none";
   document.getElementById("btn-terminar-piezas").style.display = "none";
   document.getElementById("cad-bottom-actions").style.display = "none";
@@ -28286,7 +28535,7 @@ function asegurarAnimacionSeleccion(){
       const overlay = document.getElementById("prompt-generico-overlay");
       if(!overlay || overlay.style.display==="none") piezasResaltadasInterferencia = null;
     }
-    if(indicesConColorResaltados().length===0){ detenerAnimacionSeleccion(); return; }
+    if(indicesConColorResaltados().length===0 && !previewContornoInterno){ detenerAnimacionSeleccion(); return; }
     if(arrastreEnCursoGlobal) return; // no competir con el redibujar() que ya dispara el propio arrastre
     _dashOffsetSeleccion -= 1.5;
     redibujar();
@@ -28314,6 +28563,25 @@ function dibujarResaltadoSeleccion(ctx, canvas){
     ctx.setLineDash([]);
     ctx.restore();
   });
+}
+// Previsualización del contorno detectado por "Contorno interno" (punto adentro de una zona
+// cerrada), con el mismo estilo de "hormigas marchando" de arriba -- todavía no es una pieza real
+// (no está en poligonos), por eso necesita su propio dibujo aparte en vez de reusar indicesConColorResaltados.
+function dibujarPreviewContornoInterno(ctx, canvas){
+  if(!previewContornoInterno) return;
+  ctx.save();
+  ctx.strokeStyle = "#10B981";
+  ctx.fillStyle = "rgba(16,185,129,.18)";
+  ctx.lineWidth = Math.max(2.5, canvas.width/300);
+  ctx.setLineDash([canvas.width/90, canvas.width/160]);
+  ctx.lineDashOffset = _dashOffsetSeleccion;
+  ctx.beginPath();
+  previewContornoInterno.forEach(([x,y],i)=>{ i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 function editarPoligono(idx){
   if(dibujando) cancelarDibujo();
@@ -31557,6 +31825,7 @@ function redibujar(){
     }
   }
   dibujarResaltadoSeleccion(ctx, canvas);
+  dibujarPreviewContornoInterno(ctx, canvas);
 }
 
 // Cajón desplegable de "Actividades y % de avance" -- arranca cerrado para no ocupar pantalla;
