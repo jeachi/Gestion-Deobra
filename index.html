@@ -22443,10 +22443,15 @@ function handleFotoEvidenciaSnapshot(input){
 // Gráfico de líneas con la curva de avance de cada capa a lo largo de las semanas cerradas --
 // mismo estilo (SVG liviano, sin librerías) que ya se usa en el gráfico de asistencia del
 // Dashboard. Con 1 sola semana cerrada no hay curva que trazar todavía, así que no se muestra.
+let chartHistorialSnapshots = null;
 function renderGraficoHistorialSnapshots(){
   const cont = document.getElementById("grafico-snapshots");
   if(!cont) return;
-  if(snapshotsPlanoActual.length<2){ cont.innerHTML = ""; return; }
+  if(snapshotsPlanoActual.length<2){
+    if(chartHistorialSnapshots){ chartHistorialSnapshots.destroy(); chartHistorialSnapshots = null; }
+    cont.innerHTML = "";
+    return;
+  }
   // Se agrupa por capaId (estable ante un renombre de la actividad/capa) en vez de por
   // nombreCompleto -- si no, renombrar una capa le cortaba su propia serie histórica en dos
   // (la vieja quedaba con el nombre anterior y desaparecía, la nueva arrancaba de cero como si
@@ -22468,27 +22473,73 @@ function renderGraficoHistorialSnapshots(){
     });
   });
   const claves = Object.keys(porCapa);
-  if(claves.length===0){ cont.innerHTML = ""; return; }
+  if(claves.length===0){
+    if(chartHistorialSnapshots){ chartHistorialSnapshots.destroy(); chartHistorialSnapshots = null; }
+    cont.innerHTML = "";
+    return;
+  }
   const COLORES = ["#0E9488","#DC5A5A","#F59E0B","#3B82F6","#8B5CF6","#10B981","#EC4899","#6B7280"];
-  const W=320, H=110, PAD=6;
-  const n = snapshotsPlanoActual.length;
-  const xPara = i => n<=1 ? PAD : PAD + i*((W-PAD*2)/(n-1));
-  const yPara = pct => H - PAD - (Math.max(0,Math.min(100,pct))/100)*(H-PAD*2);
+  const n = snapsOrdenados.length;
   const lineas = claves.map((clave,idx)=>{
     const {nombre, valores} = porCapa[clave];
     const color = COLORES[idx % COLORES.length];
-    const pts = valores.map((v,i)=>`${xPara(i)},${yPara(v)}`).join(" ");
-    return {nombre, color, pts, ultimo: valores[valores.length-1]};
+    return {nombre, color, valores, ultimo: valores[valores.length-1]};
   });
   const leyenda = lineas.map(l=>
     `<div class="leyenda-grafico-item"><span class="punto" style="background:${l.color}"></span>${esc(l.nombre)} <b>${l.ultimo}%</b></div>`
   ).join("");
+  // Chart.js (si cargó desde el CDN) da tooltips reales por capa y por hito -- si no está
+  // disponible, se usa el mismo SVG de siempre, para que este gráfico nunca desaparezca.
+  if(typeof Chart === "undefined"){
+    dibujarGraficoHistorialSnapshotsSvgFallback(cont, lineas, n);
+    cont.insertAdjacentHTML("beforeend", `<div class="leyenda-grafico">${leyenda}</div>`);
+    return;
+  }
+  cont.innerHTML = `<div style="height:110px;"><canvas id="grafico-snapshots-canvas"></canvas></div><div class="leyenda-grafico">${leyenda}</div>`;
+  const ctx = document.getElementById("grafico-snapshots-canvas").getContext("2d");
+  if(chartHistorialSnapshots){ chartHistorialSnapshots.destroy(); chartHistorialSnapshots = null; }
+  chartHistorialSnapshots = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: snapsOrdenados.map(s=>s.etiqueta||""),
+      datasets: lineas.map(l=>({
+        label: l.nombre,
+        data: l.valores,
+        borderColor: l.color,
+        backgroundColor: l.color,
+        tension: 0.3,
+        pointRadius: 2.5,
+        pointHoverRadius: 5,
+        borderWidth: 2.2,
+        fill: false,
+      })),
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      scales: {
+        y: { min:0, max:100, ticks:{ callback:v=>v+"%", font:{size:9} }, grid:{color:"rgba(128,128,128,.15)"} },
+        x: { ticks:{ font:{size:9} }, grid:{ display:false } },
+      },
+      plugins: {
+        legend: { display:false }, // la leyenda propia de abajo ya muestra nombre + último %
+        tooltip: { callbacks: { label: (c)=> `${c.dataset.label}: ${c.parsed.y}%` } },
+      },
+    },
+  });
+}
+// Mismo gráfico de siempre (SVG a mano), usado solo si Chart.js no llegó a cargar desde el CDN.
+function dibujarGraficoHistorialSnapshotsSvgFallback(cont, lineas, n){
+  const W=320, H=110, PAD=6;
+  const xPara = i => n<=1 ? PAD : PAD + i*((W-PAD*2)/(n-1));
+  const yPara = pct => H - PAD - (Math.max(0,Math.min(100,pct))/100)*(H-PAD*2);
+  const lineasSvg = lineas.map(l=>({...l, pts: l.valores.map((v,i)=>`${xPara(i)},${yPara(v)}`).join(" ")}));
   cont.innerHTML = `
     <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="background:rgba(255,255,255,.03);border-radius:10px;margin-bottom:6px;">
       ${[25,50,75].map(p=>`<line x1="0" y1="${yPara(p)}" x2="${W}" y2="${yPara(p)}" stroke="rgba(255,255,255,.08)" stroke-width="1"/>`).join("")}
-      ${lineas.map(l=>`<polyline points="${l.pts}" fill="none" stroke="${l.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`).join("")}
+      ${lineasSvg.map(l=>`<polyline points="${l.pts}" fill="none" stroke="${l.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`).join("")}
     </svg>
-    <div class="leyenda-grafico">${leyenda}</div>
   `;
 }
 // Arma el historial agrupado por capa (cada actividad-capa tiene su propia línea de tiempo), con
