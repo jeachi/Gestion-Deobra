@@ -33,6 +33,7 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <!-- Phosphor Icons -- librería MIT. Se sirven desde el propio sitio (carpeta phosphor/, solo
@@ -10449,6 +10450,7 @@ async function renderAvanceObraPlanoDash(){
 }
 // Gráfico de área con el % de asistencia general de los últimos 7 días, calculado con los
 // mismos datos reales que ya usa "Informes" — no inventa nada nuevo, solo lo resume visualmente.
+let chartAsistenciaDash = null;
 async function renderGraficoAsistenciaDash(){
   const cont = document.getElementById("dash-asistencia-grafico");
   if(!cont) return;
@@ -10489,6 +10491,78 @@ async function renderGraficoAsistenciaDash(){
   });
   const conDato = porcentajes.filter(p=>p!==null);
   const promedio = conDato.length>0 ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : null;
+  if(promedio===null){
+    if(chartAsistenciaDash){ chartAsistenciaDash.destroy(); chartAsistenciaDash = null; }
+    cont.innerHTML = `
+      <h2>📈 Asistencia — últimos 7 días</h2>
+      <p class="tiny">Todavía no hay suficientes datos cargados esta semana.</p>
+    `;
+    return;
+  }
+  // Chart.js (si se pudo cargar desde el CDN) da tooltips reales al tocar/pasar el mouse sobre
+  // cada día, además de una animación de entrada más prolija -- si por lo que sea no cargó (sin
+  // señal, CDN bloqueado), se usa el mismo gráfico SVG dibujado a mano que había antes, para que
+  // el Dashboard nunca se quede sin este gráfico.
+  if(typeof Chart === "undefined"){
+    dibujarGraficoAsistenciaSvgFallback(cont, porcentajes);
+    return;
+  }
+  const DIAS_ABREV = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const etiquetas = dias.map(d=>`${DIAS_ABREV[d.getDay()]} ${pad2(d.getDate())}/${pad2(d.getMonth()+1)}`);
+  cont.innerHTML = `
+    <h2>📈 Asistencia — últimos 7 días</h2>
+    <div class="dash-graf-valor">${promedio}%</div>
+    <div class="tiny" style="margin-bottom:8px;">Promedio de la semana</div>
+    <div style="height:80px;"><canvas id="dash-asistencia-canvas"></canvas></div>
+  `;
+  const ctx = document.getElementById("dash-asistencia-canvas").getContext("2d");
+  if(chartAsistenciaDash){ chartAsistenciaDash.destroy(); chartAsistenciaDash = null; }
+  chartAsistenciaDash = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: etiquetas,
+      datasets: [{
+        data: porcentajes,
+        borderColor: "#0A2540",
+        backgroundColor: (contexto)=>{
+          const {ctx:c, chartArea} = contexto.chart;
+          if(!chartArea) return "rgba(14,148,136,.25)";
+          const gradiente = c.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+          gradiente.addColorStop(0, "rgba(14,148,136,.35)");
+          gradiente.addColorStop(1, "rgba(14,148,136,0)");
+          return gradiente;
+        },
+        fill: true,
+        tension: 0.35,
+        spanGaps: true, // igual que antes: un día sin datos no corta la línea, la salta
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        pointBackgroundColor: "#0A2540",
+        borderWidth: 2.5,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      scales: {
+        y: { min:0, max:100, ticks:{ callback:v=>v+"%", font:{size:9} }, grid:{color:"rgba(128,128,128,.15)"} },
+        x: { ticks:{ font:{size:9} }, grid:{ display:false } },
+      },
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          callbacks: {
+            label: (contexto)=> contexto.parsed.y===null ? "Sin datos cargados" : `${contexto.parsed.y}% presentes`,
+          }
+        }
+      }
+    }
+  });
+}
+// Mismo gráfico de siempre (SVG a mano), usado solo si Chart.js no llegó a cargar desde el CDN.
+function dibujarGraficoAsistenciaSvgFallback(cont, porcentajes){
+  const promedio = Math.round(porcentajes.filter(p=>p!==null).reduce((a,b)=>a+b,0) / porcentajes.filter(p=>p!==null).length);
   const W=340,H=80;
   const puntos = porcentajes.map((p,i)=>{
     const x = Math.round(i*(W/6));
@@ -10500,17 +10574,15 @@ async function renderGraficoAsistenciaDash(){
   const poligono = conocidos.length>0 ? `${lineaPts} ${conocidos[conocidos.length-1].x},${H} ${conocidos[0].x},${H}` : "";
   cont.innerHTML = `
     <h2>📈 Asistencia — últimos 7 días</h2>
-    ${promedio===null ? `<p class="tiny">Todavía no hay suficientes datos cargados esta semana.</p>` : `
-      <div class="dash-graf-valor">${promedio}%</div>
-      <div class="tiny" style="margin-bottom:8px;">Promedio de la semana</div>
-      <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-        <defs><linearGradient id="dashAreaGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#0E9488" stop-opacity="0.35"/><stop offset="100%" stop-color="#0E9488" stop-opacity="0"/>
-        </linearGradient></defs>
-        ${poligono ? `<polygon points="${poligono}" fill="url(#dashAreaGrad)"/>` : ""}
-        ${lineaPts ? `<polyline points="${lineaPts}" fill="none" stroke="#0A2540" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>` : ""}
-      </svg>
-    `}
+    <div class="dash-graf-valor">${promedio}%</div>
+    <div class="tiny" style="margin-bottom:8px;">Promedio de la semana</div>
+    <svg width="100%" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs><linearGradient id="dashAreaGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#0E9488" stop-opacity="0.35"/><stop offset="100%" stop-color="#0E9488" stop-opacity="0"/>
+      </linearGradient></defs>
+      ${poligono ? `<polygon points="${poligono}" fill="url(#dashAreaGrad)"/>` : ""}
+      ${lineaPts ? `<polyline points="${lineaPts}" fill="none" stroke="#0A2540" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>` : ""}
+    </svg>
   `;
 }
 // Últimas actividades: reusa el mismo log que ya se muestra en Configuración → Actividad,
