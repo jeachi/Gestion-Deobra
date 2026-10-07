@@ -20927,20 +20927,26 @@ async function cargarPlanoAvanceDatos(){
 function renderSelectorPlanos(){
   const cont = document.getElementById("pa-selector-planos");
   if(!cont) return;
+  // "label for=input-plano" en vez de un div que dispara input.click() por JS: en varias apps
+  // instaladas (ícono en pantalla de inicio) el click programático sobre un <input type=file>
+  // oculto no abre el selector nativo -- un problema real y conocido, confirmado por un usuario
+  // ("toco y no pasa nada", ni siquiera el cuadro de elegir archivo). Un <label> apuntando al
+  // input con "for" delega el click de forma NATIVA del navegador (como tocar el input mismo),
+  // mucho más confiable que un .click() disparado desde JS -- sobre todo en standalone/PWA.
   const tarjetaAgregar = `
-    <div class="plano-card-nuevo" onclick="elegirArchivoPlano()">
+    <label class="plano-card-nuevo" for="input-plano">
       <div class="ico">➕</div>
       Agregar plano
-    </div>`;
+    </label>`;
   // El Plano Maestro es un plano MÁS de la lista (misma imagen, mismo storage) -- solo que en vez
   // de capas de avance por contratista, se le ponen pines de zona con pendientes propios. Se
   // distingue con tipo:"maestro" en vez de contratistaId, y con esta tarjeta separada para crear
   // uno nuevo (por si una obra necesita más de uno -- ej: "Maestro interior" y "Maestro exteriores").
   const tarjetaMaestro = `
-    <div class="plano-card-nuevo maestro" onclick="elegirArchivoPlanoMaestro()">
+    <label class="plano-card-nuevo maestro" for="input-plano" onclick="prepararPlanoMaestro()">
       <div class="ico">🏛️</div>
       Plano Maestro
-    </div>`;
+    </label>`;
   const buscador = document.getElementById("buscador-planos");
   const btnBuscarActividad = document.getElementById("btn-buscar-actividad-obra");
   if(planosIndex.length===0){
@@ -21876,16 +21882,17 @@ async function guardarPlanoAvanceImagen(dataUrlComprimido, imgOriginalParaAltaRe
 }
 // Antes de procesar el archivo, pedimos el nombre del plano (así podés tener varios sin
 // confundirte) -- mismo cuadro propio que ya usamos para duplicar, no prompt() nativo.
-function elegirArchivoPlano(){
-  document.getElementById("input-plano").click();
-}
+// (La tarjeta "Agregar plano" es un <label for="input-plano"> -- el navegador abre el selector
+// de archivo solo, sin necesitar ninguna función acá.)
 // Bandera para que finalizarCargaPlano sepa si lo que se está por guardar es un Plano Maestro
 // (pines) o un plano normal (capas por contratista) -- se limpia apenas se usa.
 let creandoPlanoMaestro = false;
-function elegirArchivoPlanoMaestro(){
+// La tarjeta "Plano Maestro" es un <label for="input-plano"> (igual que "Agregar plano") -- el
+// navegador abre el selector de archivo solo, de forma nativa. Esta función solo prepara el
+// estado ANTES de eso (la bandera y el aviso); no dispara el selector ella misma.
+function prepararPlanoMaestro(){
   creandoPlanoMaestro = true;
-  showToast("📁 Elegí una imagen o PDF para el Plano Maestro...");
-  document.getElementById("input-plano").click();
+  showToast("📁 Elegí una imagen, PDF o DXF para el Plano Maestro...");
 }
 // Reusa la MISMA imagen de un plano que ya tenés (con todos sus niveles, tal como está) para armar
 // un Plano Maestro nuevo -- pensado para no tener que salir a buscar/subir de nuevo el PDF/foto
