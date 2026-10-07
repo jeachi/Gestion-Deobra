@@ -4121,10 +4121,16 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
 <div id="prompt-zona-dxf-overlay" style="display:none;position:fixed;inset:0;background:rgba(10,37,64,.55);z-index:1001;align-items:center;justify-content:center;padding:16px;">
   <div style="background:var(--papel);border-radius:12px;padding:16px;max-width:95vw;width:100%;box-sizing:border-box;">
-    <div style="font-size:13px;font-weight:700;margin-bottom:4px;color:var(--verde-oscuro);">📐 Elegí la zona del plano DXF que querés agregar</div>
-    <div class="helper" style="margin-bottom:8px;">Marcá con el dedo o el mouse el recuadro de la parte que te interesa (ej: una sola planta, si el DXF trae varias). Si el plano tenía algo suelto lejos del resto, ya te dejamos marcada una zona de partida -- podés arrastrar un recuadro nuevo para cambiarla, o tocar "Borrar selección" para usar el plano completo.</div>
-    <div id="dxf-zona-wrap" style="position:relative;max-width:100%;overflow:auto;border:1.5px solid var(--borde);border-radius:8px;touch-action:none;">
-      <canvas id="dxf-zona-canvas-base" style="display:block;max-width:100%;"></canvas>
+    <div class="row-flex" style="justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <div style="font-size:13px;font-weight:700;color:var(--verde-oscuro);">📐 Elegí la zona del plano DXF que querés agregar</div>
+      <div class="row-flex" style="gap:4px;flex:0 0 auto;">
+        <button class="btn btn-outline" style="padding:4px 10px;" onclick="aplicarZoomDxfZona(1/1.4)" title="Alejar">−</button>
+        <button class="btn btn-outline" style="padding:4px 10px;" onclick="aplicarZoomDxfZona(1.4)" title="Acercar">+</button>
+      </div>
+    </div>
+    <div class="helper" style="margin-bottom:8px;">Tocá dos esquinas para marcar el recuadro de la parte que te interesa (ej: una sola planta, si el DXF trae varias) -- arrastrá para moverte por el plano, y usá +/- para acercar y marcar con precisión. Si el plano tenía algo suelto lejos del resto, ya te dejamos marcada una zona de partida -- podés tocar dos esquinas nuevas para cambiarla, o tocar "Borrar selección" para usar el plano completo.</div>
+    <div id="dxf-zona-wrap" style="position:relative;max-width:100%;max-height:65vh;overflow:auto;border:1.5px solid var(--borde);border-radius:8px;">
+      <canvas id="dxf-zona-canvas-base" style="display:block;"></canvas>
       <canvas id="dxf-zona-canvas-seleccion" style="display:block;position:absolute;left:0;top:0;cursor:crosshair;"></canvas>
     </div>
     <div class="row-flex" style="margin-top:10px;">
@@ -22061,12 +22067,10 @@ async function procesarNuevoPlano(file, nombre){
     }
     const resultadoZona = await elegirZonaDxf(parsed);
     if(!resultadoZona) return; // canceló el selector de zona
-    abrirEditorMarcado(resultadoZona.dataUrl, async (dataUrlEditado, seModifico)=>{
-      // Si se recortó o giró a mano en este paso, las líneas vectoriales guardadas ya NO
-      // coinciden con el encuadre final de la imagen -- se descartan y el plano queda como
-      // imagen nada más (mismo comportamiento de siempre), en vez de guardar algo desalineado.
-      await finalizarCargaPlano(dataUrlEditado, nombre, seModifico ? null : resultadoZona.vectorData);
-    }, true);
+    // A diferencia de un PDF o una foto, un DXF NO pasa por el editor de recortar/girar: ya se
+    // elige la zona en el paso anterior, y pasar por ese editor forzaba a guardar todo como
+    // imagen (pixelada al acercar) en vez de las líneas vectoriales reales.
+    await finalizarCargaPlano(resultadoZona.dataUrl, nombre, resultadoZona.vectorData);
     return;
   }
   let paginas = [1];
@@ -25232,38 +25236,35 @@ function calcularZonaPrincipalDxf(parsed, fraccion){
   return {minX,minY,maxX,maxY};
 }
 // ---------------- Selector de zona del DXF a importar ----------------
-// El usuario puede marcar con el dedo/mouse el recuadro de la parte del plano que le interesa
-// (ej: una sola planta, si el DXF trae varias una al lado de la otra) -- arranca con una zona
-// "principal" ya sugerida (ver calcularZonaPrincipalDxf) para no largar de una pantalla en blanco.
+// El usuario marca con dos toques (primera esquina, segunda esquina) el recuadro de la parte del
+// plano que le interesa (ej: una sola planta, si el DXF trae varias una al lado de la otra) --
+// arranca con una zona "principal" ya sugerida (ver calcularZonaPrincipalDxf) para no largar de
+// una pantalla en blanco. Tiene zoom (+/-) para marcar con precisión en planos con mucho detalle;
+// como arrastrar ahora sirve para desplazarse (con zoom, el dibujo no entra entero en pantalla),
+// la selección es por toques en vez de por arrastre de un recuadro.
 // Devuelve un dataURL ya dibujado (PNG), o null si se canceló.
 let dxfZonaActual = null;       // {primitivas, minX, minY, maxX, maxY} del DXF recién leído
 let dxfZonaRectSeleccion = null; // {minX,minY,maxX,maxY} en unidades DXF, o null = "todo el plano"
+let dxfZonaPrimeraEsquina = null; // [x,y] en unidades DXF -- primer toque, esperando el segundo
 let dxfZonaResolver = null;
 let dxfZonaTransformVista = null;
+let dxfZonaBaseAncho = 0, dxfZonaBaseAlto = 0; // tamaño del canvas a zoom 1 (ajustado al ancho disponible)
+let dxfZonaZoomNivel = 1;
 function elegirZonaDxf(parsed){
   return new Promise(resolve=>{
     dxfZonaActual = parsed;
     dxfZonaRectSeleccion = null;
+    dxfZonaPrimeraEsquina = null;
+    dxfZonaZoomNivel = 1;
     dxfZonaResolver = resolve;
     document.getElementById("prompt-zona-dxf-overlay").style.display = "flex";
     requestAnimationFrame(()=>{
       const wrap = document.getElementById("dxf-zona-wrap");
       const anchoDisponible = Math.max(200, Math.min(wrap.parentElement.clientWidth - 4, 860));
       const anchoDxf = Math.max(1e-6, parsed.maxX-parsed.minX), altoDxf = Math.max(1e-6, parsed.maxY-parsed.minY);
-      const anchoCanvas = Math.round(anchoDisponible);
-      const altoCanvas = Math.max(160, Math.min(600, Math.round(anchoCanvas * altoDxf/anchoDxf)));
-      const base = document.getElementById("dxf-zona-canvas-base");
-      const sel = document.getElementById("dxf-zona-canvas-seleccion");
-      base.width = sel.width = anchoCanvas;
-      base.height = sel.height = altoCanvas;
-      base.style.width = sel.style.width = anchoCanvas+"px";
-      base.style.height = sel.style.height = altoCanvas+"px";
-      dxfZonaTransformVista = calcularTransformDxf(parsed, anchoCanvas, altoCanvas);
-      const ctxBase = base.getContext("2d");
-      ctxBase.fillStyle = "#ffffff";
-      ctxBase.fillRect(0,0,anchoCanvas,altoCanvas);
-      dibujarPrimitivasDxf(ctxBase, parsed.primitivas, dxfZonaTransformVista);
-      sel.getContext("2d").clearRect(0,0,anchoCanvas,altoCanvas);
+      dxfZonaBaseAncho = Math.round(anchoDisponible);
+      dxfZonaBaseAlto = Math.max(160, Math.min(600, Math.round(dxfZonaBaseAncho * altoDxf/anchoDxf)));
+      redibujarZonaDxfPreview();
       // Si la zona "principal" calculada es bastante más chica que el dibujo entero, vale la pena
       // sugerirla ya marcada -- si es casi del mismo tamaño (un DXF compacto, sin nada suelto
       // lejos), no aporta nada y se deja todo sin marcar.
@@ -25278,6 +25279,42 @@ function elegirZonaDxf(parsed){
       }
     });
   });
+}
+// Redibuja el plano base y la selección actual al tamaño que toque según el zoom -- se llama al
+// abrir el selector y cada vez que cambia el zoom (aplicarZoomDxfZona).
+function redibujarZonaDxfPreview(){
+  const parsed = dxfZonaActual;
+  if(!parsed) return;
+  const anchoCanvas = Math.max(1, Math.round(dxfZonaBaseAncho * dxfZonaZoomNivel));
+  const altoCanvas = Math.max(1, Math.round(dxfZonaBaseAlto * dxfZonaZoomNivel));
+  const base = document.getElementById("dxf-zona-canvas-base");
+  const sel = document.getElementById("dxf-zona-canvas-seleccion");
+  base.width = sel.width = anchoCanvas;
+  base.height = sel.height = altoCanvas;
+  base.style.width = sel.style.width = anchoCanvas+"px";
+  base.style.height = sel.style.height = altoCanvas+"px";
+  dxfZonaTransformVista = calcularTransformDxf(parsed, anchoCanvas, altoCanvas);
+  const ctxBase = base.getContext("2d");
+  ctxBase.fillStyle = "#ffffff";
+  ctxBase.fillRect(0,0,anchoCanvas,altoCanvas);
+  dibujarPrimitivasDxf(ctxBase, parsed.primitivas, dxfZonaTransformVista);
+  sel.getContext("2d").clearRect(0,0,anchoCanvas,altoCanvas);
+  if(dxfZonaRectSeleccion) dxfZonaDibujarRectDesdeDxf(dxfZonaRectSeleccion);
+  else if(dxfZonaPrimeraEsquina) dxfZonaDibujarMarcaEsquina(dxfZonaTransformVista.mapear(dxfZonaPrimeraEsquina[0], dxfZonaPrimeraEsquina[1]));
+}
+// Acerca/aleja el selector de zona (botones +/-), intentando mantener centrado lo que ya se
+// estaba mirando -- si no, cada zoom te tira de vuelta a la esquina de arriba a la izquierda.
+function aplicarZoomDxfZona(factor){
+  if(!dxfZonaActual) return;
+  const wrap = document.getElementById("dxf-zona-wrap");
+  const anchoAntes = dxfZonaBaseAncho*dxfZonaZoomNivel, altoAntes = dxfZonaBaseAlto*dxfZonaZoomNivel;
+  const fraccionX = anchoAntes>0 ? (wrap.scrollLeft + wrap.clientWidth/2) / anchoAntes : 0.5;
+  const fraccionY = altoAntes>0 ? (wrap.scrollTop + wrap.clientHeight/2) / altoAntes : 0.5;
+  dxfZonaZoomNivel = Math.max(1, Math.min(6, dxfZonaZoomNivel*factor));
+  redibujarZonaDxfPreview();
+  const anchoDespues = dxfZonaBaseAncho*dxfZonaZoomNivel, altoDespues = dxfZonaBaseAlto*dxfZonaZoomNivel;
+  wrap.scrollLeft = Math.max(0, fraccionX*anchoDespues - wrap.clientWidth/2);
+  wrap.scrollTop = Math.max(0, fraccionY*altoDespues - wrap.clientHeight/2);
 }
 function dxfZonaPxACoordsDxf(px, py){
   const t = dxfZonaTransformVista;
@@ -25301,44 +25338,51 @@ function dxfZonaDibujarRectEnPantalla(p0, p1){
 }
 // Dibuja el recuadro de selección a partir de coordenadas DXF (no de píxeles de pantalla) -- se
 // usa para mostrar la zona "principal" sugerida apenas se abre el selector, antes de que el
-// usuario toque nada.
+// usuario toque nada, y para redibujar la selección ya elegida cuando cambia el zoom.
 function dxfZonaDibujarRectDesdeDxf(rectDxf){
   const t = dxfZonaTransformVista;
   const [x0,y0] = t.mapear(rectDxf.minX, rectDxf.minY);
   const [x1,y1] = t.mapear(rectDxf.maxX, rectDxf.maxY);
   dxfZonaDibujarRectEnPantalla([x0,y0], [x1,y1]);
 }
-(function(){
-  let arrastrando = false, inicioPx = null;
+// Marca visualmente la primera esquina tocada, mientras se espera el segundo toque.
+function dxfZonaDibujarMarcaEsquina(px){
   const sel = document.getElementById("dxf-zona-canvas-seleccion");
-  const posicionDesdeEvento = (e)=>{
-    const rect = sel.getBoundingClientRect();
-    return [e.clientX-rect.left, e.clientY-rect.top];
-  };
-  sel.addEventListener("pointerdown", e=>{
+  const ctx = sel.getContext("2d");
+  ctx.clearRect(0,0,sel.width,sel.height);
+  ctx.save();
+  ctx.strokeStyle = "#8B5CF6"; ctx.fillStyle = "#8B5CF6"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(px[0], px[1], 8, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(px[0], px[1], 2.5, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+(function(){
+  const sel = document.getElementById("dxf-zona-canvas-seleccion");
+  // Un toque marca una esquina; el siguiente toque marca la esquina opuesta y cierra el
+  // recuadro. Se usa "click" (no pointerdown/up) a propósito: si el dedo se arrastró para
+  // desplazarse (scroll nativo del contenedor), el navegador no dispara "click" al soltar --
+  // así un toque para marcar nunca se confunde con un arrastre para moverse por el plano.
+  sel.addEventListener("click", e=>{
     if(!dxfZonaTransformVista) return;
-    arrastrando = true;
-    inicioPx = posicionDesdeEvento(e);
-    sel.setPointerCapture(e.pointerId);
-  });
-  sel.addEventListener("pointermove", e=>{
-    if(!arrastrando) return;
-    dxfZonaDibujarRectEnPantalla(inicioPx, posicionDesdeEvento(e));
-  });
-  sel.addEventListener("pointerup", e=>{
-    if(!arrastrando) return;
-    arrastrando = false;
-    const finPx = posicionDesdeEvento(e);
-    // Un toque sin arrastrar (apenas unos píxeles) no cuenta como selección -- si no, tocar una
-    // vez por error en el recuadro borraba sin querer "usar el plano completo".
-    if(Math.hypot(finPx[0]-inicioPx[0], finPx[1]-inicioPx[1]) < 6){ dxfZonaRectSeleccion = null; return; }
-    const [x0,y0] = dxfZonaPxACoordsDxf(inicioPx[0], inicioPx[1]);
-    const [x1,y1] = dxfZonaPxACoordsDxf(finPx[0], finPx[1]);
-    dxfZonaRectSeleccion = {minX: Math.min(x0,x1), maxX: Math.max(x0,x1), minY: Math.min(y0,y1), maxY: Math.max(y0,y1)};
+    const rect = sel.getBoundingClientRect();
+    const px = e.clientX-rect.left, py = e.clientY-rect.top;
+    const coords = dxfZonaPxACoordsDxf(px, py);
+    if(!dxfZonaPrimeraEsquina){
+      dxfZonaRectSeleccion = null;
+      dxfZonaPrimeraEsquina = coords;
+      dxfZonaDibujarMarcaEsquina([px,py]);
+    }else{
+      const [x0,y0] = dxfZonaPrimeraEsquina;
+      const [x1,y1] = coords;
+      dxfZonaPrimeraEsquina = null;
+      dxfZonaRectSeleccion = {minX: Math.min(x0,x1), maxX: Math.max(x0,x1), minY: Math.min(y0,y1), maxY: Math.max(y0,y1)};
+      dxfZonaDibujarRectDesdeDxf(dxfZonaRectSeleccion);
+    }
   });
 })();
 function borrarSeleccionZonaDxf(){
   dxfZonaRectSeleccion = null;
+  dxfZonaPrimeraEsquina = null;
   const sel = document.getElementById("dxf-zona-canvas-seleccion");
   sel.getContext("2d").clearRect(0,0,sel.width,sel.height);
 }
@@ -25346,6 +25390,7 @@ function cerrarPromptZonaDxf(){
   document.getElementById("prompt-zona-dxf-overlay").style.display = "none";
   if(dxfZonaResolver) dxfZonaResolver(null);
   dxfZonaActual = null; dxfZonaRectSeleccion = null; dxfZonaTransformVista = null; dxfZonaResolver = null;
+  dxfZonaPrimeraEsquina = null; dxfZonaZoomNivel = 1;
 }
 function confirmarPromptZonaDxf(){
   const parsed = dxfZonaActual;
@@ -25370,12 +25415,11 @@ function confirmarPromptZonaDxf(){
   dibujarPrimitivasDxf(ctxFinal, parsed.primitivas, calcularTransformDxf(zona, anchoCanvas, altoCanvas));
   const dataUrl = canvasFinal.toDataURL("image/png");
   // Además de la imagen (que sigue siendo necesaria para el auto-contorno y como respaldo), se
-  // devuelven las líneas/arcos reales y la zona elegida -- quien llama decide si conviene
-  // guardarlas para poder redibujar el plano nítido en cualquier zoom (ver
-  // redibujarCapaVectorial) o si se descartan (ej: si después se recorta/gira a mano en el editor
-  // de marcado, donde ya no coincidirían con el encuadre final).
+  // devuelven las líneas/arcos reales y la zona elegida, para redibujar el plano nítido en
+  // cualquier zoom (ver redibujarCapaVectorial).
   const vectorData = {primitivas: parsed.primitivas, zona};
   dxfZonaActual = null; dxfZonaRectSeleccion = null; dxfZonaTransformVista = null; dxfZonaResolver = null;
+  dxfZonaPrimeraEsquina = null; dxfZonaZoomNivel = 1;
   if(resolver) resolver({dataUrl, vectorData});
 }
 // Convierte el archivo elegido (PDF o imagen) en un dataURL -- directo, sin pasos de más. Para un
