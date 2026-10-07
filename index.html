@@ -2046,7 +2046,19 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
    nativo del celular) y se comía el segundo toque antes de que llegara a detectarDobleTapEnArea
    -- por eso a veces "no hacía nada". touch-action:manipulation saca ESE gesto puntual, pero deja
    intacto el paneo (que sigue siendo el scroll nativo del contenedor) y el pellizco para zoom. */
-#canvas-plano{touch-action:manipulation;}
+/* z-index explícito (no solo position) para que #canvas-plano quede garantizado arriba de
+   #canvas-plano-vector -- un z-index NEGATIVO en la capa de abajo podía escapar del contexto de
+   apilamiento de #canvas-wrap (que no queda aislado solo por ser position:absolute sin z-index
+   propio) y terminar oculta detrás de algo mucho más grande en la página entera. Con los dos acá
+   en positivo, la comparación queda resuelta siempre adentro de #canvas-wrap, sin ambigüedad. */
+#canvas-plano{touch-action:manipulation;position:relative;z-index:1;}
+/* Capa de fondo vectorial (solo para planos que vinieron de un DXF): se redibuja NÍTIDA en cada
+   cambio de zoom (ver redibujarCapaVectorial), en vez de ser una imagen fija que el navegador
+   estira y pixela. Va en el mismo lugar que #canvas-plano pero detrás (ver z-index arriba).
+   #canvas-plano deja de dibujar la imagen de fondo cuando esta capa está activa (ver redibujar()),
+   dejándola transparente para que se vea esta de abajo -- todo lo demás (anotaciones, polígonos,
+   manijas) sigue exactamente igual que siempre, en el mismo canvas y resolución de siempre.*/
+#canvas-plano-vector{position:absolute;top:0;left:0;z-index:0;pointer-events:none;}
 #capa-manijas{position:absolute;top:0;left:0;pointer-events:none;}
 .manija-vertice{position:absolute;width:30px;height:30px;margin-left:-15px;margin-top:-15px;border-radius:50%;background:#fff;border:4px solid var(--verde);pointer-events:auto;touch-action:none;cursor:grab;box-shadow:0 2px 6px rgba(0,0,0,.3);}
 .manija-lado{position:absolute;width:24px;height:24px;margin-left:-12px;margin-top:-12px;border-radius:6px;background:#3B82F6;border:3px solid #fff;pointer-events:auto;touch-action:none;cursor:move;box-shadow:0 2px 6px rgba(0,0,0,.35);z-index:0;}
@@ -3723,6 +3735,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="cad-viewport" id="cad-viewport">
 
       <div id="canvas-wrap">
+        <canvas id="canvas-plano-vector" style="display:none;"></canvas>
         <canvas id="canvas-plano"></canvas>
         <div id="capa-manijas"></div>
         <div id="capa-porcentajes"></div>
@@ -14574,7 +14587,18 @@ function abrirEditorMarcado(dataUrlOriginal, callback, soloRecorte){
   const ctx = canvas.getContext("2d");
   const img = new Image();
   img.onload = ()=>{
-    const MAXW = 1000;
+    // Bug real: con dibujo libre habilitado (lápiz/círculo/flecha), cada trazo guarda una captura
+    // completa del canvas para poder deshacer -- por eso el ancho de trabajo se achica a 1000px
+    // acá, para no reventar la memoria del celular con varias capturas grandes seguidas. Pero en
+    // modo "solo recorte" (soloRecorte=true, el que usan los planos -- PDF, foto o DXF) no hay
+    // dibujo libre, así que ese límite no hacía falta, y de paso dejaba CUALQUIER plano importado
+    // pegado para siempre a ~1000px de verdad: lo que sale de acá es lo mismo que después se
+    // guarda (comprimirImagenPlano nunca agranda, solo achica si hace falta), así que ahí quedaba
+    // el techo real, sin importar en qué resolución se hubiera generado la imagen original -- el
+    // plano se veía pixelado al hacer zoom pasado ese punto. En modo recorte se permite bastante
+    // más (3000px, la misma resolución "alta" que ya usa este mismo flujo para la copia opcional
+    // en Firebase Storage) ya que no hay guardado de historial de trazos que lo haga pesado.
+    const MAXW = soloRecorte ? 3000 : 1000;
     const factor = img.naturalWidth > MAXW ? MAXW/img.naturalWidth : 1;
     canvas.width = Math.round(img.naturalWidth * factor);
     canvas.height = Math.round(img.naturalHeight * factor);
@@ -14671,10 +14695,15 @@ function confirmarEditorMarcado(){
   const canvas = document.getElementById("marcado-canvas");
   const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
   const cb = marcadoState.callback;
+  // historial arranca con 1 entrada (la imagen tal cual llegó) -- más de eso significa que se
+  // tocó algo (recortar, girar, o dibujar/marcar) antes de confirmar. Lo usa quien llamó para
+  // saber si, en el caso puntual de un plano DXF, las líneas vectoriales que se guardaron aparte
+  // siguen coincidiendo con el encuadre final de esta imagen o no (ver procesarNuevoPlano).
+  const seModifico = marcadoState.historial.length > 1;
   document.getElementById("marcado-modal-overlay").style.display = "none";
   marcadoState.callback = null;
   cancelarRecorte();
-  if(cb) cb(dataUrl);
+  if(cb) cb(dataUrl, seModifico);
 }
 
 /* ==================== OBSERVACIONES DE OBRA (tipo "punch list") ==================== */
@@ -21244,6 +21273,17 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
       }
     }
   }catch(e){ /* no debería pasar si el índice está bien, pero por las dudas no rompemos nada */ }
+  // Si este plano vino de un DXF sin recortar/girar después, trae guardadas sus líneas/arcos
+  // reales -- se cargan acá, ANTES de iniciarCanvas() (que ya redibuja usando esto), para que se
+  // vea nítido desde el primer momento en vez de la imagen fija nada más.
+  primitivasVectorialesPlano = null; zonaVectorialPlano = null;
+  if(planoElegido && planoElegido.vectorial){
+    const datosVectoriales = await cargarPrimitivasVectorialesPlano(obra, id);
+    if(datosVectoriales){
+      primitivasVectorialesPlano = datosVectoriales.primitivas;
+      zonaVectorialPlano = datosVectoriales.zona;
+    }
+  }
   if(modoPlanoMaestro){
     // Un Plano Maestro no tiene capas de avance, calibración ni cuadro de medidas propios -- solo
     // pines. Se salta toda esa carga y va directo a traer los pines.
@@ -21880,6 +21920,60 @@ async function guardarPlanoAvanceImagen(dataUrlComprimido, imgOriginalParaAltaRe
     }catch(e){ console.warn("No se pudo completar la copia en alta resolución del plano:", e); }
   }
 }
+// ---------------- Líneas vectoriales guardadas de un plano DXF (para redibujar nítido en zoom) ----------------
+// Formato compacto en vez de JSON "a lo bruto": un plano real de obra puede tener decenas de
+// miles de puntos, y JSON gasta la mayor parte del peso en comas/corchetes/texto de cada número
+// de punto flotante -- en un DXF real de prueba (32 mil puntos) daba ~600KB así, contra ~350KB
+// empaquetado como números binarios (Float32) en base64. La diferencia importa para no arriesgar
+// el límite de 1MB por documento de Firestore. "conteos" guarda cuántos puntos tiene cada
+// polilínea seguida, para poder separarlas de nuevo al leer -- los propios puntos van todos
+// concatenados en un solo Float32Array (x,y,x,y,...).
+function serializarPrimitivasVectoriales(primitivas){
+  const conteos = primitivas.map(p=>p.pts.length);
+  const totalPts = conteos.reduce((a,b)=>a+b,0);
+  const flat = new Float32Array(totalPts*2);
+  let i=0;
+  for(const p of primitivas) for(const [x,y] of p.pts){ flat[i++]=x; flat[i++]=y; }
+  const bytes = new Uint8Array(flat.buffer);
+  let binario = "";
+  // String.fromCharCode con el array entero desparramado (...bytes) puede pasarse del límite de
+  // argumentos del motor JS en archivos grandes -- de a trozos, nunca falla sin importar el tamaño.
+  const TROZO = 8192;
+  for(let k=0; k<bytes.length; k+=TROZO){
+    binario += String.fromCharCode.apply(null, bytes.subarray(k, k+TROZO));
+  }
+  return {conteos, datosBase64: btoa(binario)};
+}
+function deserializarPrimitivasVectoriales(guardado){
+  const binario = atob(guardado.datosBase64);
+  const bytes = new Uint8Array(binario.length);
+  for(let k=0; k<binario.length; k++) bytes[k] = binario.charCodeAt(k);
+  const flat = new Float32Array(bytes.buffer);
+  const primitivas = [];
+  let i = 0;
+  for(const n of guardado.conteos){
+    const pts = [];
+    for(let k=0; k<n; k++){ pts.push([flat[i], flat[i+1]]); i += 2; }
+    primitivas.push({pts});
+  }
+  return primitivas;
+}
+async function guardarPrimitivasVectorialesPlano(obra, planoId, primitivas, zona){
+  if(!obra || !planoId) return;
+  try{
+    const guardado = serializarPrimitivasVectoriales(primitivas);
+    guardado.zona = zona;
+    await window.storage.set(`plano_avance_vectores_${obra}_${planoId}`, JSON.stringify(guardado), true);
+  }catch(e){ console.warn("No se pudieron guardar las líneas vectoriales del plano -- se sigue viendo como imagen común.", e); }
+}
+async function cargarPrimitivasVectorialesPlano(obra, planoId){
+  try{
+    const r = await window.storage.get(`plano_avance_vectores_${obra}_${planoId}`, true);
+    if(!r || !r.value) return null;
+    const guardado = JSON.parse(r.value);
+    return {primitivas: deserializarPrimitivasVectoriales(guardado), zona: guardado.zona};
+  }catch(e){ return null; }
+}
 // Antes de procesar el archivo, pedimos el nombre del plano (así podés tener varios sin
 // confundirte) -- mismo cuadro propio que ya usamos para duplicar, no prompt() nativo.
 // (La tarjeta "Agregar plano" es un <label for="input-plano"> -- el navegador abre el selector
@@ -21965,10 +22059,13 @@ async function procesarNuevoPlano(file, nombre){
       showToast("Ese DXF no tiene líneas, polilíneas, círculos ni arcos para dibujar -- por ahora es lo único que se puede importar de un DXF.");
       return;
     }
-    const dataUrlCrudo = await elegirZonaDxf(parsed);
-    if(!dataUrlCrudo) return; // canceló el selector de zona
-    abrirEditorMarcado(dataUrlCrudo, async (dataUrlEditado)=>{
-      await finalizarCargaPlano(dataUrlEditado, nombre);
+    const resultadoZona = await elegirZonaDxf(parsed);
+    if(!resultadoZona) return; // canceló el selector de zona
+    abrirEditorMarcado(resultadoZona.dataUrl, async (dataUrlEditado, seModifico)=>{
+      // Si se recortó o giró a mano en este paso, las líneas vectoriales guardadas ya NO
+      // coinciden con el encuadre final de la imagen -- se descartan y el plano queda como
+      // imagen nada más (mismo comportamiento de siempre), en vez de guardar algo desalineado.
+      await finalizarCargaPlano(dataUrlEditado, nombre, seModifico ? null : resultadoZona.vectorData);
     }, true);
     return;
   }
@@ -22031,7 +22128,7 @@ function fechaRelativaCorta(fechaISO){
   if(dias===1) return "ayer";
   return `hace ${dias} días`;
 }
-async function finalizarCargaPlano(dataUrlEditado, nombre){
+async function finalizarCargaPlano(dataUrlEditado, nombre, vectorData){
   const imgEditada = new Image();
   await new Promise((resolve,reject)=>{ imgEditada.onload=resolve; imgEditada.onerror=reject; imgEditada.src=dataUrlEditado; });
   const {img: imgComprimida, dataUrl} = await comprimirImagenPlano(imgEditada);
@@ -22045,17 +22142,24 @@ async function finalizarCargaPlano(dataUrlEditado, nombre){
   // botón de Cerrar/Cancelar el área) aunque no tuviera nada que ver.
   modoPlanoMaestro = esMaestro;
   const contratistaVinculado = (!esMaestro && contratistaOverridePlanoAvance) ? contratistasCache[contratistaOverridePlanoAvance] : null;
+  const esVectorial = !!(vectorData && vectorData.primitivas && vectorData.primitivas.length);
   planosIndex.push({
     id: nuevoId, nombre, fecha: hoyISO(),
     contratistaId: esMaestro ? null : (contratistaOverridePlanoAvance || null),
     contratistaNombre: contratistaVinculado ? contratistaVinculado.nombre : null,
     tipo: esMaestro ? "maestro" : undefined,
-    miniatura: generarMiniaturaPlano(imgComprimida)
+    miniatura: generarMiniaturaPlano(imgComprimida),
+    vectorial: esVectorial || undefined
   });
   await guardarPlanosIndex();
   planoActualId = nuevoId;
   imagenPlano = imgComprimida;
   poligonos = [];
+  // Si viene de un DXF sin tocar (no se recortó/giró a mano después de elegir la zona), se
+  // guardan también las líneas/arcos reales -- eso es lo que deja al plano verse nítido en
+  // cualquier zoom (ver redibujarCapaVectorial) en vez de una imagen fija como cualquier PDF/foto.
+  primitivasVectorialesPlano = esVectorial ? vectorData.primitivas : null;
+  zonaVectorialPlano = esVectorial ? vectorData.zona : null;
   renderSelectorPlanos();
   document.getElementById("card-canvas").style.display = "block";
   // iniciarCanvas() ya decide bien el display de "card-actividades" según modoPlanoMaestro (ver
@@ -22073,6 +22177,7 @@ async function finalizarCargaPlano(dataUrlEditado, nombre){
     renderListaSnapshots();
   }
   await guardarPlanoAvanceImagen(dataUrl, imgEditada);
+  if(esVectorial) await guardarPrimitivasVectorialesPlano(claveObraPlanoAvance(), nuevoId, vectorData.primitivas, vectorData.zona);
   if(!esMaestro) await guardarPlanoAvancePoligonos();
   showToast(`✓ Plano "${nombre}" cargado y guardado`);
   archivoPlanoseleccionado = null;
@@ -23294,6 +23399,13 @@ function asegurarWorkerPdfjs(){
 }
 
 let imagenPlano = null; // Image ya cargada
+// Si el plano actual vino de un DXF sin recortar/girar después (ver finalizarCargaPlano), estas
+// dos quedan con las líneas/arcos reales y la zona (bbox en unidades DXF) que se usó -- lo que
+// permite redibujar el plano nítido en cualquier zoom (ver redibujarCapaVectorial) en vez de
+// depender de la imagen fija de siempre. null en cualquier plano no vectorial (PDF, foto, o un
+// DXF que sí se tocó en el editor de recorte).
+let primitivasVectorialesPlano = null;
+let zonaVectorialPlano = null;
 let poligonos = []; // {nombreCompleto, nombreBase, capa, color, puntos:[[x,y],...], area}
 let anotacionesTexto = []; // {x, y, valor, tipo:"numero"|"texto", unidad} -- cuadros de texto libres (medidas de ventanas, notas, etc), independientes de las capas de avance
 let proyectoMedidas = []; // {categoria, valor, unidad, cantidad} -- lo que dice el contrato/proyecto, para comparar contra lo medido de verdad en el plano
@@ -25240,10 +25352,13 @@ function confirmarPromptZonaDxf(){
   const resolver = dxfZonaResolver;
   document.getElementById("prompt-zona-dxf-overlay").style.display = "none";
   const zona = dxfZonaRectSeleccion || {minX: parsed.minX, minY: parsed.minY, maxX: parsed.maxX, maxY: parsed.maxY};
-  // Misma idea que comprimirImagenPlano (1600px de lado más largo) -- pero calculada DE ENTRADA
-  // acá, dibujando directo a esa resolución, en vez de dibujar gigante y recién después achicar.
+  // A diferencia de una foto, acá el origen es vectorial -- no hay ruido ni borrosidad que una
+  // resolución más alta "revele", así que no hace falta achicar tanto como a una foto para no
+  // pesar de más: 3000px (la misma resolución "alta" que ya usa el resto del flujo de planos)
+  // sigue pesando poco (probado contra un DXF real de 14.7MB: la imagen final da bien por debajo
+  // de 500KB), y se ve mucho más nítido al hacer zoom que los 1600px de antes.
   const anchoDxf = Math.max(1e-6, zona.maxX-zona.minX), altoDxf = Math.max(1e-6, zona.maxY-zona.minY);
-  const maxDim = 1600;
+  const maxDim = 3000;
   let anchoCanvas, altoCanvas;
   if(anchoDxf >= altoDxf){ anchoCanvas = maxDim; altoCanvas = Math.max(1, Math.round(maxDim*altoDxf/anchoDxf)); }
   else{ altoCanvas = maxDim; anchoCanvas = Math.max(1, Math.round(maxDim*anchoDxf/altoDxf)); }
@@ -25254,8 +25369,14 @@ function confirmarPromptZonaDxf(){
   ctxFinal.fillRect(0,0,anchoCanvas,altoCanvas);
   dibujarPrimitivasDxf(ctxFinal, parsed.primitivas, calcularTransformDxf(zona, anchoCanvas, altoCanvas));
   const dataUrl = canvasFinal.toDataURL("image/png");
+  // Además de la imagen (que sigue siendo necesaria para el auto-contorno y como respaldo), se
+  // devuelven las líneas/arcos reales y la zona elegida -- quien llama decide si conviene
+  // guardarlas para poder redibujar el plano nítido en cualquier zoom (ver
+  // redibujarCapaVectorial) o si se descartan (ej: si después se recorta/gira a mano en el editor
+  // de marcado, donde ya no coincidirían con el encuadre final).
+  const vectorData = {primitivas: parsed.primitivas, zona};
   dxfZonaActual = null; dxfZonaRectSeleccion = null; dxfZonaTransformVista = null; dxfZonaResolver = null;
-  if(resolver) resolver(dataUrl);
+  if(resolver) resolver({dataUrl, vectorData});
 }
 // Convierte el archivo elegido (PDF o imagen) en un dataURL -- directo, sin pasos de más. Para un
 // PDF de varias hojas, "pagina" (1 en base) elige cuál -- sin ese parámetro usa la primera,
@@ -25312,6 +25433,37 @@ function aplicarZoom(factor){
   renderAnotacionesTocables();
   if(modoPlanoMaestro) renderPinesMaestro();
   actualizarBarraEscala();
+  redibujarCapaVectorial();
+}
+// Vuelve a dibujar la capa de fondo vectorial (ver primitivasVectorialesPlano) a la resolución de
+// pantalla ACTUAL -- a diferencia de la imagen de siempre (un bitmap fijo que el navegador
+// estira/achica con el zoom, pixelándose pasado cierto punto), esto redibuja las líneas reales
+// cada vez que cambia el zoom, así que un plano venido de un DXF se ve nítido sea cual sea el
+// zoom. Si el plano no es vectorial no hace nada -- la capa queda oculta y canvas-plano sigue
+// mostrando la imagen común, exactamente como siempre.
+function redibujarCapaVectorial(){
+  const capa = document.getElementById("canvas-plano-vector");
+  if(!primitivasVectorialesPlano || !zonaVectorialPlano){
+    capa.style.display = "none";
+    return;
+  }
+  const canvasRef = document.getElementById("canvas-plano");
+  const anchoCss = Math.max(1, Math.round(canvasRef.width*zoomActual));
+  const altoCss = Math.max(1, Math.round(canvasRef.height*zoomActual));
+  // devicePixelRatio para que se vea nítido también en pantallas de alta densidad (la mayoría de
+  // los celulares) -- sin esto, el canvas tendría la misma cantidad de píxeles que puntos CSS, y
+  // el navegador terminaría escalándolo él solo, igual que a cualquier imagen común.
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  const anchoPx = Math.max(1, Math.round(anchoCss*dpr)), altoPx = Math.max(1, Math.round(altoCss*dpr));
+  capa.style.display = "block";
+  capa.style.width = anchoCss+"px";
+  capa.style.height = altoCss+"px";
+  capa.width = anchoPx;
+  capa.height = altoPx;
+  const ctx = capa.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0,0,capa.width,capa.height);
+  dibujarPrimitivasDxf(ctx, primitivasVectorialesPlano, calcularTransformDxf(zonaVectorialPlano, capa.width, capa.height));
 }
 function zoomIn(){ aplicarZoom(zoomActual*1.25); }
 function zoomOut(){ aplicarZoom(zoomActual/1.25); }
@@ -32176,7 +32328,11 @@ function redibujar(){
   const canvas = document.getElementById("canvas-plano");
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  if(imagenPlano) ctx.drawImage(imagenPlano,0,0);
+  // Si el plano es vectorial, la capa de abajo (#canvas-plano-vector, ver redibujarCapaVectorial)
+  // ya está mostrando las líneas reales, nítidas -- este canvas se deja TRANSPARENTE (sin dibujar
+  // la imagen fija) para que se vea esa de abajo en vez de taparla. Todo lo demás (polígonos,
+  // anotaciones, grid, manijas) se sigue dibujando acá arriba exactamente igual que siempre.
+  if(imagenPlano && !primitivasVectorialesPlano) ctx.drawImage(imagenPlano,0,0);
   if(modoPlanoMaestro){
     // Un Plano Maestro no tiene capas de avance ni anotaciones de medida -- pero SÍ puede tener
     // grid (para ubicar pines con precisión). Antes esta salida temprana lo saltaba directo,
