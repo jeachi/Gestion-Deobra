@@ -34,6 +34,7 @@
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.4/jspdf.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.1/chart.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/fuse.js/6.6.2/fuse.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <!-- Phosphor Icons -- librería MIT. Se sirven desde el propio sitio (carpeta phosphor/, solo
@@ -12973,6 +12974,19 @@ function cerrarBuscadorGlobal(){
 function normalizarBusqueda(t){
   return (t||"").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 }
+// Busca "q" (ya normalizado, sin tildes) entre varios campos de cada elemento de "lista". Con
+// Fuse.js disponible tolera errores de tipeo ("talador" encuentra "Taladro") y ordena por mejor
+// coincidencia primero; sin Fuse.js (CDN caído) cae al mismo filtro por substring que usaba esta
+// función antes de sumar la librería, así el buscador nunca se queda sin funcionar.
+function filtrarConFuse(lista, campos, q){
+  if(!lista || !lista.length) return [];
+  if(typeof Fuse === "undefined"){
+    return lista.filter(it=>campos.some(c=>normalizarBusqueda(it[c]).includes(q)));
+  }
+  const indexados = lista.map(it=>({__orig:it, __texto:campos.map(c=>normalizarBusqueda(it[c])).join(" | ")}));
+  const fuse = new Fuse(indexados, {keys:["__texto"], threshold:0.35, ignoreLocation:true, minMatchCharLength:2});
+  return fuse.search(q).map(r=>r.item.__orig);
+}
 function ejecutarBusquedaGlobal(){
   const crudo = document.getElementById("buscador-global-input").value.trim();
   const cont = document.getElementById("buscador-global-resultados");
@@ -12981,7 +12995,6 @@ function ejecutarBusquedaGlobal(){
     return;
   }
   const q = normalizarBusqueda(crudo);
-  const coincide = (...campos)=>campos.some(c=>normalizarBusqueda(c).includes(q));
   const TOPE = 8; // por grupo, para que la lista siga siendo leíble en el celular
   const grupos = [];
   // Mismo criterio de permisos que aplicarRestriccionesRol() (pestañas ocultas por rol/módulo) --
@@ -12991,37 +13004,37 @@ function ejecutarBusquedaGlobal(){
   const permisosBusq = (sesionActual && sesionActual.permisos) || PERMISOS_CAPATAZ_DEFAULT;
   const puedeVerModulo = m => esAdminBusq || !!permisosBusq[m];
 
-  const trabsHit = esAdminBusq ? (trabajadores||[]).filter(t=>coincide(t.nombre, t.categoria, t.obra)) : [];
+  const trabsHit = esAdminBusq ? filtrarConFuse(trabajadores, ["nombre","categoria","obra"], q) : [];
   if(trabsHit.length) grupos.push({tit:"👷 Trabajadores", view:"trabajadores", items:trabsHit.map(t=>({
     t:t.nombre, s:[t.categoria, t.obra, t.estado==="baja"?"(baja)":""].filter(Boolean).join(" · ")
   }))});
 
-  const pedHit = puedeVerModulo("pedidos") ? (pedidosIndex||[]).filter(p=>coincide(p.numero, p.obra, p.rubro, p.estado)) : [];
+  const pedHit = puedeVerModulo("pedidos") ? filtrarConFuse(pedidosIndex, ["numero","obra","rubro","estado"], q) : [];
   if(pedHit.length) grupos.push({tit:"📦 Pedidos", view:"pedidos", items:pedHit.map(p=>({
     t:`Pedido N° ${p.numero}`, s:[p.obra, p.rubro, p.estado, p.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const remHit = puedeVerModulo("remitos") ? (remitosIndex||[]).filter(r=>coincide(r.numero, r.obra)) : [];
+  const remHit = puedeVerModulo("remitos") ? filtrarConFuse(remitosIndex, ["numero","obra"], q) : [];
   if(remHit.length) grupos.push({tit:"🚚 Remitos", view:"remitos", items:remHit.map(r=>({
     t:`Remito N° ${r.numero}`, s:[r.obra, r.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const herrHit = puedeVerModulo("herramientas") ? (herramientas||[]).filter(h=>coincide(h.nombre, h.obra, h.estado)) : [];
+  const herrHit = puedeVerModulo("herramientas") ? filtrarConFuse(herramientas, ["nombre","obra","estado"], q) : [];
   if(herrHit.length) grupos.push({tit:"🧰 Herramientas", view:"herramientas", items:herrHit.map(h=>({
     t:h.nombre, s:[h.obra, h.estado].filter(Boolean).join(" · ")
   }))});
 
-  const obsHit = puedeVerModulo("observaciones") ? (observaciones||[]).filter(o=>coincide(o.titulo, o.descripcion, o.obra, o.responsable)) : [];
+  const obsHit = puedeVerModulo("observaciones") ? filtrarConFuse(observaciones, ["titulo","descripcion","obra","responsable"], q) : [];
   if(obsHit.length) grupos.push({tit:"📋 Observaciones", view:"observaciones", items:obsHit.map(o=>({
     t:o.titulo, s:[o.obra, o.responsable, o.prioridad, o.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const minHit = puedeVerModulo("minutas") ? (minutasIndex||[]).filter(m=>coincide(m.numero, m.obra)) : [];
+  const minHit = puedeVerModulo("minutas") ? filtrarConFuse(minutasIndex, ["numero","obra"], q) : [];
   if(minHit.length) grupos.push({tit:"📝 Minutas", view:"minutas", items:minHit.map(m=>({
     t:`Minuta N° ${m.numero}`, s:[m.obra, m.fecha].filter(Boolean).join(" · ")
   }))});
 
-  const presHit = puedeVerModulo("presupuesto") ? (presupuestoItems||[]).filter(i=>coincide(i.nombre, i.rubroNombre, i.rubro)) : [];
+  const presHit = puedeVerModulo("presupuesto") ? filtrarConFuse(presupuestoItems, ["nombre","rubroNombre","rubro"], q) : [];
   if(presHit.length) grupos.push({tit:"📊 Presupuesto General", view:"presupuesto", items:presHit.map(i=>({
     t:i.nombre, s:[`Rubro ${i.rubro}`, i.rubroNombre, formatoMoneda(i.precioConCoef)].filter(Boolean).join(" · ")
   }))});
