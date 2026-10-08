@@ -752,7 +752,7 @@ table.trab input,table.trab select{
 .chip-opt{border:1.5px solid var(--borde);border-radius:999px;padding:8px 14px;font-size:12px;font-weight:700;color:var(--tinta);background:var(--papel);cursor:pointer;}
 .chip-opt.sel{border-color:var(--verde);background:var(--verde-claro);color:var(--texto-en-verde-claro);}
 .herr-item{background:var(--papel);border:1px solid var(--borde);border-radius:10px;padding:12px;margin-bottom:10px;display:flex;gap:10px;}
-.herr-foto{width:52px;height:52px;border-radius:8px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#0E9488,#0A2540);}
+.herr-foto{width:68px;height:68px;border-radius:8px;object-fit:cover;flex-shrink:0;background:linear-gradient(135deg,#0E9488,#0A2540);}
 .herr-info{flex:1;min-width:0;}
 .herr-nombre{font-weight:800;font-size:13px;color:var(--texto-en-verde-claro);}
 .herr-meta{font-size:10.5px;color:var(--tinta-suave);margin-top:2px;}
@@ -13993,6 +13993,8 @@ let errorCargaHerramientas = false;
 let herrCondicionSel = "nueva";
 let herrEstadoSel = "bien";
 let herrFotoData = null;
+let herrEditCondicionSel = "nueva";
+let herrEditFotoData = null;
 
 async function cargarHerramientas(){
   try{
@@ -14193,6 +14195,7 @@ function renderInventarioHerramientas(){
                 // quedaba colgado, nunca se archivaba en historialReparaciones).
                 ? `<button type="button" class="btn-mini admin" onclick="abrirModalPrestamo('${h.id}')">🔁 Prestar a otra obra</button>` : ""}
               <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${totalHistorialHerramienta(h)>0 ? ` (${totalHistorialHerramienta(h)})` : ""}</button>
+              <button type="button" class="btn-mini" onclick="abrirModalEditarHerramienta('${h.id}')">✏️ Editar</button>
             ` : ``}
           </div>
           ${esAdmin ? `<button type="button" class="btn-mini peligro herr-btn-eliminar" onclick="confirmarDoble(this,'${h.estado==="prestada"?"⚠ Sigue prestada, ¿Seguro?":"¿Seguro?"}',()=>eliminarHerramienta('${h.id}'))">🗑 Eliminar</button>` : ``}
@@ -14202,6 +14205,91 @@ function renderInventarioHerramientas(){
   }).join("") || `<p class="empty-msg">Todavía no hay herramientas cargadas${document.getElementById("herr-filtro-obra").value?" para esta obra":""}.</p>`;
 }
 function cerrarModalHerramienta(){ document.getElementById("herr-modal-overlay").style.display = "none"; }
+// Edición de los datos propios de la herramienta (nombre, obra, cantidad, foto, nueva/usada,
+// fechas) -- antes la única forma de corregir un error (un typo en el nombre, la obra equivocada)
+// era borrar la herramienta entera y cargarla de nuevo, perdiendo todo su historial de
+// observaciones/préstamos/reparaciones/daños. A propósito NO se edita acá el "Estado" (bien /
+// dañada / en reparación / prestada) -- eso sigue manejándose solo con los botones dedicados
+// (Marcar como dañada, Enviar a reparar, Prestar), que además dejan registro en el historial.
+function abrirModalEditarHerramienta(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const h = herramientas.find(x=>x.id===id);
+  if(!h) return;
+  herrEditFotoData = h.foto || null;
+  herrEditCondicionSel = h.condicionInicial || "nueva";
+  document.getElementById("herr-modal-panel").innerHTML = `
+    <h3>✏️ Editar — ${esc(h.nombre)}</h3>
+    <div class="field"><label>Nombre de la herramienta</label><input type="text" id="herr-edit-nombre" value="${esc(h.nombre)}"></div>
+    <div class="row-flex">
+      <div class="field" style="flex:1;min-width:120px;"><label>Obra</label><select id="herr-edit-obra"></select></div>
+      <div class="field" style="flex:0 0 90px;"><label>Cantidad</label><input type="number" id="herr-edit-cantidad" value="${h.cantidad||1}" min="1"></div>
+    </div>
+    <div class="field">
+      <label>Foto</label>
+      <div id="herr-edit-foto-preview" class="foto-drop" onclick="document.getElementById('herr-edit-foto-input').click()">
+        <span id="herr-edit-foto-txt" style="${h.foto?"display:none;":""}">🖼️ Elegir de la galería</span>
+        <img id="herr-edit-foto-img" src="${h.foto||""}" style="${h.foto?"":"display:none;"}max-width:100%;max-height:100px;border-radius:8px;">
+      </div>
+      <input type="file" id="herr-edit-foto-input" accept="image/*" style="display:none;" onchange="handleFotoHerramientaEdit(this)">
+    </div>
+    <div class="field">
+      <label>¿Nueva o usada?</label>
+      <div class="chip-row" id="herr-edit-condicion-row">
+        <div class="chip-opt ${h.condicionInicial!=="usada"?"sel":""}" data-val="nueva" onclick="seleccionarChipEdicionHerramienta(this,'nueva')">🆕 Nueva</div>
+        <div class="chip-opt ${h.condicionInicial==="usada"?"sel":""}" data-val="usada" onclick="seleccionarChipEdicionHerramienta(this,'usada')">♻️ Usada</div>
+      </div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Fecha de compra</label><input type="date" id="herr-edit-fecha-compra" value="${h.fechaCompra||""}"></div>
+      <div class="field"><label>Ingreso a la obra</label><input type="date" id="herr-edit-fecha-ingreso" value="${h.fechaIngresoObra||""}"></div>
+    </div>
+    <div class="foot-actions">
+      <button class="btn btn-primary" onclick="guardarEdicionHerramienta('${id}')">Guardar cambios</button>
+      <button class="btn btn-outline" onclick="cerrarModalHerramienta()">Cancelar</button>
+    </div>
+  `;
+  poblarSelectObras(document.getElementById("herr-edit-obra"), h.obra);
+  document.getElementById("herr-modal-overlay").style.display = "flex";
+}
+function seleccionarChipEdicionHerramienta(el, val){
+  document.querySelectorAll("#herr-edit-condicion-row .chip-opt").forEach(c=>c.classList.toggle("sel", c===el));
+  herrEditCondicionSel = val;
+}
+function handleFotoHerramientaEdit(input){
+  const file = input.files[0];
+  if(!file) return;
+  comprimirImagenMiniatura(file, (dataUrl)=>{
+    abrirEditorMarcado(dataUrl, (dataUrlMarcada)=>{
+      herrEditFotoData = dataUrlMarcada;
+      document.getElementById("herr-edit-foto-txt").style.display = "none";
+      const img = document.getElementById("herr-edit-foto-img");
+      img.src = dataUrlMarcada; img.style.display = "";
+    });
+  });
+  input.value = "";
+}
+async function guardarEdicionHerramienta(id){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const h = herramientas.find(x=>x.id===id);
+  if(!h) return;
+  const nombre = document.getElementById("herr-edit-nombre").value.trim();
+  const obra = document.getElementById("herr-edit-obra").value;
+  if(!nombre){ showToast("Escribí el nombre de la herramienta"); return; }
+  if(!obra){ showToast("Elegí una obra"); return; }
+  h.nombre = nombre;
+  h.obra = obra;
+  h.cantidad = parseInt(document.getElementById("herr-edit-cantidad").value)||1;
+  h.foto = herrEditFotoData;
+  h.condicionInicial = herrEditCondicionSel;
+  h.fechaCompra = document.getElementById("herr-edit-fecha-compra").value;
+  h.fechaIngresoObra = document.getElementById("herr-edit-fecha-ingreso").value;
+  const ok = await guardarHerramientasIndex();
+  if(!ok) return;
+  registrarActividad(`editó los datos de la herramienta "${esc(nombre)}"`);
+  showToast("Herramienta actualizada ✓");
+  cerrarModalHerramienta();
+  renderInventarioHerramientas();
+}
 function abrirModalObservacion(id){
   const h = herramientas.find(x=>x.id===id);
   if(!h) return;
