@@ -22018,7 +22018,7 @@ async function guardarPlanoAvanceImagen(dataUrlComprimido, imgOriginalParaAltaRe
   }
   if(imgOriginalParaAltaRes && storageDeArchivosDisponible()){
     try{
-      const {dataUrl: dataUrlAlta} = await comprimirImagenPlano(imgOriginalParaAltaRes, 3000, 0.88);
+      const {dataUrl: dataUrlAlta} = await comprimirImagenPlano(imgOriginalParaAltaRes, 3600, 0.90);
       const url = await subirImagenPlanoAStorage(obra, planoActualId, dataUrlAlta);
       if(url) await window.storage.set(`plano_avance_imagen_alta_url_${obra}_${planoActualId}`, url, true);
     }catch(e){ console.warn("No se pudo completar la copia en alta resolución del plano:", e); }
@@ -25071,7 +25071,10 @@ function cargarImagenDesdeArchivo(file, pagina){
         const buf = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({data: buf}).promise;
         const page = await pdf.getPage(pagina || 1);
-        const viewport = page.getViewport({scale: 2});
+        // Escala 3 (antes 2): como el PDF es vectorial, renderizarlo más grande ACÁ es la única
+        // forma de que las compresiones de más abajo (comprimirImagenPlano) tengan de verdad más
+        // detalle para conservar -- comprimir más fuerte un render ya pobre no recupera nitidez.
+        const viewport = page.getViewport({scale: 3});
         const canvasTemp = document.createElement("canvas");
         canvasTemp.width = viewport.width; canvasTemp.height = viewport.height;
         await page.render({canvasContext: canvasTemp.getContext("2d"), viewport}).promise;
@@ -25086,12 +25089,14 @@ function cargarImagenDesdeArchivo(file, pagina){
   });
 }
 // Achica el plano ANTES de guardarlo -- un plano en resolución completa (sobre todo si viene de un
-// PDF renderizado a escala 2) puede pesar varios MB en base64, muy por encima del límite de 1MB
-// por documento de Firestore (el mismo problema que tuvimos con las fotos de Herramientas). 1600px
-// de lado más largo sigue siendo de sobra para marcar con precisión, y pesa una fracción de eso.
+// PDF renderizado a buena escala) puede pesar varios MB en base64, muy por encima del límite de
+// 1MB por documento de Firestore (el mismo problema que tuvimos con las fotos de Herramientas).
+// 2000px de lado más largo midió, con una foto "ruidosa" de prueba (la peor parte, una foto de
+// obra pesa más que un dibujo limpio), ~38% de ese límite -- deja margen real y de paso se ve
+// notablemente menos pixelado al hacer zoom que los 1600px de antes.
 function comprimirImagenPlano(imgOriginal, maxDim, calidad){
-  maxDim = maxDim || 1600;
-  calidad = calidad || 0.78;
+  maxDim = maxDim || 2000;
+  calidad = calidad || 0.80;
   const dataUrl = escalarImagenACanvas(imgOriginal, maxDim).toDataURL("image/jpeg", calidad);
   return cargarComoImagen(dataUrl).then(imgComprimida=>({img: imgComprimida, dataUrl}));
 }
