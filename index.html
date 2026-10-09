@@ -3498,11 +3498,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <h2 id="cf-titulo">Nuevo certificado</h2>
       <div class="field" style="max-width:200px;">
         <label>Fecha del certificado</label>
-        <input type="date" id="cf-fecha">
+        <input type="date" id="cf-fecha" oninput="guardarBorradorCertificado()">
       </div>
       <div class="field">
         <label>Anotación (opcional)</label>
-        <textarea id="cf-anotacion" rows="2" placeholder="Ej: Se pintaron 3 aulas de PB"></textarea>
+        <textarea id="cf-anotacion" rows="2" placeholder="Ej: Se pintaron 3 aulas de PB" oninput="guardarBorradorCertificado()"></textarea>
       </div>
       <div class="card" style="margin:12px 0;background:var(--verde-claro);border-color:var(--verde);">
         <h2 style="margin-bottom:6px;">📐 Plano de avance (Obra)</h2>
@@ -11506,6 +11506,7 @@ let certFormItems = [];     // filas calculadas al armar un certificado nuevo
 let contratistaParaCertificarId = null;
 let certFormPlanoIdUsado = null;         // qué plano se usó para "Traer avance" en este certificado
 let certFormPlanoImagenSnapshot = null;  // foto del plano en ESE momento, para la 3ra hoja del PDF
+let certFormNumeroDraft = "nuevo";       // identifica el borrador de ESTE certificado (ver guardarBorradorCertificado) -- el N° real si se está editando uno, o "nuevo" si todavía no tiene número asignado
 
 // Contratistas reales de CYLP (datos cargados desde los Excel de certificados de Milciades
 // Electricistas y Moito Plomería) — se siembran una sola vez, la primera vez que se abre esta
@@ -12386,9 +12387,67 @@ function volverDesdeCertificadoAPlano(){
   // solo -- cubre el caso, aunque ahora el acceso normal es desde el contratista, no desde acá.
   const sel = document.getElementById("cf-select-plano");
   const formAbierto = document.getElementById("card-cert-form-certificado");
-  if(sel && sel.value && formAbierto && formAbierto.style.display !== "none"){
+  const certificadoSigueAbierto = formAbierto && formAbierto.style.display !== "none";
+  if(sel && sel.value && certificadoSigueAbierto){
     traerAvanceDePlanoACertificado();
   }
+  // BUG real reportado por el usuario: el editor del plano (abierto como overlay desde "Marcar
+  // avance") reusa el MISMO botón flotante de guardar para sus propias cosas (ej: "✓ Listo" al
+  // editar un polígono) y lo oculta al terminar -- eso se llevaba puesto, sin avisar, el botón de
+  // "Guardar certificado"/"Guardar cambios" del formulario que seguía abierto debajo. Si el
+  // certificado sigue abierto al volver, hay que volver a mostrarlo.
+  if(certificadoSigueAbierto){
+    mostrarBotonFlotanteGuardar(certificadoEditandoIndex!==null ? "Guardar cambios" : "Guardar certificado", ()=>guardarCertificado(document.getElementById("fab-guardar-flotante")), "🧾");
+  }
+}
+// ---------------- Borrador de certificado (autosave en el dispositivo) ----------------
+// Pedido del usuario: dos veces se le desapareció el botón de guardar (bug real -- ver el arreglo
+// en volverDesdeCertificadoAPlano más abajo) y perdió todo lo que había tipeado. Como red extra,
+// cada cambio en el formulario se guarda en localStorage -- NUNCA en el certificado real (eso
+// solo pasa si tocás "Guardar", igual que siempre, para no reabrir el mismo problema de
+// numeración correlativa que ya costó arreglar en Minutas/Remitos/Caja Chica). La clave usa el N°
+// real del certificado (o "nuevo" si todavía no tiene uno asignado), no la posición en el array --
+// así una edición/borrado de OTRO certificado que corra los índices no hace que este borrador
+// termine aplicado al certificado equivocado.
+function claveBorradorCertificado(contratistaId, numeroODesignador){
+  return `cert_borrador_${contratistaId}_${numeroODesignador}`;
+}
+function guardarBorradorCertificado(){
+  if(!contratistaParaCertificarId) return;
+  try{
+    const borrador = {
+      fecha: document.getElementById("cf-fecha").value,
+      anotacion: document.getElementById("cf-anotacion").value,
+      items: certFormItems.map(f=>({itemId:f.itemId, pctAcumulado:f.pctAcumulado})),
+    };
+    localStorage.setItem(claveBorradorCertificado(contratistaParaCertificarId, certFormNumeroDraft), JSON.stringify(borrador));
+  }catch(e){}
+}
+function borrarBorradorCertificado(contratistaId, numeroODesignador){
+  try{ localStorage.removeItem(claveBorradorCertificado(contratistaId, numeroODesignador)); }catch(e){}
+}
+// Aplica el borrador guardado SOLO si de verdad difiere de los valores recién calculados (fecha,
+// anotación o algún %) -- si coincide con lo que ya se iba a mostrar, no tiene sentido avisar de
+// un "borrador recuperado" que no cambia nada (justo lo que pidió el usuario: si no se modificó
+// nada, no pasa nada distinto).
+function restaurarBorradorCertificadoSiHayDiferencias(fechaInicial){
+  if(!contratistaParaCertificarId) return;
+  let borrador;
+  try{ borrador = JSON.parse(localStorage.getItem(claveBorradorCertificado(contratistaParaCertificarId, certFormNumeroDraft))||"null"); }
+  catch(e){ borrador = null; }
+  if(!borrador) return;
+  let difiere = (borrador.fecha||"")!==(fechaInicial||"") || (borrador.anotacion||"")!==(document.getElementById("cf-anotacion").value||"");
+  const porItemId = {};
+  (borrador.items||[]).forEach(it=>porItemId[it.itemId]=it.pctAcumulado);
+  certFormItems.forEach(f=>{
+    if(porItemId[f.itemId]===undefined) return;
+    if(Math.abs(porItemId[f.itemId]-f.pctAcumulado) > 0.0001) difiere = true;
+  });
+  if(!difiere) return;
+  if(borrador.fecha) document.getElementById("cf-fecha").value = borrador.fecha;
+  if(borrador.anotacion!==undefined) document.getElementById("cf-anotacion").value = borrador.anotacion;
+  certFormItems.forEach(f=>{ if(porItemId[f.itemId]!==undefined) f.pctAcumulado = porItemId[f.itemId]; });
+  showToast("✏️ Se recuperó un borrador sin guardar de este certificado");
 }
 function abrirFormCertificado(contratistaId, certIndexEditar){
   contratistaParaCertificarId = contratistaId;
@@ -12418,6 +12477,7 @@ function abrirFormCertificado(contratistaId, certIndexEditar){
     numeroMostrado = (c.certificados||[]).length+1;
     fechaInicial = hoyISO();
   }
+  certFormNumeroDraft = certificadoEditandoIndex!==null ? numeroMostrado : "nuevo";
 
   certFormItems = (c.items||[]).map(it=>{
     const montoItem = montoBaseForm * ((it.pctIncidencia||0)/100);
@@ -12430,14 +12490,19 @@ function abrirFormCertificado(contratistaId, certIndexEditar){
   document.getElementById("cf-fecha").value = fechaInicial;
   document.getElementById("card-cert-detalle").style.display = "none";
   document.getElementById("card-cert-form-certificado").style.display = "";
-  renderTablaFormCertificado();
-  renderSelectorPlanoCertificado(c.obra);
 
   // Anotación (si estamos editando un certificado que ya tenía una cargada, la mostramos tal cual).
   const certExistente = certificadoEditandoIndex!==null ? c.certificados[certificadoEditandoIndex] : null;
   document.getElementById("cf-anotacion").value = certExistente?.anotacion || "";
   certFormPlanoIdUsado = certExistente?.planoId || null;
   certFormPlanoImagenSnapshot = certExistente?.planoImagenSnapshot || null;
+
+  // Si quedó un borrador sin guardar de ESTE MISMO certificado, se recupera acá -- antes de armar
+  // la tabla, para que se vea ya con los valores restaurados.
+  restaurarBorradorCertificadoSiHayDiferencias(fechaInicial);
+
+  renderTablaFormCertificado();
+  renderSelectorPlanoCertificado(c.obra);
 
   mostrarBotonFlotanteGuardar(certificadoEditandoIndex!==null ? "Guardar cambios" : "Guardar certificado", ()=>guardarCertificado(document.getElementById("fab-guardar-flotante")), "🧾");
 }
@@ -12515,6 +12580,7 @@ function actualizarFilaCertForm(i, valor){
   actualizarValoresFilaCertForm(i);
   actualizarTotalesCertForm();
   renderComparadorCertificado();
+  guardarBorradorCertificado();
 }
 function actualizarValoresFilaCertForm(i){
   const f = certFormItems[i];
@@ -12646,6 +12712,7 @@ async function guardarCertificadoConfirmado(){
   }
   nexoAvisoFlotante("guardado", certificadoEditandoIndex!==null ? "Certificado N° "+numero+" actualizado ✓" : "Certificado N° "+numero+" guardado ✓");
   registrarActividad(`${certificadoEditandoIndex!==null?"editó":"cargó"} el Certificado N° ${numero} de "${c.nombre}"`);
+  borrarBorradorCertificado(contratistaParaCertificarId, certFormNumeroDraft);
   certificadoEditandoIndex = null;
   cerrarFormCertificado();
   renderDetalleContratista(c);
