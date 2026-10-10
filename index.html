@@ -12393,10 +12393,14 @@ function volverDesdeCertificadoAPlano(){
   }
   // BUG real reportado por el usuario: el editor del plano (abierto como overlay desde "Marcar
   // avance") reusa el MISMO botón flotante de guardar para sus propias cosas (ej: "✓ Listo" al
-  // editar un polígono) y lo oculta al terminar -- eso se llevaba puesto, sin avisar, el botón de
-  // "Guardar certificado"/"Guardar cambios" del formulario que seguía abierto debajo. Si el
-  // certificado sigue abierto al volver, hay que volver a mostrarlo.
+  // editar un polígono). Esto ya se resuelve en general con pedirPrestadoBotonFlotanteGuardar /
+  // devolverBotonFlotanteGuardar (ver ambas), que le devuelven el botón a quien se lo "prestó" --
+  // pero si se vuelve acá mientras TODAVÍA se estaba editando un polígono sin terminar (sin pasar
+  // por guardarEdicion/cancelarEdicion), ese préstamo nunca se devuelve solo. Por eso, si el
+  // certificado sigue abierto, se fuerza su botón de todas formas, y se limpia cualquier préstamo
+  // que haya quedado a mitad de camino.
   if(certificadoSigueAbierto){
+    fabGuardarPrevio = null;
     mostrarBotonFlotanteGuardar(certificadoEditandoIndex!==null ? "Guardar cambios" : "Guardar certificado", ()=>guardarCertificado(document.getElementById("fab-guardar-flotante")), "🧾");
   }
 }
@@ -13547,6 +13551,34 @@ function mostrarBotonFlotanteGuardar(texto, accion, icono){
 function ocultarBotonFlotanteGuardar(){
   document.getElementById("fab-guardar-flotante").style.display = "none";
   fabGuardarAccion = null;
+  fabGuardarPrevio = null; // higiene: ver pedirPrestadoBotonFlotanteGuardar
+}
+// ---------------- Préstamo del botón flotante de guardar ----------------
+// #fab-guardar-flotante es UN SOLO elemento que reusan todos los módulos (Pedidos, Certificados,
+// Remitos, Herramientas, Recordatorios, Observaciones, Minutas, Rendición) -- cada uno con su
+// propio mostrar/ocultar simple, sin pisarse entre sí porque nunca hay dos de esos módulos
+// abiertos al mismo tiempo. El ÚNICO lugar donde sí se superponen de verdad es el editor de un
+// polígono del Plano de avance (su "✓ Listo"), que puede abrirse ARRIBA de un Certificado ya
+// abierto (vía "Marcar avance" -- ver abrirPlanoDesdeContratista/volverDesdeCertificadoAPlano):
+// ahí el editor de polígono se "robaba" el botón sin avisar y, al terminar, lo ocultaba del todo
+// en vez de devolvérselo al Certificado -- ese fue justo el bug reportado ("se desapareció el
+// botón de guardar"). Estas dos funciones formalizan ese préstamo: solo las usa el editor de
+// polígonos (nunca los módulos de arriba, que no cambian). Reentrante a propósito -- pasar de
+// editar un polígono a otro sin "terminar" el primero no debe pisar el snapshot original.
+let fabGuardarPrevio = null; // null = nada prestado todavía · {vacio:true} = no había nada que devolver · {texto,accion,icono} = lo que había antes de este préstamo
+function pedirPrestadoBotonFlotanteGuardar(texto, accion, icono){
+  if(fabGuardarPrevio===null){
+    fabGuardarPrevio = fabGuardarAccion
+      ? {texto: document.getElementById("fab-guardar-texto").textContent, accion: fabGuardarAccion, icono: document.getElementById("fab-guardar-icono").textContent}
+      : {vacio:true};
+  }
+  mostrarBotonFlotanteGuardar(texto, accion, icono);
+}
+function devolverBotonFlotanteGuardar(){
+  const previo = fabGuardarPrevio;
+  fabGuardarPrevio = null;
+  if(previo && !previo.vacio) mostrarBotonFlotanteGuardar(previo.texto, previo.accion, previo.icono);
+  else ocultarBotonFlotanteGuardar();
 }
 async function ejecutarGuardarFlotante(){
   if(typeof fabGuardarAccion!=="function") return;
@@ -21075,7 +21107,7 @@ async function deshacerGeneral(){
     document.getElementById("panel-edicion").style.display="none";
     document.getElementById("drawer-dibujar").style.display="flex";
     document.getElementById("capa-manijas").innerHTML="";
-    ocultarBotonFlotanteGuardar();
+    devolverBotonFlotanteGuardar();
   }
   redibujar();
   renderSelectorActividades();
@@ -21096,7 +21128,7 @@ async function rehacerGeneral(){
     document.getElementById("panel-edicion").style.display="none";
     document.getElementById("drawer-dibujar").style.display="flex";
     document.getElementById("capa-manijas").innerHTML="";
-    ocultarBotonFlotanteGuardar();
+    devolverBotonFlotanteGuardar();
   }
   redibujar();
   renderSelectorActividades();
@@ -29102,7 +29134,7 @@ function editarPoligono(idx){
   }
   redibujar();
   renderManijasEdicion();
-  mostrarBotonFlotanteGuardar("✓ Listo (aceptar edición)", guardarEdicion, "✏️");
+  pedirPrestadoBotonFlotanteGuardar("✓ Listo (aceptar edición)", guardarEdicion, "✏️");
 }
 // Reasigna la pieza que se está editando a otra actividad ya existente (mismo mecanismo que
 // "Sumar al área total" -- las áreas totales de un mismo nombreBase se suman entre sí), para
@@ -29158,7 +29190,7 @@ function salirDeEdicion(){
   redibujar();
   renderActividades();
   guardarPlanoAvancePoligonos();
-  ocultarBotonFlotanteGuardar();
+  devolverBotonFlotanteGuardar();
 }
 // Centra la vista (acercando un poco si hacía falta) sobre una pieza puntual -- la usa el reporte
 // de interferencias para poder saltar directo a la pieza señalada, en vez de tener que buscarla
