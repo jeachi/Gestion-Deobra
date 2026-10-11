@@ -17900,6 +17900,101 @@ async function guardarAjustesMesPresupuesto(n){
   renderListaPresupuesto();
   showToast(`✓ Certificado del Mes ${n} actualizado`);
 }
+// ---------------- Recordatorio de avance (dentro de la app, sin servidor) ----------------
+// Pedido del usuario: un recordatorio que aparezca solo cada 2 días mostrando ÚNICAMENTE las
+// actividades que todavía están en ejecución este mes (ya excluidas las que llegaron al 100%),
+// con el % planificado de referencia y un campo para cargar el % REAL ejecutado -- lo mismo que
+// "Ver/editar por mes" pero filtrado y servido sin que el usuario tenga que ir a buscarlo. Lo
+// cargado acá pasa por fijarAcumuladoMesPresupuesto(), la misma función que alimenta la Curva de
+// avance -- no es un dato aparte, es la forma rápida de ir completando esa curva real.
+const INTERVALO_RECORDATORIO_PRESUPUESTO_MS = 2*24*60*60*1000; // cada 2 días
+function puedeVerRecordatorioPresupuesto(){
+  if(!sesionActual) return false;
+  if(sesionActual.role==="admin") return true;
+  const permisos = sesionActual.permisos || PERMISOS_CAPATAZ_DEFAULT;
+  return !!permisos.presupuesto;
+}
+async function revisarRecordatorioAvancePresupuesto(){
+  try{
+    if(!puedeVerRecordatorioPresupuesto()) return;
+    const obra = claveObraPresupuesto();
+    if(!obra) return;
+    const clave = "gdo_recordatorio_presupuesto_"+obra;
+    const ultimo = parseInt(localStorage.getItem(clave)||"0") || 0;
+    if(Date.now()-ultimo < INTERVALO_RECORDATORIO_PRESUPUESTO_MS) return;
+    // Lectura APARTE, sin tocar la variable global presupuestoItems -- este chequeo corre solo,
+    // en segundo plano, justo después del login (antes de que el usuario haya tenido chance de
+    // abrir el módulo o cargar nada a mano), y pisar esa variable acá podría perder algo que se
+    // haya cargado o cambiado mientras tanto. guardarRecordatorioAvancePresupuesto() sí vuelve a
+    // cargar fresco antes de aplicar los cambios -- ahí ya es una acción del usuario, no una carrera.
+    let items;
+    try{
+      const r = await window.storage.get(`presupuesto_items_${obra}`, true);
+      items = r && r.value ? JSON.parse(r.value) : [];
+    }catch(e){ items = []; }
+    if(items.length===0) return;
+    let mesActual = 0;
+    items.forEach(it=>{ (it.historialMeses||[]).forEach(m=>{ if(m.n>mesActual) mesActual=m.n; }); });
+    try{
+      const rc = await window.storage.get(`presupuesto_config_${obra}`, true);
+      const cfg = rc && rc.value ? JSON.parse(rc.value) : {};
+      if(cfg.mesActual) mesActual = cfg.mesActual; // mismo criterio que mesActualPresupuesto()
+    }catch(e){}
+    if(mesActual<1) return; // obra sin ningún mes cargado todavía -- nada que recordar
+    const pendientes = items
+      .map((it,idx)=>({it, idx, entrada: entradaHastaMes(it, mesActual)}))
+      .filter(({entrada})=>entrada.acumulado<1);
+    if(pendientes.length===0) return; // todo al 100% este mes -- no hay nada para cargar
+    localStorage.setItem(clave, String(Date.now()));
+    abrirRecordatorioAvancePresupuesto(pendientes, mesActual);
+  }catch(e){ console.error("No se pudo revisar el recordatorio de avance del presupuesto:", e); }
+}
+function abrirRecordatorioAvancePresupuesto(pendientes, mesActual){
+  const filas = pendientes.map(({it, idx, entrada})=>{
+    const planEntrada = (it.historialMeses||[]).find(m=>m.n===mesActual);
+    const plan = planEntrada && planEntrada.planificado!==undefined ? planEntrada.planificado : null;
+    return `<div style="padding:9px 4px;border-bottom:1px solid var(--borde);">
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:4px;">${esc(it.nombre)}</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="font-size:10px;color:${plan!==null?"#B45309":"var(--tinta-suave)"};flex:1;">
+          ${plan!==null ? `Planificado para este mes: <b>${(plan*100).toFixed(2)}%</b>` : "Sin plan cargado para este mes"}
+        </div>
+        <input type="number" step="0.01" min="0" max="100" value="${(entrada.acumulado*100).toFixed(2)}" data-idx="${idx}" class="pg-input-recordatorio" style="width:68px;padding:6px;border:1.5px solid var(--borde);border-radius:7px;font-size:11.5px;text-align:center;flex-shrink:0;">
+        <span style="font-size:10px;flex-shrink:0;">% real</span>
+      </div>
+    </div>`;
+  }).join("");
+  const html = `
+    <h2 style="margin-top:0;">📐 Avance del Mes ${mesActual}</h2>
+    <p class="helper">Estas son las actividades en ejecución este mes. Cargá cuánto llevás ejecutado de cada una para mantener al día la Curva de avance real.</p>
+    ${filas}
+    <div class="row-flex" style="margin-top:12px;">
+      <button class="btn btn-outline" onclick="cerrarPromptGenerico()">Ahora no</button>
+      <button class="btn btn-primary" onclick="guardarRecordatorioAvancePresupuesto(${mesActual})">✓ Guardar avances</button>
+    </div>`;
+  abrirPromptGenerico(html);
+}
+async function guardarRecordatorioAvancePresupuesto(mesActual){
+  // Recién ACÁ se toca la variable global presupuestoItems de verdad -- se vuelve a cargar fresco
+  // para sincronizar con lo que haya en memoria/Firestore en este momento (ver el comentario en
+  // revisarRecordatorioAvancePresupuesto sobre por qué el chequeo en sí no la tocaba).
+  await cargarPresupuestoObra();
+  // mesActual se pasa igual en los dos parámetros -- se construyó este recordatorio siempre sobre
+  // el mes actual de ese momento, nunca sobre un mes futuro (nunca es planificación, igual que
+  // guardarPctInlinePresupuesto). Ver el comentario de fijarAcumuladoMesPresupuesto.
+  document.querySelectorAll(".pg-input-recordatorio").forEach(inp=>{
+    const idx = parseInt(inp.dataset.idx);
+    const it = presupuestoItems[idx];
+    if(!it) return;
+    const nuevoAcum = Math.max(0, Math.min(100, parseFloat(inp.value)||0))/100;
+    fijarAcumuladoMesPresupuesto(it, mesActual, nuevoAcum, mesActual);
+  });
+  await guardarPresupuestoObra();
+  actualizarResumenPresupuesto();
+  renderListaPresupuesto();
+  cerrarPromptGenerico();
+  showToast("✓ Avances guardados");
+}
 // ---------------- Monto del contrato (para verificar que cierre al 100%) ----------------
 function abrirMontoContratoPresupuesto(){
   const html = `
@@ -20431,6 +20526,7 @@ function ingresarComo(sesion){
     revisarNotificacionPedidosDelDia();
     revisarNotificacionesGenerales();
   }
+  revisarRecordatorioAvancePresupuesto();
   // Mientras la app siga abierta, se re-revisa cada 10 minutos -- así, si aparece algo nuevo y
   // urgente mientras estás usando otra pestaña de la app, también llega como notificación real.
   setInterval(revisarNotificacionesGenerales, 10*60*1000);
