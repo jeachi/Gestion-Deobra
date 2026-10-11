@@ -9473,14 +9473,8 @@ async function importarPedidoExcel(input){
 
     // Completamos el formulario de "Nuevo pedido" con lo que se leyó.
     if(fechaTexto) document.getElementById("np-fecha").value = excelFechaAIso(fechaTexto);
-    if(obraTexto){
-      if(!obras.includes(obraTexto)){ obras.push(obraTexto); await guardarObras(); }
-      document.getElementById("np-obra").value = obraTexto;
-    }
-    if(rubroTexto){
-      if(!rubros.includes(rubroTexto)){ rubros.push(rubroTexto); await guardarRubros(); }
-      document.getElementById("np-rubro").value = rubroTexto;
-    }
+    if(obraTexto && !obras.includes(obraTexto)){ obras.push(obraTexto); await guardarObras(); }
+    if(rubroTexto && !rubros.includes(rubroTexto)){ rubros.push(rubroTexto); await guardarRubros(); }
     if(respTexto) document.getElementById("np-resp").value = respTexto;
     const fechaIngresoIso = excelFechaAIso(fechaIngresoRaw);
     if(fechaIngresoIso) document.getElementById("np-fecha-ingreso").value = fechaIngresoIso;
@@ -9492,7 +9486,14 @@ async function importarPedidoExcel(input){
       items.push({desc:"",cant:"",un:"",imagen:null,entregado:0});
     }
     npItems = items;
-    renderSelectsPedido();
+    // OJO: renderSelectsPedido() reconstruye el innerHTML de los <select> de Obra y Rubro --
+    // eso por sí solo NO deja seleccionada ninguna opción (mismo motivo por el que "Editar
+    // pedido" también vuelve a poner .value a mano después de llamarla, más abajo). Antes acá
+    // se ponía el .value ANTES de esta llamada y quedaba pisado por la reconstrucción -- el campo
+    // Obra "zafaba" solo cuando coincidía con obraPredeterminada, pero Rubro quedaba vacío siempre.
+    renderSelectsPedido(obraTexto, rubroTexto);
+    if(obraTexto) document.getElementById("np-obra").value = obraTexto;
+    if(rubroTexto) document.getElementById("np-rubro").value = rubroTexto;
     renderTablaItemsPedido();
 
     estado.textContent = `Se cargaron ${cantidadReal} materiales del archivo. Revisá los datos y tocá "Guardar pedido" cuando esté todo bien.`;
