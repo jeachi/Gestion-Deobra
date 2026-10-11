@@ -28,7 +28,7 @@ function esperarServidor(url, intentos) {
 }
 
 async function main() {
-  console.log("Preparando librerías reales para los tests que las necesitan (Chart.js, Fuse.js, jsPDF, html2canvas)...");
+  console.log("Preparando librerías reales para los tests que las necesitan (Chart.js, Fuse.js, jsPDF, html2canvas, XLSX)...");
   execFileSync(process.execPath, [path.join(__dirname, "fetch-libs.js")], { stdio: "inherit" });
 
   console.log(`Levantando http-server en :${PUERTO}...`);

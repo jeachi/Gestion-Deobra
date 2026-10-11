@@ -17,6 +17,7 @@ const LIBS_DIR = path.join(__dirname, "libs");
 // aterrizaba como libs/chartjs/package/dist/... (doble "package"), una trampa boba de nombres.
 const LIBS = [
   { carpeta: "chartjs", paquete: "chart.js@4.5.1", archivo: "dist/chart.umd.min.js" },
+  { carpeta: "xlsx", paquete: "xlsx@0.18.5", archivo: "dist/xlsx.full.min.js" },
   { carpeta: "fusejs", paquete: "fuse.js@6.6.2", archivo: "dist/fuse.min.js" },
   { carpeta: "jspdf", paquete: "jspdf@3.0.4", archivo: "dist/jspdf.umd.min.js" },
   { carpeta: "html2canvas", paquete: "html2canvas@1.4.1", archivo: "dist/html2canvas.min.js" },
