@@ -16483,12 +16483,22 @@ function renderListaPresupuesto(){
 // ninguno cargado todavía, arranca en el Mes 1). El "Anterior" se arrastra del último mes con
 // datos ANTES de este (no exige que exista el mes justo anterior), así que también sirve para
 // ítems que venían atrasados respecto al resto.
-async function guardarPctInlinePresupuesto(inputEl){
-  const idx = parseInt(inputEl.dataset.idx);
-  const it = presupuestoItems[idx];
-  if(!it) return;
-  const n = mesActualPresupuesto() || 1;
-  const nuevoAcum = Math.max(0, Math.min(100, parseFloat(inputEl.value)||0))/100;
+// Fija el % acumulado de un ítem en el mes "n" (desde la edición inline de la lista, desde "Ver /
+// editar por mes", o al corregir un mes ya cargado), reencadenando los meses POSTERIORES que ya
+// tenía cargados -- mismo criterio en los tres casos, antes repetido a mano en cada uno.
+// Si "n" queda por delante del "mes actual" en el momento de guardar, además congela ese valor
+// como planificado (ver Curva de avance, calcularPuntosCurvaPresupuesto): es la PRIMERA vez que se
+// guarda algo para un mes que todavía no llegó. Revisiones posteriores de ESE MISMO mes, una vez
+// que ya sea (o haya sido) el actual, no vuelven a tocar el plan -- así se puede comparar lo real
+// contra lo que se había planificado, en vez de que el plan se reescriba solo con cada corrección.
+// "mesActualAlGuardar" se recibe YA CALCULADO (no se llama a mesActualPresupuesto() acá adentro) a
+// propósito: con el "mes actual" en modo automático (el último mes cargado), la PROPIA entrada que
+// se acaba de empujar a historialMeses pasaría a contar como "ya cargada" y jamás se la podría
+// considerar futura -- y guardando varios ítems seguidos para el mismo mes nuevo (como hace
+// confirmarNuevoMesPresupuesto), el primero "vería" el mes actual viejo pero el segundo ya vería el
+// mes actual corrido por el guardado del primero. Por eso cada llamador calcula el mes actual UNA
+// sola vez, antes de guardar nada, y lo pasa siempre igual a todos los ítems de ese guardado.
+function fijarAcumuladoMesPresupuesto(it, n, nuevoAcum, mesActualAlGuardar){
   it.historialMeses = it.historialMeses || [];
   let entrada = it.historialMeses.find(m=>m.n===n);
   if(!entrada){ entrada = {n, anterior:0, enElMes:0, acumulado:0, monto:0}; it.historialMeses.push(entrada); it.historialMeses.sort((a,b)=>a.n-b.n); }
@@ -16497,10 +16507,7 @@ async function guardarPctInlinePresupuesto(inputEl){
   entrada.acumulado = nuevoAcum;
   entrada.enElMes = Math.max(0, nuevoAcum-anterior);
   entrada.monto = entrada.enElMes*it.precioConCoef;
-  // Si este ítem ya tenía meses POSTERIORES cargados, hay que reencadenar su "anterior"/"acumulado"
-  // a partir de este cambio -- mismo criterio que guardarAjustesMesPresupuesto/
-  // confirmarInspeccionPresupuesto, si no quedan con el "anterior" viejo (de antes de esta edición
-  // inline) para siempre.
+  if(n > mesActualAlGuardar) entrada.planificado = nuevoAcum;
   let encadenado = nuevoAcum;
   it.historialMeses.filter(m=>m.n>n).sort((a,b)=>a.n-b.n).forEach(m=>{
     m.anterior = encadenado;
@@ -16508,6 +16515,15 @@ async function guardarPctInlinePresupuesto(inputEl){
     m.monto = m.enElMes*it.precioConCoef;
     encadenado = m.acumulado;
   });
+  return entrada;
+}
+async function guardarPctInlinePresupuesto(inputEl){
+  const idx = parseInt(inputEl.dataset.idx);
+  const it = presupuestoItems[idx];
+  if(!it) return;
+  const n = mesActualPresupuesto() || 1;
+  const nuevoAcum = Math.max(0, Math.min(100, parseFloat(inputEl.value)||0))/100;
+  fijarAcumuladoMesPresupuesto(it, n, nuevoAcum, n); // n === mes actual acá siempre -- nunca es planificación
   await guardarPresupuestoObra();
   actualizarResumenPresupuesto();
   renderListaPresupuesto();
@@ -16817,6 +16833,8 @@ function renderFormNuevoMes(mesN){
   }).join("") || `<p class="helper">No queda ningún ítem pendiente con ese filtro.</p>`;
 }
 async function confirmarNuevoMesPresupuesto(mesN){
+  // Calculado UNA sola vez antes de guardar nada -- ver el comentario de fijarAcumuladoMesPresupuesto.
+  const mesActualAlGuardar = mesActualPresupuesto();
   let cambios = 0;
   document.querySelectorAll(".pg-input-mes").forEach(inp=>{
     const valor = parseFloat(inp.value);
@@ -16832,7 +16850,12 @@ async function confirmarNuevoMesPresupuesto(mesN){
     const enElMes = Math.min(valor/100, Math.max(0, 1-anterior));
     const acumulado = Math.min(1, anterior+enElMes);
     it.historialMeses = it.historialMeses || [];
-    it.historialMeses.push({n:mesN, anterior, enElMes, acumulado, monto: enElMes*it.precioConCoef});
+    const entrada = {n:mesN, anterior, enElMes, acumulado, monto: enElMes*it.precioConCoef};
+    // Mismo criterio que fijarAcumuladoMesPresupuesto: si este mes todavía no es (ni fue) el
+    // actual, este valor es una planificación a futuro -- se congela para poder comparar después
+    // lo real contra lo planificado en la Curva de avance.
+    if(mesN > mesActualAlGuardar) entrada.planificado = acumulado;
+    it.historialMeses.push(entrada);
     cambios++;
   });
   if(cambios===0){ showToast("No cargaste ningún %."); return; }
@@ -17538,63 +17561,151 @@ function confirmarMesesCronograma(){
   mesesCronogramaSeleccionados = seleccionados.sort((a,b)=>a-b);
   abrirCronogramaPresupuesto();
 }
-// ---------------- Curva de avance: % acumulado o $ acumulado, con tramo ejecutado vs previsto ----------------
+// ---------------- Curva de avance: Real (hasta el mes actual) vs Planificado ----------------
+// "Planificado" NO es un plan de trabajo aparte que se carga una sola vez -- es, literalmente, el
+// % que ya cargaste de más para los meses que todavía no llegaron (ver fijarAcumuladoMesPresupuesto
+// / confirmarNuevoMesPresupuesto): la PRIMERA vez que se guarda algo para un mes por delante del
+// "mes actual", ese valor se congela como el plan de ese mes. Correcciones posteriores, una vez
+// que ese mes ya es (o fue) el actual, actualizan el REAL pero no el plan -- así se puede comparar
+// uno contra el otro para saber si la obra va atrasada o adelantada.
 function calcularPuntosCurvaPresupuesto(){
-  let maxMes = 0;
-  presupuestoItems.forEach(it=>{ (it.historialMeses||[]).forEach(m=>{ if(m.n>maxMes) maxMes=m.n; }); });
+  let maxMes = 0, primerMesConPlan = null;
+  presupuestoItems.forEach(it=>{
+    (it.historialMeses||[]).forEach(m=>{
+      if(m.n>maxMes) maxMes=m.n;
+      if(m.planificado!==undefined && (primerMesConPlan===null || m.n<primerMesConPlan)) primerMesConPlan = m.n;
+    });
+  });
   const montoTotal = presupuestoItems.reduce((s,it)=>s+it.precioConCoef,0);
   const puntos = [];
   for(let n=1; n<=maxMes; n++){
-    let ponderado = 0;
-    presupuestoItems.forEach(it=>{ ponderado += entradaHastaMes(it, n).acumulado*it.precioConCoef; });
-    puntos.push({n, pct: montoTotal>0 ? ponderado/montoTotal*100 : 0, monto: ponderado});
+    let ponderado = 0, ponderadoPlan = 0;
+    presupuestoItems.forEach(it=>{
+      ponderado += entradaHastaMes(it, n).acumulado*it.precioConCoef;
+      // El plan de un mes se arrastra igual que el real (entradaHastaMes) -- pero mirando solo
+      // las entradas que SÍ tienen un plan congelado, no cualquier entrada.
+      const conPlan = (it.historialMeses||[]).filter(m=>m.n<=n && m.planificado!==undefined);
+      if(conPlan.length) ponderadoPlan += conPlan[conPlan.length-1].planificado*it.precioConCoef;
+    });
+    puntos.push({
+      n,
+      pct: montoTotal>0 ? ponderado/montoTotal*100 : 0, monto: ponderado,
+      pctPlan: montoTotal>0 ? ponderadoPlan/montoTotal*100 : 0, montoPlan: ponderadoPlan,
+    });
   }
-  return {puntos, maxMes, montoTotal};
+  return {puntos, maxMes, montoTotal, primerMesConPlan};
 }
 let tipoCurvaPresupuestoActual = "pct"; // "pct" (% acumulado) | "monto" ($ acumulado)
+let chartCurvaPresupuesto = null;
 function abrirCurvaPresupuesto(tipo){
   tipoCurvaPresupuestoActual = tipo || tipoCurvaPresupuestoActual;
-  const {puntos, maxMes} = calcularPuntosCurvaPresupuesto();
+  const {puntos, maxMes, primerMesConPlan} = calcularPuntosCurvaPresupuesto();
   if(maxMes===0){ showToast("Todavía no hay ningún mes cargado."); return; }
   const mesRef = mesActualPresupuesto();
   const esPct = tipoCurvaPresupuestoActual==="pct";
   const valorDe = p => esPct ? p.pct : p.monto;
-  const maxValor = esPct ? 100 : Math.max(...puntos.map(p=>p.monto), 1);
-  const anchoSvg = 320, altoSvg = 170, pad = 26;
-  const escalaX = n => pad + (n-1)/(Math.max(1,maxMes-1))*(anchoSvg-pad*2);
-  const escalaY = v => altoSvg-pad - (v/maxValor)*(altoSvg-pad*2);
-  // Se separa en dos tramos: lo ya EJECUTADO (hasta el mes actual, sólido) y lo PREVISTO (desde
-  // ahí en adelante, punteado) -- el mes actual se repite en los dos tramos a propósito, para que
-  // la línea se vea de un tirón en el empalme, sin corte.
-  const ejecutados = puntos.filter(p=>p.n<=mesRef);
-  const previstos = puntos.filter(p=>p.n>=mesRef);
-  const lineaEjecutado = ejecutados.map(p=>`${escalaX(p.n)},${escalaY(valorDe(p))}`).join(" ");
-  const lineaPrevisto = previstos.map(p=>`${escalaX(p.n)},${escalaY(valorDe(p))}`).join(" ");
+  const valorPlanDe = p => esPct ? p.pctPlan : p.montoPlan;
   const etiquetaValor = v => esPct ? v.toFixed(1)+"%" : formatoMoneda(v);
   const ultimoPunto = puntos[puntos.length-1];
+
+  // "¿Vamos atrasados?" -- compara lo real del mes actual contra lo que se había planificado para
+  // ESE MISMO mes (si nunca se planificó nada por adelantado, no hay nada contra qué comparar).
+  let indicadorHtml = "";
+  if(primerMesConPlan!==null && mesRef>=primerMesConPlan){
+    const puntoMesRef = puntos.find(p=>p.n===mesRef);
+    const diferenciaPct = puntoMesRef.pct - puntoMesRef.pctPlan;
+    let estilo, texto;
+    if(diferenciaPct < -0.5){
+      estilo = "background:rgba(220,90,90,.12);border:1px solid rgba(220,90,90,.4);color:#DC5A5A;";
+      texto = `⚠ Atrasado ${Math.abs(diferenciaPct).toFixed(1)} puntos contra lo planificado para el Mes ${mesRef}`;
+    }else if(diferenciaPct > 0.5){
+      estilo = "background:rgba(14,148,136,.12);border:1px solid rgba(14,148,136,.4);color:var(--verde);";
+      texto = `✓ Adelantado ${diferenciaPct.toFixed(1)} puntos contra lo planificado para el Mes ${mesRef}`;
+    }else{
+      estilo = "background:var(--fondo);border:1px solid var(--borde);color:var(--tinta-suave);";
+      texto = `✓ En línea con lo planificado para el Mes ${mesRef}`;
+    }
+    indicadorHtml = `<div style="${estilo}border-radius:9px;padding:9px 11px;margin-bottom:10px;font-size:11.5px;font-weight:800;">${texto}</div>`;
+  }
+
   const html = `
     <h2 style="margin-top:0;">📈 Curva de avance</h2>
     <div style="display:flex;gap:8px;margin-bottom:10px;">
       <button class="btn ${esPct?'btn-primary':'btn-outline'}" style="flex:1;" onclick="abrirCurvaPresupuesto('pct')">% Acumulado</button>
       <button class="btn ${!esPct?'btn-primary':'btn-outline'}" style="flex:1;" onclick="abrirCurvaPresupuesto('monto')">$ Acumulado</button>
     </div>
-    <p class="helper">Sólido = ya ejecutado (hasta Mes ${mesRef}, tu "mes actual"). Punteado = previsto a futuro, según lo que ya tengas cargado en esos meses.</p>
-    <svg width="100%" height="190" viewBox="0 0 ${anchoSvg} ${altoSvg}" style="background:var(--fondo);border-radius:10px;">
-      <polyline points="${pad},${altoSvg-pad} ${anchoSvg-pad},${altoSvg-pad}" stroke="var(--borde)" stroke-width="1"/>
-      ${lineaPrevisto ? `<polyline points="${lineaPrevisto}" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-dasharray="5,4"/>` : ""}
-      ${lineaEjecutado ? `<polyline points="${lineaEjecutado}" fill="none" stroke="var(--verde)" stroke-width="2.5"/>` : ""}
-      ${ejecutados.map(p=>`<circle cx="${escalaX(p.n)}" cy="${escalaY(valorDe(p))}" r="3" fill="var(--verde)"/>`).join("")}
-      ${previstos.filter(p=>p.n!==mesRef).map(p=>`<circle cx="${escalaX(p.n)}" cy="${escalaY(valorDe(p))}" r="3" fill="#F59E0B"/>`).join("")}
-    </svg>
+    ${indicadorHtml}
+    <p class="helper">Sólido = real, ya certificado (hasta Mes ${mesRef}, tu "mes actual"). Punteado = planificado -- el % que cargaste de más para los meses que todavía no llegaron, la primera vez que lo cargaste.</p>
+    <div id="curva-presupuesto-grafico"></div>
     <div style="display:flex;gap:16px;margin-top:8px;font-size:10.5px;">
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:3px;background:var(--verde);display:inline-block;border-radius:2px;"></span>Ejecutado</span>
-      <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:0;border-top:2px dashed #F59E0B;display:inline-block;"></span>Previsto</span>
+      <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:3px;background:var(--verde);display:inline-block;border-radius:2px;"></span>Real</span>
+      ${primerMesConPlan!==null ? `<span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:0;border-top:2px dashed #F59E0B;display:inline-block;"></span>Planificado</span>` : ""}
     </div>
+    ${primerMesConPlan===null ? `<p class="helper" style="margin-top:8px;">Todavía no cargaste ningún mes por adelantado -- cuando lo hagas (cargando un mes antes de que llegue a ser el "mes actual"), ese valor queda como plan para comparar.</p>` : ""}
     <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--tinta-suave);margin-top:6px;">
       <span>Mes 1</span><span>Mes ${maxMes}: ${etiquetaValor(valorDe(ultimoPunto))}</span>
     </div>
     <button class="btn btn-outline" style="width:100%;margin-top:14px;" onclick="cerrarPromptGenerico()">Cerrar</button>`;
   abrirPromptGenerico(html);
+  renderGraficoCurvaPresupuesto(puntos, mesRef, primerMesConPlan, valorDe, valorPlanDe, etiquetaValor);
+}
+// Chart.js (si cargó desde el CDN) da tooltips reales mes a mes -- si no está disponible, se usa
+// el mismo SVG a mano de siempre, para que este gráfico nunca desaparezca.
+function renderGraficoCurvaPresupuesto(puntos, mesRef, primerMesConPlan, valorDe, valorPlanDe, etiquetaValor){
+  const cont = document.getElementById("curva-presupuesto-grafico");
+  if(!cont) return;
+  if(chartCurvaPresupuesto){ chartCurvaPresupuesto.destroy(); chartCurvaPresupuesto = null; }
+  if(typeof Chart === "undefined"){
+    dibujarGraficoCurvaPresupuestoSvgFallback(cont, puntos, mesRef, primerMesConPlan, valorDe, valorPlanDe);
+    return;
+  }
+  cont.innerHTML = `<div style="height:190px;"><canvas id="curva-presupuesto-canvas"></canvas></div>`;
+  const ctx = document.getElementById("curva-presupuesto-canvas").getContext("2d");
+  const etiquetas = puntos.map(p=>"Mes "+p.n);
+  const datosReal = puntos.map(p=> p.n<=mesRef ? valorDe(p) : null);
+  const datosPlan = puntos.map(p=> (primerMesConPlan!==null && p.n>=primerMesConPlan) ? valorPlanDe(p) : null);
+  chartCurvaPresupuesto = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: etiquetas,
+      datasets: [
+        { label:"Real", data: datosReal, borderColor:"#0E9488", backgroundColor:"#0E9488", tension:0.25, pointRadius:3, pointHoverRadius:5, borderWidth:2.5, fill:false },
+        { label:"Planificado", data: datosPlan, borderColor:"#F59E0B", backgroundColor:"#F59E0B", tension:0.25, pointRadius:3, pointHoverRadius:5, borderWidth:2.2, borderDash:[6,4], fill:false },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400 },
+      scales: {
+        y: { ticks:{ callback:v=>etiquetaValor(v), font:{size:9} }, grid:{color:"rgba(128,128,128,.15)"} },
+        x: { ticks:{ font:{size:9} }, grid:{ display:false } },
+      },
+      plugins: {
+        legend: { display:false }, // la leyenda propia de abajo ya explica cada línea
+        tooltip: { callbacks: { label: (c)=> c.raw===null ? undefined : `${c.dataset.label}: ${etiquetaValor(c.raw)}` } },
+      },
+    },
+  });
+}
+function dibujarGraficoCurvaPresupuestoSvgFallback(cont, puntos, mesRef, primerMesConPlan, valorDe, valorPlanDe){
+  const maxMes = puntos.length;
+  const maxValor = Math.max(...puntos.map(p=>Math.max(valorDe(p), valorPlanDe(p))), 1);
+  const anchoSvg = 320, altoSvg = 170, pad = 26;
+  const escalaX = n => pad + (n-1)/(Math.max(1,maxMes-1))*(anchoSvg-pad*2);
+  const escalaY = v => altoSvg-pad - (v/maxValor)*(altoSvg-pad*2);
+  const reales = puntos.filter(p=>p.n<=mesRef);
+  const plan = primerMesConPlan!==null ? puntos.filter(p=>p.n>=primerMesConPlan) : [];
+  const lineaReal = reales.map(p=>`${escalaX(p.n)},${escalaY(valorDe(p))}`).join(" ");
+  const lineaPlan = plan.map(p=>`${escalaX(p.n)},${escalaY(valorPlanDe(p))}`).join(" ");
+  cont.innerHTML = `
+    <svg width="100%" height="190" viewBox="0 0 ${anchoSvg} ${altoSvg}" style="background:var(--fondo);border-radius:10px;">
+      <polyline points="${pad},${altoSvg-pad} ${anchoSvg-pad},${altoSvg-pad}" stroke="var(--borde)" stroke-width="1"/>
+      ${lineaPlan ? `<polyline points="${lineaPlan}" fill="none" stroke="#F59E0B" stroke-width="2.5" stroke-dasharray="5,4"/>` : ""}
+      ${lineaReal ? `<polyline points="${lineaReal}" fill="none" stroke="var(--verde)" stroke-width="2.5"/>` : ""}
+      ${reales.map(p=>`<circle cx="${escalaX(p.n)}" cy="${escalaY(valorDe(p))}" r="3" fill="var(--verde)"/>`).join("")}
+      ${plan.map(p=>`<circle cx="${escalaX(p.n)}" cy="${escalaY(valorPlanDe(p))}" r="3" fill="#F59E0B"/>`).join("")}
+    </svg>`;
 }
 // ---------------- Emitir certificado (Excel, mismo tipo de datos que la app ya sabe exportar) ----------------
 function exportarCertificadoPresupuestoExcel(){
@@ -17775,32 +17886,14 @@ function actualizarDiferenciaMesPresupuesto(n){
   totalesEl.innerHTML = html;
 }
 async function guardarAjustesMesPresupuesto(n){
+  // Calculado UNA sola vez antes de guardar nada -- ver el comentario de fijarAcumuladoMesPresupuesto.
+  const mesActualAlGuardar = mesActualPresupuesto();
   document.querySelectorAll(".pg-input-acum-mes").forEach(inp=>{
     const idx = parseInt(inp.dataset.idx);
     const it = presupuestoItems[idx];
     if(!it) return;
     const nuevoAcum = Math.max(0, Math.min(100, parseFloat(inp.value)||0))/100;
-    it.historialMeses = it.historialMeses || [];
-    let entrada = it.historialMeses.find(m=>m.n===n);
-    if(!entrada){ entrada = {n, anterior:0, enElMes:0, acumulado:0, monto:0}; it.historialMeses.push(entrada); it.historialMeses.sort((a,b)=>a.n-b.n); }
-    // "Anterior" se arrastra del último mes CON DATOS antes de este (igual que entradaHastaMes/
-    // obtenerEntradaMes) -- no alcanza con mirar exactamente n-1, porque un ítem terminado hace
-    // rato puede no tener ninguna entrada en los últimos meses.
-    const anterior = entradaHastaMes(it, n-1).acumulado;
-    entrada.anterior = anterior;
-    entrada.acumulado = nuevoAcum;
-    entrada.enElMes = Math.max(0, nuevoAcum-anterior);
-    entrada.monto = entrada.enElMes*it.precioConCoef;
-    // Si este ítem ya tenía meses POSTERIORES cargados, hay que reencadenar su "anterior"/
-    // "acumulado" a partir de este cambio -- si no, quedan con el "anterior" viejo (antes de la
-    // corrección) para siempre, igual que ya resuelve confirmarInspeccionPresupuesto.
-    let encadenado = nuevoAcum;
-    it.historialMeses.filter(m=>m.n>n).sort((a,b)=>a.n-b.n).forEach(m=>{
-      m.anterior = encadenado;
-      m.acumulado = Math.min(1, m.anterior + m.enElMes);
-      m.monto = m.enElMes*it.precioConCoef;
-      encadenado = m.acumulado;
-    });
+    fijarAcumuladoMesPresupuesto(it, n, nuevoAcum, mesActualAlGuardar);
   });
   await guardarPresupuestoObra();
   actualizarResumenPresupuesto();
