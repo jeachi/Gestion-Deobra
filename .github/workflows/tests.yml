@@ -6,12 +6,14 @@ on:
       - 'index.html'
       - 'tests/**'
       - 'package.json'
+      - 'package-lock.json'
   push:
     branches: [ main ]
     paths:
       - 'index.html'
       - 'tests/**'
       - 'package.json'
+      - 'package-lock.json'
 
 jobs:
   test:
@@ -24,3 +26,20 @@ jobs:
           node-version: 22
 
       - run: npm test
+
+  test_e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Solo el navegador que usan los tests (chromium) -- más liviano y rápido que instalar los 3.
+      - run: npx playwright install --with-deps chromium
+
+      - run: npm run test:e2e
