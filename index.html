@@ -20220,12 +20220,22 @@ async function iniciarSesion(){
   const user = document.getElementById("login-user").value.trim();
   const pass = document.getElementById("login-pass").value;
   const err = document.getElementById("login-error2");
-  const passHash = await hashPassword(pass);
-  const u = usuarios.find(x=>x.username.toLowerCase()===user.toLowerCase() && x.password===passHash);
-  if(!u){ err.textContent = "Usuario o contraseña incorrectos."; return; }
-  err.textContent = "";
-  const permisos = u.role==="admin" ? PERMISOS_ADMIN : (u.permisos || PERMISOS_CAPATAZ_DEFAULT);
-  ingresarComo({username:u.username, role:u.role, permisos});
+  // Antes, si hashPassword() fallaba por lo que sea (el caso típico: la app abierta por http://
+  // en vez de https://, donde el navegador bloquea crypto.subtle por seguridad), la excepción
+  // quedaba sin atrapar -- tocabas "Entrar" y la pantalla se quedaba exactamente como estaba, sin
+  // ningún mensaje, indistinguible de que el botón no hiciera nada. Ahora SIEMPRE se ve algo.
+  try{
+    if(!(window.crypto && window.crypto.subtle)) throw new Error("Este navegador bloqueó el ingreso por seguridad. Entrá con el link que empieza con https:// (no http://) y volvé a intentar.");
+    const passHash = await hashPassword(pass);
+    const u = usuarios.find(x=>x.username.toLowerCase()===user.toLowerCase() && x.password===passHash);
+    if(!u){ err.textContent = "Usuario o contraseña incorrectos."; return; }
+    err.textContent = "";
+    const permisos = u.role==="admin" ? PERMISOS_ADMIN : (u.permisos || PERMISOS_CAPATAZ_DEFAULT);
+    ingresarComo({username:u.username, role:u.role, permisos});
+  }catch(e){
+    console.error("No se pudo iniciar sesión:", e);
+    err.textContent = e.message || "No se pudo iniciar sesión. Revisá tu conexión y probá de nuevo.";
+  }
 }
 
 /* ---------------- Ingreso con huella (WebAuthn) ----------------
