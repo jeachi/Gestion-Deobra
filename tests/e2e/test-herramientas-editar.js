@@ -61,6 +61,9 @@ const FOTO_1x1 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1
   });
 
   // ---- 2) El botón Editar abre el modal con los datos actuales precargados ----
+  // Editar ahora vive atrás de "⋯ Más" (se agrupó junto con Historial/Eliminar para no abarrotar
+  // la tarjeta -- ver test-herramientas-menu-secundario.js para ese comportamiento en detalle).
+  await page.click('#lista-herramientas button:has-text("⋯ Más")');
   await page.click('#lista-herramientas button:has-text("Editar")');
   await page.waitForTimeout(100);
   const precarga = await page.evaluate(() => ({

@@ -770,7 +770,12 @@ table.trab input,table.trab select{
 .herr-acciones{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
 .herr-acciones-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
 .herr-acciones-grid .btn-mini{width:100%;box-sizing:border-box;text-align:center;}
-.herr-btn-eliminar{align-self:flex-end;padding:7px 16px !important;border-top:1px solid var(--fondo);padding-top:10px !important;margin-top:2px;}
+/* Historial/Editar/Eliminar van atrás de "⋯ Más" -- son consulta/administración, no el flujo de
+   uso diario (Observación y los cambios de estado), que se quedan siempre visibles arriba. */
+.herr-acciones-secundarias{display:none;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;padding-top:8px;border-top:1px dashed var(--borde);}
+.herr-acciones-secundarias.show{display:grid;}
+.herr-acciones-secundarias .btn-mini{width:100%;box-sizing:border-box;text-align:center;}
+.herr-btn-eliminar{grid-column:1/-1;}
 .btn-mini{border:1px solid var(--borde);border-radius:7px;padding:8px 9px;font-size:10.5px;font-weight:700;background:var(--papel);color:var(--tinta);cursor:pointer;min-height:34px;}
 .btn-mini.peligro{border-color:#B42318;color:var(--texto-alerta);}
 .btn-mini.admin{border-color:var(--verde);color:var(--texto-en-verde-claro);background:var(--verde-claro);}
@@ -14404,15 +14409,31 @@ function renderInventarioHerramientas(){
                 // pisaba el estado a "prestada" sin cerrar la reparación en curso (h.reparacion
                 // quedaba colgado, nunca se archivaba en historialReparaciones).
                 ? `<button type="button" class="btn-mini admin" onclick="abrirModalPrestamo('${h.id}')">🔁 Prestar a otra obra</button>` : ""}
-              <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${totalHistorialHerramienta(h)>0 ? ` (${totalHistorialHerramienta(h)})` : ""}</button>
-              <button type="button" class="btn-mini" onclick="abrirModalEditarHerramienta('${h.id}')">✏️ Editar</button>
+              <button type="button" class="btn-mini herr-btn-mas" onclick="toggleAccionesSecundariasHerramienta(this)">⋯ Más</button>
             ` : ``}
           </div>
-          ${esAdmin ? `<button type="button" class="btn-mini peligro herr-btn-eliminar" onclick="confirmarDoble(this,'${h.estado==="prestada"?"⚠ Sigue prestada, ¿Seguro?":"¿Seguro?"}',()=>eliminarHerramienta('${h.id}'))">🗑 Eliminar</button>` : ``}
+          ${esAdmin ? `
+            <div class="herr-acciones-secundarias">
+              <button type="button" class="btn-mini" onclick="abrirHistorialHerramienta('${h.id}')">📜 Historial${totalHistorialHerramienta(h)>0 ? ` (${totalHistorialHerramienta(h)})` : ""}</button>
+              <button type="button" class="btn-mini" onclick="abrirModalEditarHerramienta('${h.id}')">✏️ Editar</button>
+              <button type="button" class="btn-mini peligro herr-btn-eliminar" onclick="confirmarDoble(this,'${h.estado==="prestada"?"⚠ Sigue prestada, ¿Seguro?":"¿Seguro?"}',()=>eliminarHerramienta('${h.id}'))">🗑 Eliminar</button>
+            </div>
+          ` : ``}
         </div>
       </div>
     </div>`;
   }).join("") || `<p class="empty-msg">Todavía no hay herramientas cargadas${document.getElementById("herr-filtro-obra").value?" para esta obra":""}.</p>`;
+}
+// Historial/Editar/Eliminar quedan atrás de este botón (consulta/administración, no el flujo de
+// uso diario) -- cada tarjeta se abre/cierra por separado, buscando dentro de ESE .herr-item
+// nomás, así tocar "Más" en una no afecta a las demás de la lista.
+function toggleAccionesSecundariasHerramienta(btn){
+  const cont = btn.closest(".herr-item");
+  if(!cont) return;
+  const sec = cont.querySelector(".herr-acciones-secundarias");
+  if(!sec) return;
+  const abierta = sec.classList.toggle("show");
+  btn.textContent = abierta ? "▲ Menos" : "⋯ Más";
 }
 function cerrarModalHerramienta(){ document.getElementById("herr-modal-overlay").style.display = "none"; }
 // Edición de los datos propios de la herramienta (nombre, obra, cantidad, foto, nueva/usada,
