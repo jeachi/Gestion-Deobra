@@ -7,6 +7,10 @@ const { chromium } = require("playwright");
   // parseadas como UTC y como hora local, y solo se manifiesta cuando esas dos formas difieren
   // (el entorno de este contenedor corre en UTC por defecto, donde el bug no se nota).
   const page = await browser.newPage({ timezoneId: "America/Argentina/Buenos_Aires" });
+  // El SDK real de Firebase (gstatic) carga en CI con internet real pero no en
+  // el sandbox de desarrollo (CDN bloqueado) -- bloquearlo siempre hace que el
+  // mock de window.firebase de abajo sea quien manda en los dos entornos por igual.
+  await page.route("https://www.gstatic.com/firebasejs/**", (route) => route.abort());
   const errs = [];
   page.on("pageerror", (e) => errs.push(e.message));
 

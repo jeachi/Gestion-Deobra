@@ -11,6 +11,10 @@ const { chromium } = require("playwright");
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage();
+  // El SDK real de Firebase (gstatic) carga en CI con internet real pero no en
+  // el sandbox de desarrollo (CDN bloqueado) -- bloquearlo siempre hace que el
+  // mock de window.firebase de abajo sea quien manda en los dos entornos por igual.
+  await page.route("https://www.gstatic.com/firebasejs/**", (route) => route.abort());
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(e.message + "\n" + (e.stack || "")));
 
