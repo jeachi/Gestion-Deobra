@@ -133,6 +133,10 @@ body.tema-oscuro .nav-superior-modulo{background:linear-gradient(135deg,#081018,
    usaba como TEXTO de los títulos (h2) y esos sí quedaban casi invisibles sobre fondo oscuro --
    esto los corrige puntualmente, sin tocar la variable en sí. */
 body.tema-oscuro h2{color:var(--tinta) !important;}
+/* .fila-separador-prestado (separador "🔁 Trabajador prestado" de la grilla de Asistencia) usa
+   colores fijos pensados para fondo claro -- sin esto, en modo oscuro quedaba como una franja
+   lavanda clara saltando sobre el resto de la tabla oscura. Encontrado en auditoría. */
+body.tema-oscuro .fila-separador-prestado td{background:#2A1F42;color:#C4B5FD;}
 body{
   font-family:'Inter',system-ui,sans-serif;
   background:var(--fondo);
@@ -5454,6 +5458,10 @@ async function nexoAgregarMemoria(texto){
   await guardarMemoriaNexo();
 }
 async function nexoBorrarMemoria(idx){
+  // Encontrado en auditoría: a diferencia de absolutamente todo el resto de borrados de la app
+  // (incluido su propio vecino nexoBorrarTodaMemoria, acá abajo), este borraba sin confirmar nada.
+  const item = memoriaNexo[idx];
+  if(item && !confirm(`¿Borrar "${item.texto}" de lo que ${nexoNombreActual()} recuerda de vos?`)) return;
   memoriaNexo.splice(idx,1);
   await guardarMemoriaNexo();
   renderMemoriaNexoConfig();
@@ -5925,12 +5933,24 @@ function notaBaja(t){
   let f = t.fechaBaja ? fechaAR(t.fechaBaja) : "";
   return "BAJA"+(f?" - "+f:"")+(t.obs?" - "+t.obs:"");
 }
-function totalHorasRango(dias, desde, hasta){
+function totalHorasRango(dias, desde, hasta, reg, obraFiltro){
   // Igual que totalHoras pero sumando SOLO los días del rango (desde..hasta), es decir de
   // la quincena que se está mirando. Así la 1ra y la 2da quincena suman de forma independiente
   // y no se arrastran horas de una quincena a la otra en la columna "Total hs".
+  //
+  // Bug real encontrado en auditoría: reg.days es UN SOLO objeto por trabajador y mes, compartido
+  // entre todas las obras en las que haya tenido días cargados (su obra "de base" más cualquier
+  // día de préstamo puntual, marcado aparte en reg.diasObra). Sin filtrar por obra acá, un
+  // trabajador prestado aparecía con el MISMO total completo (todos sus días, de las dos obras)
+  // en la grilla/PDF/Excel de las DOS obras -- contado (y pagado) dos veces por las mismas horas.
+  // Con reg + obraFiltro, solo se suman los días cuya obra efectiva (el préstamo puntual de ese
+  // día si lo hay, si no la obra de base del mes) coincide con la obra que se está mirando.
   let total=0;
   for(let d=desde; d<=hasta; d++){
+    if(obraFiltro && reg){
+      const obraDelDia = (reg.diasObra && reg.diasObra[d]) || reg.obra || "";
+      if(obraDelDia!==obraFiltro) continue;
+    }
     const v = (dias||{})[d];
     // OJO: replace(",",".") -- esNumeroPuro ahora acepta coma decimal ("4,5"), pero parseFloat
     // corta en la coma (parseFloat("4,5")===4), así que sin este reemplazo un valor así quedaba
@@ -6102,7 +6122,7 @@ async function renderAsistencia(){
     });
     const notaKey = quincenaActual===1 ? "notaQ1" : "notaQ2";
     const obsVal = t && bajaAfectaElMes(t, mesActual) ? notaBaja(t) : (reg[notaKey]||"");
-    const total = totalHorasRango(reg.days, desde, hasta);
+    const total = totalHorasRango(reg.days, desde, hasta, reg, filtroObraGrilla);
     return `<tr class="${baja?'fila-baja':''}">
       <td class="sticky-col col-n">${i+1}</td>
       <td class="sticky-col col-nombre">${nombreCell}</td>
@@ -6753,7 +6773,7 @@ function clasificarValorDia(valor){
   // Cualquier otro texto (un nombre, por ejemplo) = estuvo cubriendo en otra obra / lo cubrieron
   return "otra_obra";
 }
-function calcularStatsAsistenciaMes(mes){
+function calcularStatsAsistenciaMes(mes, obraFiltro){
   const data = asistenciaCache[mes] || {};
   const porTrabajador = {};
   let totalPresente=0, totalAusente=0, totalEnfermo=0, totalFeriado=0, totalJustificado=0, totalOtraObra=0;
@@ -6766,6 +6786,14 @@ function calcularStatsAsistenciaMes(mes){
     let presente=0, ausente=0, enfermo=0, feriado=0, justificado=0, otraObra=0;
     const diasPresente = [];
     Object.entries(dias).forEach(([dia,v])=>{
+      // Encontrado en auditoría: esta función ignoraba el filtro de obra por completo -- el texto
+      // de la UI dice "en la obra" pero mostraba siempre el total de TODAS las obras combinadas.
+      // Mismo criterio que totalHorasRango(): la obra efectiva de cada día es el préstamo puntual
+      // (reg.diasObra) si lo hay, si no la obra de base del mes.
+      if(obraFiltro){
+        const obraDelDia = (reg && reg.diasObra && reg.diasObra[dia]) || (reg && reg.obra) || t.obra || "";
+        if(obraDelDia!==obraFiltro) return;
+      }
       const cat = clasificarValorDia(v);
       if(cat==="presente"){ presente++; diasConPresencia.add(dia); diasPresente.push(Number(dia)); }
       else if(cat==="ausente") ausente++;
@@ -6840,7 +6868,8 @@ function mostrarDiasPresenteInforme(idx){
 }
 async function renderInformesAsistencia(){
   const mes = mesActual;
-  const stats = calcularStatsAsistenciaMes(mes);
+  const filtroObraInf = document.getElementById("asis-filtro-obra")?.value || "";
+  const stats = calcularStatsAsistenciaMes(mes, filtroObraInf);
   const [anio, mesNum] = mes.split("-").map(Number);
   const nombreMes = new Date(anio, mesNum-1, 1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});
   document.getElementById("inf-sub").textContent =
@@ -6870,7 +6899,7 @@ async function renderInformesAsistencia(){
   cont.innerHTML = meses.map(m=>`<div class="chart-bar-col-inf" data-mes="${m}"><div class="chart-bar-inf" style="height:4%;opacity:.25;"></div><div class="chart-lbl-inf">…</div></div>`).join("");
   for(const m of meses){
     await cargarAsistenciaMes(m);
-    const pct = mesesConErrorDeCarga[m] ? null : calcularStatsAsistenciaMes(m).pctGeneral;
+    const pct = mesesConErrorDeCarga[m] ? null : calcularStatsAsistenciaMes(m, filtroObraInf).pctGeneral;
     const col = cont.querySelector(`[data-mes="${m}"]`);
     if(!col) continue;
     const lbl = new Date(m+"-01T00:00:00").toLocaleDateString("es-AR",{month:"short"});
@@ -6912,7 +6941,7 @@ function construirFilaStatsReporte(stats, ancho, margin){
 }
 function generarReporteAsistenciaPDF(){
   const mes = mesActual;
-  const stats = calcularStatsAsistenciaMes(mes);
+  const stats = calcularStatsAsistenciaMes(mes, document.getElementById("asis-filtro-obra")?.value || "");
   const [anio, mesNum] = mes.split("-").map(Number);
   const nombreMes = new Date(anio, mesNum-1, 1).toLocaleDateString("es-AR",{month:"long",year:"numeric"});
   const filas = trabajadores.map(t=>stats.porTrabajador[t.id]).filter(f=>f.base>0 || f.otraObra>0);
@@ -10851,6 +10880,18 @@ function formatoMoneda(n){
   const abs = Math.abs(v);
   return signo+"$"+abs.toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+// Versión compacta para espacios chicos (chips/tarjetas de resumen) -- encontrado en auditoría con
+// captura real: un monto grande como $7.800.000,00 no entra en la tarjeta "Certificado mes actual"
+// de Presupuesto y se corta en el borde. Esto lo abrevia ($7,8M / $45K) sin tocar formatoMoneda()
+// en ningún otro lado (detalle, PDF, Excel siguen mostrando el monto exacto como siempre).
+function formatoMonedaAbreviado(n){
+  const v = parseFloat(n)||0;
+  const signo = v<0 ? "-" : "";
+  const abs = Math.abs(v);
+  if(abs>=1000000) return signo+"$"+(abs/1000000).toLocaleString("es-AR",{minimumFractionDigits:1,maximumFractionDigits:1})+"M";
+  if(abs>=10000) return signo+"$"+Math.round(abs/1000).toLocaleString("es-AR")+"K";
+  return formatoMoneda(n);
+}
 // Máscara de "centavos" para inputs de monto: a medida que se escriben dígitos, los últimos 2
 // pasan a ser los centavos y el resto la parte entera -- así el campo muestra el monto ya
 // formateado en pesos ($1.234,56) mientras se escribe, en vez de dejar un número suelto y una
@@ -11325,6 +11366,7 @@ async function eliminarRendicion(){
   delete rendicionesCache[rendicionAbiertoId];
   try{ await window.storage.delete("rendicion_"+rendicionAbiertoId, true); }catch(e){}
 
+  let avisoSaldoReiniciado = null;
   if(eliminada){
     // Si esta rendición era la que "saldaba" a una anterior, esa anterior deja de estar cubierta
     // de verdad -- se reabre y se intenta cerrar de nuevo por si alguna otra rendición posterior
@@ -11351,10 +11393,38 @@ async function eliminarRendicion(){
     // de la ahora eliminada -- ese valor queda huérfano (no corresponde a ninguna rendición real) y
     // hay que reencadenarlo contra la que ahora queda antes en la secuencia.
     await reencadenarSaldoRendicionesPosteriores(eliminada.usuario);
+    // CASO SIN CUBRIR por lo de arriba: reencadenarSaldoRendicionesPosteriores() arranca en i=1 a
+    // propósito (la primera rendición de una cadena no tiene "anterior"). Si justo se borró la
+    // rendición MÁS VIEJA, la que ahora pasa a ser la primera sigue con el "saldoAnterior" que
+    // tenía copiado de la ahora-eliminada -- un valor huérfano, no 0 -- y nada lo vuelve a tocar
+    // nunca. No se puede "adivinar" el saldo real de arranque de esa caja, así que se reinicia a
+    // $0 (el estado real de una cadena sin nada antes) y se avisa explícitamente para que se
+    // revise/corrija a mano, en vez de dejar un monto fantasma mostrado como si fuera correcto.
+    const quedanOtras = rendicionesIndex.some(r=>claveDuenoCaja(r.usuario)===clave && r.numero<eliminada.numero);
+    if(!quedanOtras){
+      const nuevaPrimera = rendicionesIndex
+        .filter(r=>claveDuenoCaja(r.usuario)===clave)
+        .reduce((min,r)=> (!min || r.numero<min.numero) ? r : min, null);
+      if(nuevaPrimera){
+        const detalle = await cargarRendicionDetalle(nuevaPrimera.id);
+        if(detalle){
+          detalle.saldoAnterior = 0;
+          detalle.totalCaja = (detalle.fondo||[]).reduce((s,f)=>s+(parseFloat(f.monto)||0),0);
+          detalle.diferencia = detalle.totalCaja - detalle.totalGastos;
+          await guardarRendicionDetalle(detalle);
+          nuevaPrimera.totalCaja = detalle.totalCaja;
+          nuevaPrimera.diferencia = detalle.diferencia;
+          await guardarRendicionesIndex();
+          avisoSaldoReiniciado = nuevaPrimera.numero;
+        }
+      }
+    }
     await propagarCierreCajaChica([eliminada.usuario]);
   }
 
-  showToast("Rendición eliminada");
+  showToast(avisoSaldoReiniciado
+    ? `Rendición eliminada -- ⚠ el "saldo anterior" de la N° ${avisoSaldoReiniciado} (ahora la más vieja de esa caja) se reinició a $0, revisalo/corregilo a mano si corresponde otro valor`
+    : "Rendición eliminada");
   cambiarVistaCaja("lista");
   renderDashboard();
 }
@@ -11991,6 +12061,11 @@ function renderDetalleContratista(c){
   `;
 }
 async function eliminarContratista(){
+  // Encontrado en auditoría: a diferencia de Pedidos/Herramientas/Recordatorios/Observaciones (que
+  // exigen rol admin para borrar, no solo el permiso de módulo), esto se podía ejecutar con el
+  // simple permiso de módulo "certificados" -- un Capataz al que se le dio ese permiso podía borrar
+  // un contratista entero (con todos sus certificados) sin ninguna barrera extra.
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const c = contratistasIndex.find(x=>x.id===contratistaAbiertoId);
   const nombreTxt = c ? c.nombre : "";
   contratistasIndex = contratistasIndex.filter(c=>c.id!==contratistaAbiertoId);
@@ -12010,6 +12085,8 @@ async function eliminarContratista(){
   renderDashboard();
 }
 async function eliminarCertificado(contratistaId, certIndex){
+  // Mismo criterio que eliminarContratista -- ver el comentario ahí.
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const c = contratistasCache[contratistaId];
   if(!c || !c.certificados) return;
   const borrado = c.certificados[certIndex];
@@ -12450,8 +12527,20 @@ function restaurarBorradorCertificadoSiHayDiferencias(fechaInicial){
   if(!difiere) return;
   if(borrador.fecha) document.getElementById("cf-fecha").value = borrador.fecha;
   if(borrador.anotacion!==undefined) document.getElementById("cf-anotacion").value = borrador.anotacion;
-  certFormItems.forEach(f=>{ if(porItemId[f.itemId]!==undefined) f.pctAcumulado = porItemId[f.itemId]; });
-  showToast("✏️ Se recuperó un borrador sin guardar de este certificado");
+  // Encontrado en auditoría: un borrador abandonado podía quedar con un % por DEBAJO del
+  // pctAnterior vigente si, mientras tanto, se cargó un certificado real que lo dejó obsoleto
+  // (pctAnterior ya recién se recalculó en abrirFormCertificado, ANTES de llamar acá) -- restaurar
+  // ese valor a ciegas pisaría el % real ya certificado con uno más viejo e inválido. Se ignora
+  // puntualmente ese ítem (se deja el valor recién calculado) y se avisa aparte.
+  let huboItemObsoleto = false;
+  certFormItems.forEach(f=>{
+    if(porItemId[f.itemId]===undefined) return;
+    if(porItemId[f.itemId] < f.pctAnterior-0.0001){ huboItemObsoleto = true; return; }
+    f.pctAcumulado = porItemId[f.itemId];
+  });
+  showToast(huboItemObsoleto
+    ? "✏️ Se recuperó un borrador sin guardar, pero algún ítem tenía un % desactualizado (quedó el valor actual)"
+    : "✏️ Se recuperó un borrador sin guardar de este certificado");
 }
 function abrirFormCertificado(contratistaId, certIndexEditar){
   contratistaParaCertificarId = contratistaId;
@@ -13718,6 +13807,12 @@ window.addEventListener("popstate", function(ev){
     if(typeof dibujando!=="undefined" && dibujando && typeof cancelarDibujo==="function") cancelarDibujo();
     if(typeof indiceEditando!=="undefined" && indiceEditando!==null && typeof cancelarEdicion==="function") cancelarEdicion();
   }
+  // Encontrado en auditoría: el overlay genérico de modales (#prompt-generico-overlay, usado por
+  // decenas de pantallas -- el recordatorio de avance, "+ Certificación", monto del contrato, etc.)
+  // nunca se cerraba acá -- "atrás" cambiaba la vista de fondo pero el modal seguía tapando todo
+  // encima, recién se destrababa si se tocaba la "✕" a mano. cerrarPromptGenerico() no hace nada
+  // si no hay ninguno abierto, así que es seguro llamarlo siempre.
+  if(typeof cerrarPromptGenerico==="function") cerrarPromptGenerico();
   const destino = (ev.state && ev.state.vistaApp) ? ev.state.vistaApp : "dashboard";
   navegandoPorHistorial = true;
   irA(destino);
@@ -14033,6 +14128,9 @@ function herramientaSinUsarTodavia(h){
     && !(h.historialDanios&&h.historialDanios.length);
 }
 async function eliminarRemito(id){
+  // Mismo criterio que eliminarContratista -- ver el comentario ahí (auditoría: permisos de borrado
+  // inconsistentes entre módulos).
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const r = remitosIndex.find(x=>x.id===id);
   remitosIndex = remitosIndex.filter(x=>x.id!==id);
   await guardarRemitosIndex();
@@ -14606,6 +14704,11 @@ async function guardarPrestamoHerramienta(id){
   if(!h) return;
   const tipo = document.querySelector("#modal-prest-tipo-row .chip-opt.sel").dataset.val;
   const fechaRecepcion = document.getElementById("modal-prest-recepcion").value;
+  // Encontrado en auditoría: armar un préstamo nuevo (sin fecha de recepción todavía) pisaba
+  // h.estado a "prestada" sin chequear si venía de "danada" -- el daño quedaba archivado en
+  // historialDanios pero el estado visible se perdía en silencio, sin que nadie se entere de que
+  // se está prestando algo roto.
+  if(!fechaRecepcion && h.estado==="danada" && !confirm(`"${h.nombre}" está marcada como DAÑADA. ¿Confirmás que la querés prestar igual? (va a dejar de figurar como dañada mientras esté prestada)`)) return;
   h.prestamo = {
     tipo,
     obraDestino: tipo==="obra" ? document.getElementById("modal-prest-obra").value : "",
@@ -16299,7 +16402,9 @@ function actualizarResumenPresupuesto(){
   });
   const avanceGeneral = montoTotal>0 ? (ponderado/montoTotal*100) : 0;
   document.getElementById("pg-chip-avance").textContent = avanceGeneral.toFixed(2)+"%";
-  document.getElementById("pg-chip-monto").textContent = formatoMoneda(certificadoMesActual);
+  const chipMontoEl = document.getElementById("pg-chip-monto");
+  chipMontoEl.textContent = formatoMonedaAbreviado(certificadoMesActual);
+  chipMontoEl.title = formatoMoneda(certificadoMesActual);
   document.getElementById("pg-chip-coef").textContent = presupuestoCoeficiente.valor ? presupuestoCoeficiente.valor.toFixed(3) : "1.000";
   document.getElementById("pg-chip-mes").textContent = "Mes "+mesActualPresupuesto();
   // Verificación contra el monto del contrato -- se sigue comparando contra la SUMA TOTAL de
@@ -16534,6 +16639,9 @@ function toggleRubroPresupuesto(key){
   renderListaPresupuesto();
 }
 async function eliminarPresupuestoObra(){
+  // Mismo criterio que eliminarContratista -- ver el comentario ahí (auditoría: permisos de borrado
+  // inconsistentes entre módulos).
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const obra = claveObraPresupuesto();
   if(!obra) return;
   presupuestoItems = [];
@@ -16842,20 +16950,35 @@ async function confirmarNuevoMesPresupuesto(mesN){
     const idx = parseInt(inp.dataset.idx);
     const it = presupuestoItems[idx];
     if(!it) return;
-    const anterior = ultimoMesConDatos(it).acumulado;
+    it.historialMeses = it.historialMeses || [];
+    // entradaHastaMes(it, mesN-1), no ultimoMesConDatos(it): si ya existe una entrada para mesN
+    // (doble-toque en "✓ Guardar Mes N" con lag de red, sin ningún guard contra esto -- encontrado
+    // en auditoría), ultimoMesConDatos() la encontraría a ELLA MISMA como "último mes con datos" y
+    // calcularía "anterior" mal en el segundo toque. entradaHastaMes ignora cualquier entrada de
+    // mesN en adelante, así que "anterior" siempre sale del mes previo de verdad.
+    const anterior = entradaHastaMes(it, mesN-1).acumulado;
     // El input tiene un "max" en el HTML (100 menos lo que ya lleva acumulado), pero eso es solo
     // una sugerencia visual -- si se tipea un valor más alto igual, antes "acumulado" quedaba bien
     // clampeado a 100% pero "enElMes" (y el monto que se certifica ese mes) se guardaba SIN
     // clampear, sobreestimando cuánto se certificó realmente este mes.
     const enElMes = Math.min(valor/100, Math.max(0, 1-anterior));
     const acumulado = Math.min(1, anterior+enElMes);
-    it.historialMeses = it.historialMeses || [];
-    const entrada = {n:mesN, anterior, enElMes, acumulado, monto: enElMes*it.precioConCoef};
+    // Buscar antes de crear (igual que fijarAcumuladoMesPresupuesto): un doble-toque que llegue acá
+    // dos veces para el mismo mes actualiza la MISMA entrada en vez de empujar una segunda,
+    // evitando dos objetos con el mismo "n" en historialMeses (rompía totales y la curva).
+    let entrada = it.historialMeses.find(m=>m.n===mesN);
+    if(entrada){
+      entrada.anterior = anterior; entrada.enElMes = enElMes; entrada.acumulado = acumulado;
+      entrada.monto = enElMes*it.precioConCoef;
+    }else{
+      entrada = {n:mesN, anterior, enElMes, acumulado, monto: enElMes*it.precioConCoef};
+      it.historialMeses.push(entrada);
+      it.historialMeses.sort((a,b)=>a.n-b.n);
+    }
     // Mismo criterio que fijarAcumuladoMesPresupuesto: si este mes todavía no es (ni fue) el
     // actual, este valor es una planificación a futuro -- se congela para poder comparar después
     // lo real contra lo planificado en la Curva de avance.
     if(mesN > mesActualAlGuardar) entrada.planificado = acumulado;
-    it.historialMeses.push(entrada);
     cambios++;
   });
   if(cambios===0){ showToast("No cargaste ningún %."); return; }
@@ -17196,6 +17319,12 @@ function renderRevisionInspeccion(emparejados, sinEmparejar, mesN){
 async function confirmarInspeccionPresupuesto(mesN){
   const filas = document.querySelectorAll("#insp-lista-revision .insp-fila");
   const respaldo = {mesN, archivo: inspeccionArchivoNombre, fecha: hoyISO(), entradas: []};
+  // Calculado UNA sola vez antes de guardar nada -- mismo criterio que fijarAcumuladoMesPresupuesto:
+  // si el mes que trae el acta de Inspección todavía no es (ni fue) el actual, ese valor es
+  // planificación a futuro y hay que congelarlo para la Curva de avance real vs. planificado.
+  // Encontrado en auditoría: esta función nunca lo hacía -- un acta que adelantaba datos de un mes
+  // futuro quedaba afuera de la curva "Planificado" para siempre.
+  const mesActualAlGuardar = mesActualPresupuesto();
   let cambios = 0;
   filas.forEach(filaEl=>{
     const idx = parseInt(filaEl.dataset.idx, 10);
@@ -17226,6 +17355,7 @@ async function confirmarInspeccionPresupuesto(mesN){
       it.historialMeses.push(entrada);
       it.historialMeses.sort((a,b)=>a.n-b.n);
     }
+    if(mesN > mesActualAlGuardar) entrada.planificado = acumulado;
     let encadenado = acumulado;
     it.historialMeses.filter(m=>m.n>mesN).sort((a,b)=>a.n-b.n).forEach(m=>{
       m.anterior = encadenado;
@@ -18772,6 +18902,9 @@ function renderListaMinutas(){
   `).join("") || `<p class="empty-msg">Todavía no hay minutas guardadas.</p>`;
 }
 async function eliminarMinuta(id){
+  // Mismo criterio que eliminarContratista -- ver el comentario ahí (auditoría: permisos de borrado
+  // inconsistentes entre módulos).
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const m = minutasIndex.find(x=>x.id===id);
   const respaldo = m;
   minutasIndex = minutasIndex.filter(x=>x.id!==id);
@@ -18840,6 +18973,14 @@ async function guardarNumeroMinutaCorregido(id){
     }
   }catch(e){ okDetalle = false; }
   if(nuevoNumero>=correlativoMinutaSiguiente){ correlativoMinutaSiguiente = nuevoNumero+1; await guardarCorrelativoMinuta(); }
+  // Encontrado en auditoría: lo de arriba cubre subir el número (correrlo hacia adelante), pero
+  // BAJARLO podía dejar un hueco permanente -- si numeroAnterior era el más alto en uso y nadie más
+  // lo usa después de este cambio, nunca se liberaba para reciclar. Mismo criterio que ya usa
+  // eliminarMinuta() para el caso de borrado.
+  else if(numeroAnterior===correlativoMinutaSiguiente-1 && !minutasIndex.some(x=>x.numero>=numeroAnterior)){
+    correlativoMinutaSiguiente = numeroAnterior;
+    await guardarCorrelativoMinuta();
+  }
   registrarActividad(`corrigió el N° de una Minuta de ${esc(m.obra)} a N° ${nuevoNumero}`);
   // El índice (lo que se ve en la lista) ya quedó con el N° nuevo -- si el detalle completo (el que
   // usa verMinutaPDF/el PDF) no llegó a actualizarse, avisamos en vez de decir "✓" sin más: por
@@ -18863,6 +19004,11 @@ function construirHtmlQuincena(anio, mes, q){
   const {desde,hasta} = rangoQuincena(anio, mes, q);
   const dias=[]; for(let d=desde; d<=hasta; d++) dias.push(d);
   const data = asistenciaCache[mesActual] || {};
+  // Mismo filtro de obra que ya respeta filasParaMes() para decidir QUÉ filas entran -- sin
+  // pasarlo también a totalHorasRango(), un trabajador prestado entraba una vez por cada obra
+  // (correcto) pero con el MISMO total de horas completo en las dos, contándolo (y pagándolo) dos
+  // veces por los mismos días.
+  const filtroObraQuincena = document.getElementById("asis-filtro-obra")?.value || "";
   const filas = filasParaMes(mesActual).filter(f=>{
     const reg = data[f.id];
     return f.trabajador || (reg && reg.days && Object.values(reg.days).some(v=>v!==""&&v!==undefined));
@@ -18881,7 +19027,7 @@ function construirHtmlQuincena(anio, mes, q){
     const t = f.trabajador;
     const reg = data[f.id] || {days:{},obra:""};
     const baja = t && esBajaVigente(t);
-    const total = totalHorasRango(reg.days, desde, hasta);
+    const total = totalHorasRango(reg.days, desde, hasta, reg, filtroObraQuincena);
     totalGeneral += total;
     let diasHtml = "";
     dias.forEach(d=>{
@@ -18949,6 +19095,9 @@ function descargarExcelNomina(){
     const [anio, mesNum] = mesActual.split("-").map(Number);
     const diasEnMes = new Date(anio, mesNum, 0).getDate();
     const data = asistenciaCache[mesActual] || {};
+    // Mismo filtro de obra que construirHtmlQuincena -- ver el comentario ahí sobre por qué
+    // totalHorasRango() necesita reg+obraFiltro para no duplicar las horas de un préstamo.
+    const filtroObraExcel = document.getElementById("asis-filtro-obra")?.value || "";
     // Mismo filtro que ya usa el PDF de la quincena/mes (construirHtmlQuincena): una fila "extra"
     // sin trabajador asignado todavía, pero con horas ya cargadas, se incluye igual -- antes acá se
     // excluía cualquier fila sin f.trabajador sin importar si tenía datos, así que esas horas
@@ -18965,7 +19114,7 @@ function descargarExcelNomina(){
         const v = (reg.days||{})[String(i+1)];
         return v===undefined || v===null ? "" : v;
       });
-      const total = totalHorasRango(reg.days||{}, 1, diasEnMes);
+      const total = totalHorasRango(reg.days||{}, 1, diasEnMes, reg, filtroObraExcel);
       return [t?t.nombre:"", t?(t.categoria||""):"", t?(t.obra||""):(reg.obra||""), ...dias, total];
     });
     const ws = XLSX.utils.aoa_to_sheet([encabezado, ...filasExcel]);
@@ -20758,7 +20907,17 @@ async function quitarUsuario(username){
     const detalle = await cargarRendicionDetalle(r.id);
     if(detalle){ detalle.usuario = ""; await guardarRendicionDetalle(detalle); }
   }
-  if(rendicionesDelUsuario.length>0) await guardarRendicionesIndex();
+  if(rendicionesDelUsuario.length>0){
+    await guardarRendicionesIndex();
+    // Encontrado en auditoría: a diferencia de guardarRendicion/eliminarRendicion (que SIEMPRE
+    // reencadenan tras cualquier cambio de dueño o de número), acá no se llamaba a ninguna de las
+    // dos -- las rendiciones recién migradas quedaban mezcladas en la cadena del Administrador
+    // (ordenada por número global) con un saldoAnterior/diferencia calculado contra su cadena
+    // VIEJA (la del capataz borrado, que ya no existe), dejando mal el saldo disponible del
+    // Administrador hasta que alguien las reabriera una por una a mano.
+    await reencadenarSaldoRendicionesPosteriores("");
+    await propagarCierreCajaChica([""]);
+  }
   usuarios = usuarios.filter(u=>u.username!==username);
   await guardarUsuarios();
   renderTablaUsuarios();
@@ -29710,6 +29869,11 @@ function eliminarPoligonoEditando(){
   document.getElementById("panel-edicion").style.display = "none";
   document.getElementById("drawer-dibujar").style.display = "flex";
   document.getElementById("capa-manijas").innerHTML = "";
+  // Encontrado en auditoría: esta función duplica a mano la limpieza de salirDeEdicion() pero no
+  // llamaba a devolverBotonFlotanteGuardar() -- si el editor estaba abierto como overlay desde un
+  // Certificado ("Marcar avance"), eliminar el área dejaba el botón flotante en "✓ Listo" en vez de
+  // volver al botón del Certificado ("Guardar certificado").
+  devolverBotonFlotanteGuardar();
   redibujar();
   renderSelectorActividades();
   renderActividades();
