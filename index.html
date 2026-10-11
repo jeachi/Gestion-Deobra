@@ -3591,6 +3591,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   <section class="view" id="view-presupuesto">
     <div class="card" id="pg-selector" style="display:none;">
       <h2>📊 Presupuesto General — <span id="pg-obra-nombre"></span></h2>
+      <div id="pg-recuperar-excel-original" style="display:none;margin-bottom:12px;padding:10px 12px;background:#FFF3CD;border:1px solid #F0C85A;border-radius:10px;">
+        <p class="tiny" style="margin:0 0 8px;color:#7A5C00;font-weight:700;">Hay una copia del Excel original guardada para esta obra.</p>
+        <button class="btn btn-outline" style="width:100%;" onclick="recuperarExcelOriginalPresupuesto()">📥 Descargar Excel original guardado</button>
+      </div>
       <div id="pg-sin-datos" style="display:none;">
         <p class="helper" style="margin-bottom:12px;">Todavía no cargaste el presupuesto de esta obra. Importalo una vez desde tu Excel de Cómputo y Presupuesto (mismo formato de siempre, con los meses de certificación) — no hace falta tipear los ~150 ítems a mano.</p>
         <input type="file" id="pg-input-excel" accept=".xlsx,.xls" style="display:none;" onchange="onExcelPresupuestoSeleccionado(this)">
@@ -16375,11 +16379,43 @@ async function guardarPresupuestoObra(){
     }
   }catch(e){ showToast("No se pudo guardar el presupuesto (revisá conexión)"); }
 }
+// Recuperación de emergencia: descarga, TAL CUAL está guardado en Firestore, el Excel original
+// que se subió para esta obra -- sin fusionarlo con presupuestoItems (que puede estar vacío o
+// dañado) y sin escribir nada de vuelta en ningún lado. Solo lee y dispara una descarga local.
+async function recuperarExcelOriginalPresupuesto(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const obra = claveObraPresupuesto();
+  if(!obra){ showToast("No hay una obra seleccionada."); return; }
+  try{
+    const r = await window.storage.get(`presupuesto_excel_original_${obra}`, true);
+    if(!r || !r.value){ showToast("No hay un Excel original guardado para esta obra."); return; }
+    const datos = JSON.parse(r.value);
+    if(!datos.base64){ showToast("El archivo guardado no tiene contenido."); return; }
+    const bin = atob(datos.base64);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `presupuesto_original_${obra}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("✓ Excel original descargado");
+  }catch(e){
+    console.error("No se pudo recuperar el Excel original:", e);
+    showToast("No se pudo recuperar el archivo: "+(e.message||e));
+  }
+}
 async function prepararVistaPresupuesto(){
   const obra = claveObraPresupuesto();
   document.getElementById("pg-obra-nombre").textContent = obra || "(sin obra)";
   document.getElementById("pg-selector").style.display = "block";
   await cargarPresupuestoObra();
+  const esAdmin = sesionActual && sesionActual.role==="admin";
+  document.getElementById("pg-recuperar-excel-original").style.display = (esAdmin && presupuestoExcelOriginalBase64) ? "block" : "none";
   const hayDatos = presupuestoItems.length>0;
   document.getElementById("pg-sin-datos").style.display = hayDatos ? "none" : "block";
   document.getElementById("pg-con-datos").style.display = hayDatos ? "block" : "none";
