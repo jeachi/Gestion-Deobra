@@ -20973,9 +20973,44 @@ function renderTablaUsuarios(){
       <td>${esc(u.username)}</td>
       <td><span class="badge ${esAdmin?'activo':'baja'}">${esAdmin?'Administrador':'Capataz'}</span></td>
       ${celdasModulo}
-      <td><button class="btn btn-danger btn-sm" onclick="confirmarDoble(this,'¿Seguro?',()=>quitarUsuario('${esc(u.username)}'))">Quitar</button></td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="abrirCambiarClaveUsuario('${esc(u.username)}')">🔑 Clave</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmarDoble(this,'¿Seguro?',()=>quitarUsuario('${esc(u.username)}'))">Quitar</button>
+      </td>
     </tr>`;
   }).join("") || `<tr><td colspan="13" class="empty-msg">Todavía no agregaste ningún capataz.</td></tr>`;
+}
+// Antes no había NINGUNA forma de cambiar la clave de un usuario ya creado -- si alguien se
+// olvidaba la contraseña (uso normal: entra con huella/Face ID, nunca más la tipea) quedaba sin
+// ninguna salida dentro de la app. Cualquier Administrador puede resetearle la clave a cualquier
+// usuario, incluida la propia -- no hace falta saber la clave vieja, solo estar logueado como
+// Administrador (mismo criterio de permiso que agregar/quitar usuarios).
+function abrirCambiarClaveUsuario(username){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const html = `
+    <h2 style="margin-top:0;">🔑 Cambiar clave — ${esc(username)}</h2>
+    <p class="helper">No hace falta la clave vieja. La próxima vez, ${esc(username)} entra con esta clave nueva (o con la huella, si ya la tiene activada en su celular -- eso no se toca).</p>
+    <div class="field"><label>Clave nueva</label><input type="password" id="cc-pass1" autocomplete="new-password"></div>
+    <div class="field"><label>Repetir clave nueva</label><input type="password" id="cc-pass2" autocomplete="new-password"></div>
+    <p class="tiny" id="cc-error" style="color:var(--texto-alerta);"></p>
+    <button class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="confirmarCambiarClaveUsuario('${esc(username)}')">✓ Guardar clave nueva</button>
+    <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cancelar</button>`;
+  abrirPromptGenerico(html);
+}
+async function confirmarCambiarClaveUsuario(username){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const u = usuarios.find(x=>x.username===username);
+  const err = document.getElementById("cc-error");
+  if(!u){ err.textContent = "Ese usuario ya no existe."; return; }
+  const pass1 = document.getElementById("cc-pass1").value;
+  const pass2 = document.getElementById("cc-pass2").value;
+  if(pass1.length<6){ err.textContent = "La clave tiene que tener al menos 6 caracteres."; return; }
+  if(pass1!==pass2){ err.textContent = "Las claves no coinciden."; return; }
+  u.password = await hashPassword(pass1);
+  await guardarUsuarios();
+  cerrarPromptGenerico();
+  showToast(`✓ Clave de "${username}" actualizada`);
+  registrarActividad(`cambió la clave de "${username}"`);
 }
 
 async function togglePermisoUsuario(username, modulo, activo){
