@@ -2803,7 +2803,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div id="card-cfg-usuarios" style="display:none;">
       <div class="card" id="card-usuarios">
         <h2>Usuarios y permisos</h2>
-        <p class="helper" style="margin-bottom:10px;">Vos sos el Administrador (acceso a todo). Desde acá solo se pueden agregar cuentas de Capataz — no se puede crear otro Administrador desde esta pantalla. Cada Capataz arranca con acceso solo a Asistencia; los demás módulos los activás vos tildando abajo cuando haga falta. La Caja Chica de cada uno es independiente: nadie ve ni mezcla la rendición de otro Capataz.</p>
+        <p class="helper" style="margin-bottom:10px;">Vos sos el Administrador (acceso a todo). Un Administrador puede tener acceso a todo y crear otras cuentas; podés agregar más de uno si hace falta. Cada Capataz arranca con acceso solo a Asistencia; los demás módulos los activás vos tildando abajo cuando haga falta. La Caja Chica de cada uno es independiente: nadie ve ni mezcla la rendición de otro usuario.</p>
         <div class="row-flex">
           <div class="field" style="flex:1;min-width:120px;">
             <label>Usuario</label>
@@ -2815,7 +2815,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           </div>
           <div class="field">
             <label>Rol</label>
-            <select id="nu-rol" disabled><option value="capataz">Capataz</option></select>
+            <select id="nu-rol">
+              <option value="capataz">Capataz</option>
+              <option value="admin">Administrador</option>
+            </select>
           </div>
           <button class="btn btn-primary" onclick="agregarUsuario()">+ Agregar</button>
         </div>
@@ -21173,17 +21176,22 @@ async function agregarUsuario(){
   if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
   const user = document.getElementById("nu-user").value.trim();
   const pass = document.getElementById("nu-pass").value;
-  const rol = "capataz"; // esta pantalla solo crea cuentas de Capataz; el Administrador se crea una sola vez al arrancar la app
+  const rol = document.getElementById("nu-rol").value === "admin" ? "admin" : "capataz";
   if(!user || !pass){ showToast("Completá usuario y contraseña"); return; }
   if(pass.length<6){ showToast("La contraseña tiene que tener al menos 6 caracteres"); return; }
   if(usuarios.some(u=>u.username.toLowerCase()===user.toLowerCase())){ showToast("Ese usuario ya existe"); return; }
+  // Un Administrador nuevo tiene acceso a TODO (incluido borrar datos de cualquiera y restaurar un
+  // respaldo que reemplaza la base entera) -- a diferencia de agregar un Capataz, pedimos
+  // confirmación explícita para no crear uno por error con un clic de más.
+  if(rol==="admin" && !window.confirm(`¿Seguro que querés que "${user}" sea Administrador? Va a tener acceso a todo, igual que vos.`)) return;
   usuarios.push({username:user, password: await hashPassword(pass), role:rol, permisos:{...PERMISOS_CAPATAZ_DEFAULT}});
   await guardarUsuarios();
   document.getElementById("nu-user").value = "";
   document.getElementById("nu-pass").value = "";
+  document.getElementById("nu-rol").value = "capataz";
   renderTablaUsuarios();
-  showToast("Usuario agregado ✓");
-  registrarActividad(`agregó al capataz "${user}"`);
+  showToast(rol==="admin" ? "Administrador agregado ✓" : "Usuario agregado ✓");
+  registrarActividad(rol==="admin" ? `agregó al Administrador "${user}"` : `agregó al capataz "${user}"`);
 }
 async function quitarUsuario(username){
   if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
