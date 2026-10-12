@@ -528,6 +528,12 @@ section.view.active{display:block;}
 .dash-stat:active{transform:scale(.97);}
 .dash-stat.tono-b{background:linear-gradient(135deg,#5B21B6,#A78BFA);}
 .dash-stat.tono-c{background:linear-gradient(135deg,#B45309,#FBBF24);}
+/* Antes "Personal activo", "Saldo de Caja Chica" y "Herramientas prestadas" compartían las 3 el
+   mismo degradé verde por defecto (solo Pedidos y Días trabajados tenían tono propio) -- de las 5
+   tarjetas de Resumen, 3 se veían idénticas de lejos. Caja Chica y Herramientas pasan a su propio
+   color, dejando el verde por defecto solo para Personal activo. */
+.dash-stat.tono-d{background:linear-gradient(135deg,#1E3A8A,#60A5FA);}
+.dash-stat.tono-e{background:linear-gradient(135deg,#334155,#94A3B8);}
 .dash-stat .stat-ico{font-size:19px;opacity:.9;}
 .dash-stat .num{font-size:23px;font-weight:900;line-height:1.2;margin-top:5px;}
 .dash-stat .num.negativo{color:#FFD1D1;text-shadow:0 0 12px rgba(255,71,87,.55);}
@@ -2678,10 +2684,20 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <div class="dash-card-title">Certificados</div>
         <div class="dash-card-desc">Certificados de avance por contratista, con ítems propios y saldo por cobrar.</div>
       </div>
+      <div class="dash-card" onclick="irA('presupuesto')">
+        <div class="dash-card-icon" data-modulo="presupuesto" data-emoji="📊">📊</div>
+        <div class="dash-card-title">Presupuesto General</div>
+        <div class="dash-card-desc">Seguimiento mensual del presupuesto, ítem por ítem.</div>
+      </div>
       <div class="dash-card" onclick="irA('minutas')">
         <div class="dash-card-icon" data-modulo="minutas" data-emoji="📝">📝</div>
         <div class="dash-card-title">Minutas</div>
         <div class="dash-card-desc">Actas de reunión con firma digital, en PDF listas para enviar.</div>
+      </div>
+      <div class="dash-card" onclick="irA('observaciones')">
+        <div class="dash-card-icon" data-modulo="observaciones" data-emoji="📌">📌</div>
+        <div class="dash-card-title">Pendientes</div>
+        <div class="dash-card-desc">Observaciones y recordatorios de la obra, por prioridad.</div>
       </div>
       <div class="dash-card" onclick="irA('clima')">
         <div class="dash-card-icon" data-modulo="clima" data-emoji="🌤">🌤</div>
@@ -10330,6 +10346,12 @@ function renderEstadoNominaDash(){
   const fecha = new Date(ultima.fecha);
   const hoy = new Date();
   const esHoy = fecha.toDateString()===hoy.toDateString();
+  // Cuando lo último cargado HOY fue justo la asistencia del día (no un cambio de plantel), la
+  // tarjeta "Hoy en obra" ya lo muestra en su sección "🟢 Andando bien" (ver avisosQueVanBien) --
+  // mostrarlo también acá era repetir la misma noticia dos veces en la misma pantalla. Un alta,
+  // baja, edición o importación de trabajadores de HOY sigue avisando igual que siempre: esa
+  // información no está en ningún otro lado del Dashboard.
+  if(esHoy && /asistencia/i.test(ultima.texto)){ cont.style.display = "none"; return; }
   const diffDias = Math.floor((hoy-fecha)/86400000);
   const cuando = esHoy ? `hoy a las ${fecha.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}` : diffDias===1 ? "ayer" : `hace ${diffDias} días`;
   cont.style.display = "block";
@@ -10464,7 +10486,7 @@ async function renderDashboard(){
       ${htmlSpark(sparkPedidos)}
       <div class="tendencia">${sparkPedidos.reduce((a,b)=>a+b,0)} cargados esta semana</div>
     </div>
-    <div class="dash-stat" onclick="irA('caja')">
+    <div class="dash-stat tono-d" onclick="irA('caja')">
       <div class="stat-ico" data-stat="caja">${iconoStatDashboard('caja')}</div>
       <div class="num${saldoCaja<0?" negativo":""}">${formatoMoneda(saldoCaja)}</div>
       <div class="lbl">Saldo de Caja Chica</div>
@@ -10478,7 +10500,7 @@ async function renderDashboard(){
       ${htmlSpark(sparkClima)}
       <div class="tendencia">${sparkClima.reduce((a,b)=>a+b,0)}/7 días trabajados</div>
     </div>
-    <div class="dash-stat" onclick="mostrarDetalleHerramientasPrestadas()">
+    <div class="dash-stat tono-e" onclick="mostrarDetalleHerramientasPrestadas()">
       <div class="stat-ico" data-stat="herramientas">${iconoStatDashboard('herramientas')}</div>
       <div class="num">${herramientas.filter(h=>(obraVisible(h.obra)) && h.estado==="prestada").length}</div>
       <div class="lbl">Herramientas prestadas</div>
