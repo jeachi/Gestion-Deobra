@@ -2664,62 +2664,62 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="card" id="dash-plano-avance"></div>
     <div class="bento-tit">Módulos</div>
     <div class="dash-grid bento">
-      <div class="dash-card" onclick="irA('asistencia')">
+      <div class="dash-card" data-modulo="asistencia" onclick="irA('asistencia')">
         <div class="dash-card-icon" data-modulo="asistencia" data-emoji="👷">👷</div>
         <div class="dash-card-title">Nómina de Obra</div>
         <div class="dash-card-desc">Carga de asistencia diaria y reportes PDF por quincena.</div>
       </div>
-      <div class="dash-card" onclick="irA('pedidos')">
+      <div class="dash-card" data-modulo="pedidos" onclick="irA('pedidos')">
         <div class="dash-card-icon" data-modulo="pedidos" data-emoji="📦">📦</div>
         <div class="dash-card-title">Pedidos de Materiales</div>
         <div class="dash-card-desc">Orden de pedido con correlativo, control de entregas y carga de planos o fotos.</div>
       </div>
-      <div class="dash-card" onclick="irA('caja')">
+      <div class="dash-card" data-modulo="caja" onclick="irA('caja')">
         <div class="dash-card-icon" data-modulo="caja" data-emoji="💰">💰</div>
         <div class="dash-card-title">Caja Chica</div>
         <div class="dash-card-desc">Rendición de gastos por quincena, con conciliación de fondo y reporte PDF.</div>
       </div>
-      <div class="dash-card" onclick="irA('certificados')">
+      <div class="dash-card" data-modulo="certificados" onclick="irA('certificados')">
         <div class="dash-card-icon" data-modulo="certificados" data-emoji="🧾">🧾</div>
         <div class="dash-card-title">Certificados</div>
         <div class="dash-card-desc">Certificados de avance por contratista, con ítems propios y saldo por cobrar.</div>
       </div>
-      <div class="dash-card" onclick="irA('presupuesto')">
+      <div class="dash-card" data-modulo="presupuesto" onclick="irA('presupuesto')">
         <div class="dash-card-icon" data-modulo="presupuesto" data-emoji="📊">📊</div>
         <div class="dash-card-title">Presupuesto General</div>
         <div class="dash-card-desc">Seguimiento mensual del presupuesto, ítem por ítem.</div>
       </div>
-      <div class="dash-card" onclick="irA('minutas')">
+      <div class="dash-card" data-modulo="minutas" onclick="irA('minutas')">
         <div class="dash-card-icon" data-modulo="minutas" data-emoji="📝">📝</div>
         <div class="dash-card-title">Minutas</div>
         <div class="dash-card-desc">Actas de reunión con firma digital, en PDF listas para enviar.</div>
       </div>
-      <div class="dash-card" onclick="irA('observaciones')">
+      <div class="dash-card" data-modulo="observaciones" onclick="irA('observaciones')">
         <div class="dash-card-icon" data-modulo="observaciones" data-emoji="📌">📌</div>
         <div class="dash-card-title">Pendientes</div>
         <div class="dash-card-desc">Observaciones y recordatorios de la obra, por prioridad.</div>
       </div>
-      <div class="dash-card" onclick="irA('clima')">
+      <div class="dash-card" data-modulo="clima" onclick="irA('clima')">
         <div class="dash-card-icon" data-modulo="clima" data-emoji="🌤">🌤</div>
         <div class="dash-card-title">Libro climático</div>
         <div class="dash-card-desc">Registro diario del clima y si se pudo trabajar, con reporte PDF.</div>
       </div>
-      <div class="dash-card" onclick="irA('remitos')">
+      <div class="dash-card" data-modulo="remitos" onclick="irA('remitos')">
         <div class="dash-card-icon" data-modulo="remitos" data-emoji="📄">📄</div>
         <div class="dash-card-title">Remitos</div>
         <div class="dash-card-desc">Recepción de mercadería con firma digital, en PDF listo para enviar.</div>
       </div>
-      <div class="dash-card" onclick="irA('herramientas')">
+      <div class="dash-card" data-modulo="herramientas" onclick="irA('herramientas')">
         <div class="dash-card-icon" data-modulo="herramientas" data-emoji="🧰">🧰</div>
         <div class="dash-card-title">Herramientas</div>
         <div class="dash-card-desc">Inventario, préstamos entre obras y reparaciones.</div>
       </div>
-      <div class="dash-card" onclick="irA('planoavance')">
+      <div class="dash-card" data-modulo="planoavance" onclick="irA('planoavance')">
         <div class="dash-card-icon" data-modulo="planoavance" data-emoji="📐">📐</div>
         <div class="dash-card-title">Plano de avance</div>
         <div class="dash-card-desc">Marcá el % de avance por actividad directo sobre el plano, con seguimiento semanal.</div>
       </div>
-      <div class="dash-card" onclick="irA('trabajadores')">
+      <div class="dash-card" data-modulo="trabajadores" onclick="irA('trabajadores')">
         <div class="dash-card-icon" data-modulo="trabajadores" data-emoji="⚙">⚙</div>
         <div class="dash-card-title">Configuración</div>
         <div class="dash-card-desc">Altas y bajas de personal, catálogos, usuarios y respaldo de datos.</div>
@@ -2865,6 +2865,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <div class="chip-opt" data-val="abajo" onclick="cambiarNavPosicion('abajo')">⬇ Abajo</div>
         </div>
         <p class="tiny" style="margin:6px 0 14px;">Dónde van los accesos a Dashboard/Asistencia/Pedidos/Caja/... Se acomoda solo el botón de Guardar y el asistente para no pisarse.</p>
+
+        <p class="tiny" style="margin-bottom:6px;font-weight:700;">Módulos del Dashboard</p>
+        <p class="tiny" style="margin:0 0 8px;">Elegí qué tarjetas de módulo se ven en la sección "Módulos" de tu Dashboard. Las que destildás siguen disponibles igual desde el menú de abajo -- esto solo las saca de ahí para no verlas si no las usás.</p>
+        <div id="dash-modulos-toggle-list" style="margin-bottom:14px;"></div>
 
         <div id="selector-tema-nav" style="border-top:1px solid var(--borde);padding-top:14px;"></div>
       </div>
@@ -7291,6 +7295,7 @@ function cambiarVistaConfig(v){
   if(v==="personalizacion"){
     aplicarNavPosicion();
     renderSelectorTemaNav();
+    renderDashModulosToggleList();
   }
   if(v==="actividad"){
     const stamp = document.getElementById("app-version-stamp");
@@ -10369,6 +10374,44 @@ function renderEstadoNominaDash(){
 // tema "emoji" (el de por defecto) no cambia nada -- se mantiene el emoji propio de cada tarjeta,
 // que no siempre es el mismo que el de su pestaña en la barra inferior (p.ej. la tarjeta de
 // Nómina usa 👷 y su pestaña usa 🗓, cada uno pensado para su contexto).
+// ---------------- Módulos visibles en el Dashboard: cada usuario elige cuáles tarjetas de
+// "Módulos" quiere ver en SU Dashboard -- mismo patrón de guardado por usuario que temaColor y
+// navPosicion. Guarda solo los que el usuario OCULTÓ (no los que ve), así alguien que nunca tocó
+// este ajuste sigue viendo todo (incluido un módulo nuevo que se agregue a futuro a la grilla).
+let dashModulosOcultos = {};
+async function cargarDashModulosUsuario(){
+  try{
+    const r = await window.storage.get("dash_modulos_ocultos_"+(sesionActual?sesionActual.username:"x"), true);
+    dashModulosOcultos = r && r.value ? JSON.parse(r.value) : {};
+  }catch(e){ dashModulosOcultos = {}; }
+  aplicarDashModulosActivos();
+  renderDashModulosToggleList();
+}
+function aplicarDashModulosActivos(){
+  document.querySelectorAll("#view-dashboard .dash-grid.bento .dash-card[data-modulo]").forEach(el=>{
+    el.style.display = dashModulosOcultos[el.dataset.modulo] ? "none" : "";
+  });
+}
+async function toggleDashModulo(modulo, visible){
+  if(visible) delete dashModulosOcultos[modulo];
+  else dashModulosOcultos[modulo] = true;
+  aplicarDashModulosActivos();
+  await guardarClave("dash_modulos_ocultos_"+(sesionActual?sesionActual.username:"x"), JSON.stringify(dashModulosOcultos));
+}
+function renderDashModulosToggleList(){
+  const cont = document.getElementById("dash-modulos-toggle-list");
+  if(!cont) return;
+  const tarjetas = [...document.querySelectorAll("#view-dashboard .dash-grid.bento .dash-card[data-modulo]")];
+  cont.innerHTML = tarjetas.map(el=>{
+    const m = el.dataset.modulo;
+    const titulo = el.querySelector(".dash-card-title").textContent;
+    const activo = !dashModulosOcultos[m];
+    return `<label style="display:flex;align-items:center;gap:8px;padding:7px 2px;font-size:13px;cursor:pointer;">
+      <input type="checkbox" ${activo?"checked":""} onchange="toggleDashModulo('${m}', this.checked)" style="width:18px;height:18px;flex-shrink:0;">
+      ${esc(titulo)}
+    </label>`;
+  }).join("");
+}
 function actualizarIconosDashCards(){
   document.querySelectorAll("#view-dashboard .dash-card-icon[data-modulo]").forEach(el=>{
     el.innerHTML = temaIconoApp==="emoji" ? el.dataset.emoji : iconoModuloHtml(el.dataset.modulo);
@@ -10388,6 +10431,7 @@ async function renderDashboard(){
   renderEstadoNominaDash();
   renderChipsObraDash();
   actualizarIconosDashCards();
+  aplicarDashModulosActivos();
   const filtroObra = dashboardObraFiltro;
   const obraVisible = o => obrasActivas().includes(o) && (!filtroObra || o===filtroObra);
   const trabActivos = trabajadores.filter(t=>t.estado==="Activo" && (obraVisible(t.obra))).length;
@@ -21157,6 +21201,7 @@ function aplicarRestriccionesRol(){
   cargarTemaColor();
   cargarPrefsNavUsuario();
   cargarOrdenNavInferiorUsuario();
+  cargarDashModulosUsuario();
   const fab = document.getElementById("fab-asistente");
   if(fab) fab.style.display = esAdmin ? "flex" : "none";
   nexoAplicarTemaFab();
