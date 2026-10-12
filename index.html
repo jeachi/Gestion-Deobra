@@ -2975,6 +2975,16 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <p class="tiny" id="respaldo-info" style="margin-top:8px;"></p>
         <p class="tiny" style="color:var(--texto-alerta);">⚠ Restaurar un respaldo reemplaza los datos actuales por los del archivo — usalo solo si estás recuperando de un problema.</p>
       </div>
+
+      <div class="card" id="card-limpieza-tests">
+        <h2>🧹 Limpieza de datos de prueba</h2>
+        <p class="helper" style="margin-bottom:10px;">Busca documentos huérfanos en Firestore (del incidente de los tests de CI) -- cuenta como huérfano solo lo que YA NO aparece en el índice actual de Pedidos, Contratistas o Caja Chica, así que nunca toca nada que ya esté corregido o cargado de verdad.</p>
+        <div class="row-flex">
+          <button class="btn btn-outline" onclick="escanearBasuraDeTests()">🔍 Buscar basura de tests</button>
+          <button class="btn btn-primary" id="btn-limpieza-tests-eliminar" style="display:none;" onclick="eliminarBasuraDeTests()"></button>
+        </div>
+        <div id="limpieza-tests-resultado" class="tiny" style="margin-top:8px;"></div>
+      </div>
     </div>
   </section>
 
@@ -21409,6 +21419,97 @@ async function importarRespaldo(input){
   };
   reader.readAsText(file);
   input.value = "";
+}
+
+/* ---------------- Limpieza de documentos huérfanos (incidente de tests de CI) ---------------- */
+// Ver conversación con el usuario: un bug de los tests de CI escribió datos de prueba directo
+// sobre Firestore de producción. Los datos reales ya se recuperaron (recuperarPedidosIncidente,
+// recuperarContratistasIncidente, restauración a mano de Trabajadores/Asistencia, etc.) -- lo que
+// queda dando vueltas son documentos de DETALLE que nadie referencia: claves "pedido_<id>",
+// "cert_contratista_<id>" o "rendicion_<id>" que no aparecen en el índice vigente (ya sea porque
+// nunca fueron datos reales, o porque el índice se reconstruyó sin ellos). Como la app siempre
+// entra a estos documentos A TRAVÉS del índice (nunca por id suelto), un huérfano es invisible
+// para cualquier pantalla -- borrarlo no puede afectar nada que ya esté funcionando. El criterio
+// nunca mira el CONTENIDO del documento (no hace falta adivinar si "parece" de test): compara
+// solo contra el índice real en memoria, así que cualquier cosa que el usuario ya haya cargado o
+// corregido a mano queda afuera sin importar cómo se llame.
+let basuraDeTestsEncontrada = null; // {"Pedidos":[claves], "Contratistas":[claves], "Caja Chica":[claves]} del último escaneo
+const GRUPOS_BASURA_TESTS = [
+  { tipo: "Pedidos", prefijo: "pedido_", excluir: new Set(), idsVigentes: () => pedidosIndex },
+  { tipo: "Contratistas", prefijo: "cert_contratista_", excluir: new Set(), idsVigentes: () => contratistasIndex },
+  // "rendicion_correlativo" (el contador) comparte el prefijo "rendicion_" con los documentos de
+  // detalle reales ("rendicion_<id>") -- hay que excluirlo a mano o el escaneo lo borraría.
+  { tipo: "Caja Chica", prefijo: "rendicion_", excluir: new Set(["rendicion_correlativo"]), idsVigentes: () => rendicionesIndex },
+];
+async function escanearBasuraDeTests(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const cont = document.getElementById("limpieza-tests-resultado");
+  const btnEliminar = document.getElementById("btn-limpieza-tests-eliminar");
+  btnEliminar.style.display = "none";
+  basuraDeTestsEncontrada = null;
+  cont.textContent = "Buscando…";
+  try{
+    // Se refrescan los 3 índices antes de comparar -- si quedaron desactualizados en memoria (por
+    // ejemplo, nadie visitó esas pantallas desde que arrancó la app), compararlos contra una
+    // versión vieja podría marcar como "huérfano" algo que en realidad sí está en el índice real.
+    await Promise.all([cargarPedidosIndex(), cargarContratistasIndex(), cargarRendicionesIndex()]);
+    const r = await window.storage.list(undefined, true);
+    const todasLasClaves = (r && r.keys) ? r.keys : [];
+    const encontrado = {};
+    let total = 0;
+    for(const grupo of GRUPOS_BASURA_TESTS){
+      const idsVigentes = new Set(grupo.idsVigentes().map(x=>x.id));
+      const huerfanas = todasLasClaves.filter(clave=>{
+        if(!clave.startsWith(grupo.prefijo)) return false;
+        if(grupo.excluir.has(clave)) return false;
+        return !idsVigentes.has(clave.slice(grupo.prefijo.length));
+      });
+      if(huerfanas.length){ encontrado[grupo.tipo] = huerfanas; total += huerfanas.length; }
+    }
+    basuraDeTestsEncontrada = encontrado;
+    if(total===0){
+      cont.textContent = "No se encontró ningún documento huérfano — no hay nada para limpiar.";
+      return;
+    }
+    cont.innerHTML = Object.entries(encontrado).map(([tipo, claves])=>
+      `<div>${esc(tipo)}: ${claves.length} documento(s) huérfano(s), sin referencia en el índice actual</div>`
+    ).join("");
+    btnEliminar.textContent = `🗑 Eliminar ${total} documento(s) encontrado(s)`;
+    btnEliminar.style.display = "";
+  }catch(e){
+    console.error(e);
+    cont.textContent = "";
+    alert("No se pudo escanear Firestore. Detalle: "+(e && e.message ? e.message : e));
+  }
+}
+async function eliminarBasuraDeTests(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  if(!basuraDeTestsEncontrada) return;
+  const total = Object.values(basuraDeTestsEncontrada).reduce((n,a)=>n+a.length, 0);
+  if(total===0) return;
+  if(!window.confirm(`¿Eliminar ${total} documento(s) de prueba? Se vuelve a revisar cada uno justo antes de borrarlo para no tocar nada que ya esté corregido.`)) return;
+  const cont = document.getElementById("limpieza-tests-resultado");
+  // Se refrescan los índices una vez más, justo antes de borrar -- por si cambiaron entre el
+  // escaneo y ahora (otra pestaña, u otro dispositivo, corrió algo mientras tanto).
+  await Promise.all([cargarPedidosIndex(), cargarContratistasIndex(), cargarRendicionesIndex()]);
+  let borrados = 0, salteados = 0;
+  for(const grupo of GRUPOS_BASURA_TESTS){
+    const claves = basuraDeTestsEncontrada[grupo.tipo];
+    if(!claves) continue;
+    const idsVigentes = new Set(grupo.idsVigentes().map(x=>x.id));
+    for(const clave of claves){
+      if(idsVigentes.has(clave.slice(grupo.prefijo.length))){ salteados++; continue; }
+      try{ await window.storage.delete(clave, true); borrados++; }
+      catch(e){ console.warn("No se pudo borrar "+clave, e); }
+    }
+  }
+  basuraDeTestsEncontrada = null;
+  document.getElementById("btn-limpieza-tests-eliminar").style.display = "none";
+  cont.textContent = `Eliminados ${borrados} documento(s) de prueba${salteados ? ` (se dejaron ${salteados} que ya no eran huérfanos)` : ""} ✓`;
+  if(borrados>0){
+    showToast(`✓ Limpieza de tests: ${borrados} documento(s) eliminado(s)`);
+    registrarActividad(`eliminó ${borrados} documento(s) huérfanos de prueba de Firestore (limpieza del incidente de CI)`);
+  }
 }
 
 /* ==================== RESPALDO SEMANAL AUTOMÁTICO A GOOGLE DRIVE ====================
