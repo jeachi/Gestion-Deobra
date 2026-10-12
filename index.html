@@ -21523,7 +21523,11 @@ async function eliminarBasuraDeTests(){
    https://jeachi.github.io). Antes de esto, el valor era un placeholder y driveConfigurado
    quedaba en false -- toda esta sección se activa sola con un Client ID real. ***/
 const GOOGLE_DRIVE_CLIENT_ID = "883784249577-pi243k8a58hrkv3cf23gq5am6rbsvbs1.apps.googleusercontent.com";
-const GOOGLE_DRIVE_CARPETA_ID = "1iFsk2RHDGAqZg1IQTHzaeF6JroZUgTjF"; // carpeta de Drive que pasó Jesús
+// El scope "drive.file" (el más acotado, sin pedir acceso a todo el Drive) solo deja ver/escribir
+// archivos y carpetas que la PROPIA app creó -- no alcanza una carpeta ya existente creada a mano
+// por fuera de la app, aunque se sepa su ID (Google devuelve 403 al intentar subir ahí). Por eso la
+// carpeta se crea (una sola vez) con este mismo token, en vez de depender de un ID fijo.
+const NOMBRE_CARPETA_DRIVE = "Respaldo de App";
 const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DIAS_ENTRE_RESPALDOS = 7;
 const RESPALDOS_A_CONSERVAR = 3;
@@ -21569,19 +21573,59 @@ async function conectarGoogleDrive(){
   try{
     await obtenerTokenDriveValido(true);
     await window.storage.set("drive_autorizado", "true", true);
-    showToast("Conectado con Google Drive ✓");
+    showToast("Conectado con Google Drive ✓ — subiendo el primer respaldo…");
     renderEstadoRespaldoDrive();
-    verificarRespaldoSemanal(true);
   }catch(e){
     console.error(e);
     showToast("No se pudo conectar con Google Drive");
+    return;
   }
+  // A diferencia del chequeo semanal automático (silencioso, para no interrumpir a nadie si falla
+  // sin que la persona haya hecho nada), este primer respaldo lo disparó el Administrador a
+  // propósito al tocar "Conectar" -- si falla, se tiene que enterar, no quedarse pensando que ya
+  // quedó todo funcionando cuando en realidad no se subió nada.
+  try{
+    await subirRespaldoADrive(false);
+    renderEstadoRespaldoDrive();
+    showToast("✓ Primer respaldo subido a Google Drive");
+    registrarActividad("conectó Google Drive y subió el primer respaldo automático");
+  }catch(e){
+    console.error(e);
+    showToast("Conectado, pero el primer respaldo falló: "+(e && e.message ? e.message : e));
+  }
+}
+async function obtenerCarpetaDriveId(token){
+  const guardado = await window.storage.get("drive_carpeta_id", true).catch(()=>null);
+  if(guardado && guardado.value) return guardado.value;
+  // Por si ya se había creado en otra conexión pero no quedó guardado el id (ej. falló el storage
+  // justo después) -- se busca antes de crear, para no terminar con varias carpetas duplicadas.
+  const q = encodeURIComponent(`name='${NOMBRE_CARPETA_DRIVE}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const buscar = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
+    headers: {"Authorization": "Bearer "+token}
+  });
+  if(buscar.ok){
+    const data = await buscar.json();
+    if(data.files && data.files.length){
+      await window.storage.set("drive_carpeta_id", data.files[0].id, true);
+      return data.files[0].id;
+    }
+  }
+  const crear = await fetch("https://www.googleapis.com/drive/v3/files", {
+    method: "POST",
+    headers: {"Authorization": "Bearer "+token, "Content-Type": "application/json"},
+    body: JSON.stringify({name: NOMBRE_CARPETA_DRIVE, mimeType: "application/vnd.google-apps.folder"})
+  });
+  if(!crear.ok) throw new Error("no se pudo crear la carpeta de Drive (respondió "+crear.status+")");
+  const nueva = await crear.json();
+  await window.storage.set("drive_carpeta_id", nueva.id, true);
+  return nueva.id;
 }
 async function subirRespaldoADrive(interactivo){
   const token = await obtenerTokenDriveValido(interactivo);
+  const carpetaId = await obtenerCarpetaDriveId(token);
   const paquete = await construirPaqueteRespaldo();
   const nombreArchivo = `Respaldo_App_${hoyISO()}.json`;
-  const metadata = {name: nombreArchivo, parents: [GOOGLE_DRIVE_CARPETA_ID], mimeType: "application/json"};
+  const metadata = {name: nombreArchivo, parents: [carpetaId], mimeType: "application/json"};
   const boundary = "-------respaldoapp" + Date.now();
   const cuerpo =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`+
@@ -21593,14 +21637,14 @@ async function subirRespaldoADrive(interactivo){
     body: cuerpo
   });
   if(!resp.ok) throw new Error("Google Drive respondió "+resp.status);
-  await limpiarRespaldosViejosDrive(token);
+  await limpiarRespaldosViejosDrive(token, carpetaId);
   const ahora = new Date().toISOString();
   await window.storage.set("ultimo_respaldo_drive", ahora, true);
   return ahora;
 }
-async function limpiarRespaldosViejosDrive(token){
+async function limpiarRespaldosViejosDrive(token, carpetaId){
   // Deja solo los últimos RESPALDOS_A_CONSERVAR archivos en la carpeta — borra el resto.
-  const q = encodeURIComponent(`'${GOOGLE_DRIVE_CARPETA_ID}' in parents and trashed=false and name contains 'Respaldo_App_'`);
+  const q = encodeURIComponent(`'${carpetaId}' in parents and trashed=false and name contains 'Respaldo_App_'`);
   const resp = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,createdTime)&orderBy=createdTime desc&pageSize=50`, {
     headers: {"Authorization": "Bearer "+token}
   });
