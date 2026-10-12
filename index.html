@@ -12042,7 +12042,27 @@ function renderListaContratistas(){
 /* ---------------- Detalle de contratista ---------------- */
 async function abrirContratista(id){
   const c = await cargarContratistaDetalle(id);
-  if(!c){ showToast("No se pudo abrir el contratista"); return; }
+  if(!c){
+    // Si NO fue un error de carga (contratistasConErrorDeCarga) sino que confirmadamente no existe
+    // ningún documento de detalle para este id -- p.ej. quedó un registro en el índice por un
+    // problema externo pero el detalle nunca se guardó -- antes esto era un callejón sin salida: el
+    // botón de Eliminar vive en la ficha de detalle, que nunca se puede abrir, así que no había
+    // ninguna forma de sacar ese registro roto de la lista.
+    if(!contratistasConErrorDeCarga[id] && sesionActual && sesionActual.role==="admin"){
+      const nombreTxt = (contratistasIndex.find(x=>x.id===id)||{}).nombre || "Este contratista";
+      if(confirm(`"${nombreTxt}" no tiene datos guardados (no se encontró el detalle) y no se puede abrir.\n\n¿Lo sacás de la lista?`)){
+        contratistasIndex = contratistasIndex.filter(x=>x.id!==id);
+        await guardarContratistasIndex();
+        showToast("Contratista sin datos sacado de la lista");
+        registrarActividad(`sacó de la lista un contratista sin datos guardados ("${nombreTxt}")`);
+        renderListaContratistas();
+        renderDashboard();
+      }
+      return;
+    }
+    showToast("No se pudo abrir el contratista");
+    return;
+  }
   contratistaAbiertoId = id;
   cambiarVistaCert("detalle");
   renderDetalleContratista(c);
