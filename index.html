@@ -3441,6 +3441,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
     <!-- ---- Lista de contratistas ---- -->
     <div class="card" id="card-cert-lista">
+      <div id="pg-recuperar-contratistas-incidente" style="display:none;margin-bottom:12px;padding:10px 12px;background:#FFF3CD;border:1px solid #F0C85A;border-radius:10px;">
+        <p class="tiny" style="margin:0 0 8px;color:#7A5C00;font-weight:700;">Hay contratistas reconstruidos de la pérdida de datos, listos para cargar de una sola vez.</p>
+        <button class="btn btn-outline" style="width:100%;" onclick="recuperarContratistasIncidente()">📥 Recuperar contratistas perdidos (<span id="pg-recuperar-contratistas-cant"></span>)</button>
+      </div>
       <div class="row-flex" style="margin-bottom:10px;">
         <div class="field" style="flex:1;min-width:140px;">
           <label>Buscar</label>
@@ -11853,6 +11857,7 @@ function cambiarVistaCert(v, contratistaParaEditar){
   document.getElementById("card-cert-detalle").style.display = v==="detalle" ? "" : "none";
   document.getElementById("card-cert-form-certificado").style.display = "none";
   if(v==="lista") renderListaContratistas();
+  if(v==="lista") actualizarBannerRecuperarContratistas();
   if(v==="nuevo") prepararFormularioNuevoContratista(contratistaParaEditar);
 }
 async function editarContratista(id){
@@ -11998,6 +12003,115 @@ async function guardarContratista(){
   // la lista, hasta que se cargara o editara el próximo certificado.
   actualizarResumenEnIndice(c);
   await guardarContratistasIndex();
+  cambiarVistaCert("lista");
+  renderDashboard();
+}
+
+/* ---------------- Recuperación de emergencia: contratistas perdidos (incidente de datos) ----------------
+   Ver conversación con el usuario: el bug en los tests de CI que escribió sobre el Firestore real
+   también se llevó los contratistas. Se reconstruyeron 2 (Cristaldo Pintura y Moito Cielorraso) a
+   partir de un PDF resumen que el usuario tenía guardado -- ese PDF trae el total en pesos de
+   CADA certificado, pero el desglose por ítem (lo que necesita guardar cada certificado acá,
+   avances[itemId]) solo lo trae del ÚLTIMO certificado de cada uno. Los anteriores NO se pueden
+   reconstruir con el desglose real sin inventarlo (los ítems de un contrato no avanzan parejo --
+   ver nota en el código de abajo), así que, a pedido explícito del usuario ("no los tengo, carga
+   para continuar desde ese punto base"), se carga solo el ESTADO ACTUAL de cada contratista: el
+   último certificado real con su desglose real por ítem, y los anteriores quedan anotados como
+   texto dentro de ese certificado (fechas y montos, sin desglose), para no perder el dato.
+   OJO -- efecto secundario conocido: como el array de certificados queda con un solo elemento
+   pero su .numero real es 4 u 7 (no 1), el próximo certificado NUEVO que se cargue por la
+   pantalla normal va a sugerirse como "N° 2" (la app numera por la CANTIDAD de certificados en el
+   array, no por el .numero del último) -- hay que corregirlo a mano esa primera vez editándolo. */
+const CONTRATISTAS_RECUPERAR_INCIDENTE = [
+  {
+    nombre: "Cristaldo Pintura", obra: "VARELA", montoContrato: 35000000, anticipoMonto: 4000000, m2Total: null,
+    items: [
+      {nombre: "Enduido interior", pctIncidencia: 25},
+      {nombre: "Pintura interior", pctIncidencia: 37},
+      {nombre: "Pintura exterior", pctIncidencia: 38},
+    ],
+    ultimoCertNumero: 4,
+    ultimoCertFecha: "2026-10-09",
+    avances: {"Enduido interior": 0.90, "Pintura interior": 0.20, "Pintura exterior": 0},
+    notaHistorial: "Certificados anteriores (reconstruidos del PDF resumen -- sin desglose por ítem, el PDF no lo traía):\n"+
+      "Certificado 1 -- 18/9/2026 -- $2.325.000 del período -- 18.1% acum. obra\n"+
+      "Certificado 2 -- 25/9/2026 -- $2.325.000 del período -- 24.7% acum. obra\n"+
+      "Certificado 3 -- 2/10/2026 -- $2.123.500 del período -- 30.8% acum. obra\n"+
+      "Certificado 4 -- 9/10/2026 -- $2.495.500 del período -- 37.9% acum. obra (este quedó cargado con el detalle real por ítem)",
+  },
+  {
+    nombre: "Moito Cielorraso", obra: "VARELA", montoContrato: 23154000, anticipoMonto: 0, m2Total: null,
+    items: [
+      {nombre: "Estructura", pctIncidencia: 60},
+      {nombre: "Emplacado", pctIncidencia: 40},
+    ],
+    ultimoCertNumero: 7,
+    ultimoCertFecha: "2026-10-09",
+    avances: {"Estructura": 0.92, "Emplacado": 0.90},
+    notaHistorial: "Certificados anteriores (reconstruidos del PDF resumen -- sin desglose por ítem, el PDF no lo traía):\n"+
+      "Certificado 1 -- 25/8/2026 -- $4.167.720 del período -- 18.0% acum. obra\n"+
+      "Certificado 2 -- 2/9/2026 -- $4.723.416 del período -- 38.4% acum. obra\n"+
+      "Certificado 3 -- 11/9/2026 -- $4.306.644 del período -- 57.0% acum. obra\n"+
+      "Certificado 4 -- 18/9/2026 -- $2.546.940 del período -- 68.0% acum. obra\n"+
+      "Certificado 5 -- 25/9/2026 -- $2.546.940 del período -- 79.0% acum. obra\n"+
+      "Certificado 6 -- 2/10/2026 -- $1.898.628 del período -- 87.2% acum. obra\n"+
+      "Certificado 7 -- 9/10/2026 -- $926.160 del período -- 91.2% acum. obra (este quedó cargado con el detalle real por ítem)",
+  },
+];
+function actualizarBannerRecuperarContratistas(){
+  const banner = document.getElementById("pg-recuperar-contratistas-incidente");
+  if(!banner) return;
+  const esAdmin = sesionActual && sesionActual.role==="admin";
+  const porCrear = esAdmin ? CONTRATISTAS_RECUPERAR_INCIDENTE.filter(cc=>!contratistasIndex.some(x=>x.nombre===cc.nombre && x.obra===cc.obra)) : [];
+  banner.style.display = porCrear.length>0 ? "block" : "none";
+  const cantEl = document.getElementById("pg-recuperar-contratistas-cant");
+  if(cantEl) cantEl.textContent = porCrear.length;
+}
+async function recuperarContratistasIncidente(){
+  if(!(sesionActual && sesionActual.role==="admin")){ showToast("Esto es solo del Administrador"); return; }
+  const porCrear = CONTRATISTAS_RECUPERAR_INCIDENTE.filter(cc=>!contratistasIndex.some(x=>x.nombre===cc.nombre && x.obra===cc.obra));
+  const yaExistian = CONTRATISTAS_RECUPERAR_INCIDENTE.length - porCrear.length;
+  if(porCrear.length===0){
+    alert(`Los ${CONTRATISTAS_RECUPERAR_INCIDENTE.length} contratistas recuperados ya están todos cargados -- no hay nada para hacer.`);
+    return;
+  }
+  const confirmado = confirm(
+    `Esto va a crear ${porCrear.length} contratista(s) de golpe (`+porCrear.map(cc=>cc.nombre).join(", ")+`), `+
+    `con el estado actual (monto, anticipo, saldo y el último certificado con su detalle real por ítem).\n\n`+
+    `Los certificados ANTERIORES al último no traían desglose por ítem en el PDF -- quedan anotados como texto dentro del contratista, no como certificados editables.\n\n`+
+    `Al próximo certificado NUEVO que cargues le va a sugerir "N° 2" -- vas a tener que corregirlo a mano esa primera vez.\n\n`+
+    (yaExistian ? `${yaExistian} ya estaban cargados y se van a dejar tal cual (no se tocan).\n\n` : ``)+
+    `¿Confirmás?`
+  );
+  if(!confirmado) return;
+  for(const cc of CONTRATISTAS_RECUPERAR_INCIDENTE){
+    if(contratistasIndex.some(x=>x.nombre===cc.nombre && x.obra===cc.obra)) continue; // ya existe -- no lo piso
+    const items = cc.items.map(it=>({id: uid(), nombre: it.nombre, pctIncidencia: it.pctIncidencia, m2: null, planoId: null, capaId: null}));
+    const avances = {};
+    items.forEach(it=>{ avances[it.id] = cc.avances[it.nombre]!==undefined ? cc.avances[it.nombre] : 0; });
+    const c = {
+      id: uid(),
+      nombre: cc.nombre, obra: cc.obra, montoContrato: cc.montoContrato, anticipoMonto: cc.anticipoMonto, m2Total: cc.m2Total,
+      items,
+      certificados: [{numero: cc.ultimoCertNumero, nombre: "CERTIFICADO "+cc.ultimoCertNumero, fecha: cc.ultimoCertFecha, avances, anotacion: cc.notaHistorial, planoId: null, planoImagenSnapshot: null}],
+    };
+    await guardarContratistaDetalle(c);
+    const resumen = calcularCertificadosDetallados(c);
+    const proy = calcularProyeccionFinalizacion(c);
+    contratistasIndex.unshift({
+      id: c.id, nombre: c.nombre, obra: c.obra, montoContrato: c.montoContrato, anticipoMonto: c.anticipoMonto, m2Total: c.m2Total,
+      totalPagado: resumen.totalPagado, saldoPendiente: resumen.saldoPendiente, pctConAnticipo: resumen.pctConAnticipo, pctSinAnticipo: resumen.pctSinAnticipo,
+      // OJO: acá a propósito NO usamos (c.certificados||[]).length como hace guardarContratista()
+      // -- ese cálculo asume que el array es la secuencia completa 1..N, que acá no es cierto (el
+      // array tiene 1 elemento pero representa el certificado histórico N°4 u N°7). Mostrar el N°
+      // real del último certificado es lo correcto para esta recuperación puntual.
+      ultimoCertNumero: cc.ultimoCertNumero,
+      proyeccion: proy.tieneDatos ? {terminado: !!proy.terminado, diasHabilesFaltantes: proy.diasHabilesFaltantes||0, fechaProbableISO: proy.fechaProbable ? proy.fechaProbable.toISOString() : null} : null,
+    });
+  }
+  await guardarContratistasIndex();
+  registrarActividad(`recuperó ${porCrear.length} contratista(s) perdidos en el incidente de datos`);
+  showToast(`✓ Se recuperaron ${porCrear.length} contratista(s)`+(yaExistian ? ` (${yaExistian} ya estaban y no se tocaron)` : ``));
   cambiarVistaCert("lista");
   renderDashboard();
 }
