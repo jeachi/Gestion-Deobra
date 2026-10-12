@@ -21519,10 +21519,10 @@ async function eliminarBasuraDeTests(){
    (no hay forma de mostrar el cartel de "iniciar sesión con Google" sin que la persona lo toque).
    No hay servidor propio corriendo 24hs: esto solo puede pasar mientras la app está abierta.
 
-   *** PASO PENDIENTE PARA JESÚS: reemplazar GOOGLE_DRIVE_CLIENT_ID de abajo por el Client ID
-   real que se genera en Google Cloud Console (Claude te pasó los pasos exactos). Hasta que eso
-   no se complete, esta sección queda inactiva sola y no rompe nada más de la app. ***/
-const GOOGLE_DRIVE_CLIENT_ID = "PEGA_AQUI_TU_CLIENT_ID.apps.googleusercontent.com";
+   Client ID real, generado por Jesús en Google Cloud Console (aplicación web, origen autorizado
+   https://jeachi.github.io). Antes de esto, el valor era un placeholder y driveConfigurado
+   quedaba en false -- toda esta sección se activa sola con un Client ID real. ***/
+const GOOGLE_DRIVE_CLIENT_ID = "883784249577-pi243k8a58hrkv3cf23gq5am6rbsvbs1.apps.googleusercontent.com";
 const GOOGLE_DRIVE_CARPETA_ID = "1iFsk2RHDGAqZg1IQTHzaeF6JroZUgTjF"; // carpeta de Drive que pasó Jesús
 const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const DIAS_ENTRE_RESPALDOS = 7;
