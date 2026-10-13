@@ -3303,7 +3303,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="card" id="card-ped-lista">
       <div class="field" style="margin-bottom:10px;">
         <label>Buscar</label>
-        <input type="text" id="ped-buscar" placeholder="N°, obra, rubro..." oninput="renderListaPedidos()">
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+          <input type="text" id="ped-buscar" placeholder="N°, obra, rubro..." oninput="renderListaPedidos()" style="flex:1;">
+          <button type="button" id="ped-btn-orden" onclick="alternarOrdenPedidos()" title="Cambiar orden por N°" style="flex-shrink:0;background:var(--fondo);border:1.5px solid var(--borde);border-radius:8px;padding:9px 11px;font-size:13px;font-weight:700;white-space:nowrap;">N° ⌄</button>
+        </div>
       </div>
       <div id="lista-pedidos"></div>
     </div>
@@ -3444,11 +3447,12 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <!-- ---- Lista de rendiciones ---- -->
     <div class="card" id="card-caja-lista">
       <div id="caja-saldo-resumen-cont"></div>
-      <div class="row-flex" style="margin-bottom:10px;">
+      <div class="row-flex" style="margin-bottom:10px;align-items:flex-end;">
         <div class="field" style="flex:1;min-width:140px;">
           <label>Buscar</label>
           <input type="text" id="caja-buscar" placeholder="N°, obra, responsable..." oninput="renderListaRendiciones()">
         </div>
+        <button type="button" id="caja-btn-orden" onclick="alternarOrdenRendiciones()" title="Cambiar orden por N°" style="flex-shrink:0;background:var(--fondo);border:1.5px solid var(--borde);border-radius:8px;padding:9px 11px;font-size:13px;font-weight:700;white-space:nowrap;">N° ⌄</button>
       </div>
       <div id="lista-rendiciones"></div>
     </div>
@@ -3709,6 +3713,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <h2 id="vr-titulo-plano" style="margin-bottom:2px;"></h2>
       <p class="tiny" id="vr-meta-plano" style="color:var(--tinta-suave);margin:0 0 12px;"></p>
 
+      <!-- Arriba del todo, antes de la vista previa y la lista de actividades (que puede ser
+           larga), para entrar al editor con un solo toque sin tener que scrollear. -->
+      <button type="button" class="btn btn-primary" id="vr-btn-editar" style="width:100%;margin-bottom:12px;" onclick="entrarAEditarPlano()">✏️ Editar plano</button>
+
       <div class="vr-preview-cont">
         <img id="vr-preview-img" alt="">
         <div id="vr-pines-overlay"></div>
@@ -3734,7 +3742,6 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
       <button type="button" class="btn btn-outline" id="vr-btn-certificar" style="width:100%;margin-top:8px;display:none;" onclick="usarAvanceEnNuevoCertificado()">🧾 Usar en un certificado nuevo</button>
       <button type="button" class="btn btn-outline" id="vr-btn-compartir" style="width:100%;margin-top:8px;" onclick="compartirAvancePlano()">📤 Compartir avance</button>
-      <button type="button" class="btn btn-primary" id="vr-btn-editar" style="width:100%;margin-top:8px;" onclick="entrarAEditarPlano()">✏️ Editar plano</button>
     </div>
 
   <div class="card" id="card-canvas" style="display:none;padding:8px;">
@@ -9220,6 +9227,11 @@ function calcularFaltantes(pedido){
     })
     .filter(it=>it.falta > 0);
 }
+let ordenPedidosDesc = true; // true = N° más alto primero (por defecto); false = más viejo primero
+function alternarOrdenPedidos(){
+  ordenPedidosDesc = !ordenPedidosDesc;
+  renderListaPedidos();
+}
 async function renderListaPedidos(){
   const q = (document.getElementById("ped-buscar").value||"").toLowerCase();
   let lista = pedidosIndex.filter(p=>{
@@ -9229,8 +9241,15 @@ async function renderListaPedidos(){
     return true;
   });
   // Viendo solo los vencidos (desde la franja): más viejo primero, para ir resolviendo en el
-  // orden en que se cargaron.
-  if(filtroVencidosActivo) lista = [...lista].sort((a,b)=>a.numero-b.numero);
+  // orden en que se cargaron -- el botón de orden no aplica en este modo.
+  const btnOrden = document.getElementById("ped-btn-orden");
+  if(filtroVencidosActivo){
+    lista = [...lista].sort((a,b)=>a.numero-b.numero);
+    if(btnOrden) btnOrden.disabled = true;
+  }else{
+    lista = [...lista].sort((a,b)=> ordenPedidosDesc ? b.numero-a.numero : a.numero-b.numero);
+    if(btnOrden){ btnOrden.disabled = false; btnOrden.textContent = ordenPedidosDesc ? "N° ⌄" : "N° ⌃"; }
+  }
   const cont = document.getElementById("lista-pedidos");
   cont.innerHTML = lista.map(p=>`
     <div class="pedido-card ${p.estado}${filtroVencidosActivo?" resaltado-vencido":""}" onclick="abrirPedido('${p.id}')">
@@ -11357,6 +11376,11 @@ async function toggleCierreRendicion(id){
   renderDashboard();
 }
 /* ---------------- Lista de rendiciones ---------------- */
+let ordenRendicionesDesc = true; // true = N° más alto primero (por defecto); false = más vieja primero
+function alternarOrdenRendiciones(){
+  ordenRendicionesDesc = !ordenRendicionesDesc;
+  renderListaRendiciones();
+}
 function renderListaRendiciones(){
   migrarUsuariosViejosRendicionesSiHaceFalta();
   const q = (document.getElementById("caja-buscar").value||"").toLowerCase();
@@ -11369,6 +11393,9 @@ function renderListaRendiciones(){
     const texto = (numeroFormateado(r.numero)+" "+r.obra+" "+r.responsable).toLowerCase();
     return !q || texto.includes(q);
   });
+  lista = [...lista].sort((a,b)=> ordenRendicionesDesc ? b.numero-a.numero : a.numero-b.numero);
+  const btnOrden = document.getElementById("caja-btn-orden");
+  if(btnOrden) btnOrden.textContent = ordenRendicionesDesc ? "N° ⌄" : "N° ⌃";
   const cont = document.getElementById("lista-rendiciones");
   // Mismo cálculo que usa el Dashboard: el saldo real disponible es el de la última rendición
   // cargada (arrastra todo el historial), no una suma de las que quedaron sin cerrar.
