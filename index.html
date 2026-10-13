@@ -10901,7 +10901,7 @@ function cambiarVistaCaja(v, rendicionParaEditar){
   document.getElementById("card-caja-nueva").style.display = v==="nueva" ? "" : "none";
   document.getElementById("card-caja-catalogos").style.display = v==="catalogos" ? "" : "none";
   document.getElementById("card-caja-detalle").style.display = v==="detalle" ? "" : "none";
-  if(v==="lista"){ renderListaRendiciones(); migrarUsuariosViejosRendicionesSiHaceFalta(); }
+  if(v==="lista") renderListaRendiciones();
   if(v==="nueva") prepararFormularioNuevaRendicion(rendicionParaEditar);
   if(v==="catalogos") renderCatalogoCaja();
   if(v==="nueva") mostrarBotonFlotanteGuardar("Guardar rendición", guardarRendicion, "💰");
@@ -11336,6 +11336,7 @@ async function toggleCierreRendicion(id){
 }
 /* ---------------- Lista de rendiciones ---------------- */
 function renderListaRendiciones(){
+  migrarUsuariosViejosRendicionesSiHaceFalta();
   const q = (document.getElementById("caja-buscar").value||"").toLowerCase();
   const esAdmin = sesionActual && sesionActual.role==="admin";
   let lista = rendicionesIndex.filter(r=>{
