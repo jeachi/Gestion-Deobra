@@ -10863,6 +10863,34 @@ async function guardarRendicionDetalle(rendicion){
   rendicionesCache[rendicion.id] = rendicion;
   await guardarClave("rendicion_"+rendicion.id, JSON.stringify(rendicion));
 }
+// ---------------- Corrección silenciosa: usuarios viejos del incidente de datos ----------------
+// Las rendiciones de Caja Chica que se reconstruyeron del incidente de datos quedaron con los
+// nombres de usuario de ANTES ("JESUS CHIMINO" en mayúsculas y sin tilde, "Agustín Bobarin" --
+// capataz que ya no existe como cuenta). El filtro "cada uno ve su propia caja" las deja invisibles
+// para siempre porque ningún usuario actual coincide textualmente -- solo se veía la rendición que
+// ya tenía usuario vacío. Se corrige sola, sin botón ni aviso: mismo criterio que ya usa
+// quitarUsuario() al borrar una cuenta (pasarlas al Administrador con usuario vacío), reencadenando
+// el saldo y el estado de cierre igual que haría ese flujo.
+let migracionUsuariosRendicionesIntentada = false;
+async function migrarUsuariosViejosRendicionesSiHaceFalta(){
+  if(migracionUsuariosRendicionesIntentada) return;
+  migracionUsuariosRendicionesIntentada = true;
+  if(!(sesionActual && sesionActual.role==="admin")) return;
+  const USUARIOS_VIEJOS_INCIDENTE = ["JESUS CHIMINO", "Agustín Bobarin"];
+  const afectadas = rendicionesIndex.filter(r=>USUARIOS_VIEJOS_INCIDENTE.includes(r.usuario));
+  if(afectadas.length===0) return;
+  for(const r of afectadas){
+    r.usuario = "";
+    const detalle = await cargarRendicionDetalle(r.id);
+    if(detalle){ detalle.usuario = ""; await guardarRendicionDetalle(detalle); }
+  }
+  await guardarRendicionesIndex();
+  await reencadenarSaldoRendicionesPosteriores("");
+  await propagarCierreCajaChica([""]);
+  registrarActividad(`corrigió el usuario de ${afectadas.length} rendición(es) de Caja Chica recuperadas del incidente de datos (quedaron visibles para el Administrador)`);
+  showToast(`✓ Se corrigieron ${afectadas.length} rendición(es) de Caja Chica que habían quedado ocultas`);
+  renderListaRendiciones();
+}
 /* ---------------- Sub-navegación de Caja Chica ---------------- */
 function cambiarVistaCaja(v, rendicionParaEditar){
   ["lista","nueva","catalogos"].forEach(x=>{
@@ -10873,7 +10901,7 @@ function cambiarVistaCaja(v, rendicionParaEditar){
   document.getElementById("card-caja-nueva").style.display = v==="nueva" ? "" : "none";
   document.getElementById("card-caja-catalogos").style.display = v==="catalogos" ? "" : "none";
   document.getElementById("card-caja-detalle").style.display = v==="detalle" ? "" : "none";
-  if(v==="lista") renderListaRendiciones();
+  if(v==="lista"){ renderListaRendiciones(); migrarUsuariosViejosRendicionesSiHaceFalta(); }
   if(v==="nueva") prepararFormularioNuevaRendicion(rendicionParaEditar);
   if(v==="catalogos") renderCatalogoCaja();
   if(v==="nueva") mostrarBotonFlotanteGuardar("Guardar rendición", guardarRendicion, "💰");
