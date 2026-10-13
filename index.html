@@ -4093,7 +4093,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <button type="button" onclick="cambiarCantidadTextoPlano(1)" style="width:32px;height:32px;border-radius:8px;border:1.5px solid var(--borde);background:#fff;font-size:16px;font-weight:800;">+</button>
     </div>
     <div id="prompt-texto-plano-categoria-wrap">
-      <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:6px;">Categoría (opcional -- le da un código automático, ej: V1, P1)</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:11px;color:var(--tinta-suave);">Categoría (opcional -- le da un código automático, ej: V1, P1)</div>
+        <button type="button" onclick="abrirPrefijoCategoriaActual()" title="Cambiar el prefijo del código para la categoría elegida" style="border:none;background:none;font-size:14px;color:var(--tinta-suave);cursor:pointer;">⚙️</button>
+      </div>
       <div class="chip-row" id="prompt-texto-plano-categoria" style="margin-bottom:10px;">
         <div class="chip-opt" data-val="">Ninguna</div>
         <div class="chip-opt" data-val="Ventana">🪟 Ventana</div>
@@ -4186,6 +4189,18 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="row-flex">
       <button type="button" onclick="cerrarPromptRenombrarCapa()" style="flex:1;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#e7eef1;font-weight:700;font-size:12.5px;">Cancelar</button>
       <button type="button" onclick="confirmarPromptRenombrarCapa()" style="flex:1;padding:11px;border-radius:10px;border:none;background:var(--verde);color:#fff;font-weight:800;font-size:12.5px;">✓ Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="prompt-prefijo-categoria-overlay" style="display:none;position:fixed;inset:0;background:rgba(6,10,13,.72);z-index:2200;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#11181d;border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:16px;max-width:340px;width:100%;">
+    <div style="font-size:13.5px;font-weight:800;margin-bottom:10px;color:#fff;" id="prompt-prefijo-categoria-titulo">⚙️ Prefijo del código</div>
+    <input type="text" id="prompt-prefijo-categoria-input" placeholder="ej: VEA" style="width:100%;padding:10px 11px;border:1.5px solid rgba(255,255,255,.15);border-radius:9px;font-size:13.5px;box-sizing:border-box;background:rgba(255,255,255,.05);color:#e7eef1;margin-bottom:6px;text-transform:uppercase;">
+    <p style="font-size:11px;color:#9fb0b8;margin:0 0 12px;line-height:1.4;">Solo cambia el prefijo de las etiquetas NUEVAS de esta categoría -- las que ya pusiste quedan igual. La numeración sigue donde iba.</p>
+    <div class="row-flex">
+      <button type="button" onclick="cerrarPromptPrefijoCategoria()" style="flex:1;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#e7eef1;font-weight:700;font-size:12.5px;">Cancelar</button>
+      <button type="button" onclick="confirmarPromptPrefijoCategoria()" style="flex:1;padding:11px;border-radius:10px;border:none;background:var(--verde);color:#fff;font-weight:800;font-size:12.5px;">✓ Guardar</button>
     </div>
   </div>
 </div>
@@ -22243,6 +22258,10 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
     const rEst = await window.storage.get(`plano_avance_estados_${obra}_${id}`, true);
     estadosPersonalizados = rEst && rEst.value ? JSON.parse(rEst.value) : ESTADOS_POR_DEFECTO;
   }catch(e){ estadosPersonalizados = ESTADOS_POR_DEFECTO; }
+  try{
+    const rPrefijos = await window.storage.get(`plano_avance_prefijos_categoria_${obra}_${id}`, true);
+    prefijosCategoria = rPrefijos && rPrefijos.value ? JSON.parse(rPrefijos.value) : {};
+  }catch(e){ prefijosCategoria = {}; }
   document.getElementById("card-snapshots").style.display = "none"; // arranca oculto -- se abre con el botón 📅 del encabezado
   await cargarSnapshotsPlanoActual();
   await cargarEstadosCapas();
@@ -22784,6 +22803,15 @@ async function guardarProyectoMedidas(){
     await window.storage.set(`plano_avance_proyecto_${obra}_${planoActualId}`, JSON.stringify(proyectoMedidas), true);
   }catch(e){
     showToast("No se pudo guardar el proyecto (revisá conexión)");
+  }
+}
+async function guardarPrefijosCategoria(){
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return;
+  try{
+    await window.storage.set(`plano_avance_prefijos_categoria_${obra}_${planoActualId}`, JSON.stringify(prefijosCategoria), true);
+  }catch(e){
+    showToast("No se pudo guardar el prefijo (revisá conexión)");
   }
 }
 async function guardarEstadosPersonalizados(){
@@ -24293,6 +24321,13 @@ let estadosPersonalizados = [
   {id:"marco", nombre:"Marco colocado", icono:"🔵", color:"#3B82F6"},
   {id:"instalado", nombre:"Instalado", icono:"🟢", color:"#0E9488"}
 ];
+// Prefijo del código automático (V1, P1...) por categoría -- editable por el usuario para que
+// coincida con la nomenclatura real del proyecto (ej: "Ventana" -> "VEA" en vez de "V"). Guardado
+// por plano, igual que estadosPersonalizados. La numeración NO se reinicia al cambiar el prefijo
+// (generarCodigoParaCategoria ya cuenta por categoria, no por el texto del código guardado), así
+// que las etiquetas viejas quedan con su código tal cual y las nuevas siguen la cuenta con el
+// prefijo nuevo.
+let prefijosCategoria = {}; // {"Ventana":"VEA", ...}
 // ---------------- Plano Maestro: pines de zona con pendientes propios ----------------
 // Un Plano Maestro es un plano MÁS de planosIndex (misma imagen, mismo storage), pero con
 // tipo:"maestro" en vez de un contratistaId. En vez de capas de avance, se le ponen pines: cada
@@ -31291,10 +31326,7 @@ async function confirmarPromptTextoPlano(){
   const unidad = tipo==="numero" && unidadChip ? unidadChip.dataset.val : "";
   const cantidad = Math.max(1, parseInt(document.getElementById("prompt-texto-plano-cantidad").value)||1);
   const ubicacion = document.getElementById("prompt-texto-plano-ubicacion").value.trim();
-  const categoriaChip = document.querySelector("#prompt-texto-plano-categoria .chip-opt.sel");
-  const categoria = categoriaChip
-    ? (categoriaChip.dataset.val==="__otra__" ? document.getElementById("prompt-texto-plano-categoria-otra").value.trim() : categoriaChip.dataset.val)
-    : "";
+  const categoria = categoriaSeleccionadaEnPromptTexto();
   const estadoChip = document.querySelector("#prompt-texto-plano-estado .chip-opt.sel");
   const estado = tipo==="numero" && estadoChip ? estadoChip.dataset.val : "pendiente";
   ultimaCategoriaUsada = categoria; // la próxima etiqueta nueva arranca con esta misma, hasta que se cambie
@@ -31468,9 +31500,43 @@ function volverAFormularioDesdeConfigEstados(){
 // del texto que se haya escrito.
 const CODIGOS_CATEGORIA_PRESET = {"Ventana":"V", "Puerta":"P", "Portón":"PT", "Reja":"R"};
 function letraParaCategoria(categoria){
+  if(prefijosCategoria[categoria]) return prefijosCategoria[categoria];
   if(CODIGOS_CATEGORIA_PRESET[categoria]) return CODIGOS_CATEGORIA_PRESET[categoria];
   const limpio = categoria.trim().toUpperCase().replace(/[^A-ZÑ]/g,"");
   return limpio.slice(0,2) || "X";
+}
+// Categoría elegida ahora mismo en el chip-row del cuadro de texto (mismo criterio que usa
+// confirmarPromptTextoPlano para leer la categoría) -- se reusa para saber a qué categoría le
+// vamos a cambiar el prefijo cuando se toca el engranaje de al lado.
+function categoriaSeleccionadaEnPromptTexto(){
+  const categoriaChip = document.querySelector("#prompt-texto-plano-categoria .chip-opt.sel");
+  if(!categoriaChip) return "";
+  return categoriaChip.dataset.val==="__otra__" ? document.getElementById("prompt-texto-plano-categoria-otra").value.trim() : categoriaChip.dataset.val;
+}
+let prefijoCategoriaPendiente = null; // nombre de la categoría cuyo prefijo se está editando
+function abrirPrefijoCategoriaActual(){
+  const categoria = categoriaSeleccionadaEnPromptTexto();
+  if(!categoria){ showToast("Elegí una categoría primero."); return; }
+  prefijoCategoriaPendiente = categoria;
+  document.getElementById("prompt-prefijo-categoria-titulo").textContent = `⚙️ Prefijo del código para "${categoria}"`;
+  document.getElementById("prompt-prefijo-categoria-input").value = letraParaCategoria(categoria);
+  document.getElementById("prompt-prefijo-categoria-overlay").style.display = "flex";
+  document.getElementById("prompt-prefijo-categoria-input").focus();
+  document.getElementById("prompt-prefijo-categoria-input").select();
+}
+function cerrarPromptPrefijoCategoria(){
+  document.getElementById("prompt-prefijo-categoria-overlay").style.display = "none";
+  prefijoCategoriaPendiente = null;
+}
+async function confirmarPromptPrefijoCategoria(){
+  if(!prefijoCategoriaPendiente) return;
+  const nuevoPrefijo = document.getElementById("prompt-prefijo-categoria-input").value.trim().toUpperCase();
+  if(!nuevoPrefijo){ alert("Escribí un prefijo."); return; }
+  prefijosCategoria[prefijoCategoriaPendiente] = nuevoPrefijo;
+  const categoria = prefijoCategoriaPendiente;
+  cerrarPromptPrefijoCategoria();
+  await guardarPrefijosCategoria();
+  showToast(`✓ Las próximas etiquetas de "${categoria}" van a usar "${nuevoPrefijo}"`);
 }
 function generarCodigoParaCategoria(categoria, idxExcluir){
   if(!categoria) return "";
