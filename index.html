@@ -3905,6 +3905,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button class="tool-card" onclick="iniciarSeleccionRectangulo()" title="Elegí varias piezas a la vez marcando un recuadro alrededor"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
           <button class="tool-card" onclick="iniciarSeleccionLibre()" title="Elegí varias piezas a la vez dibujando una forma libre alrededor"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
           <button class="tool-card" onclick="verificarInterferenciasPlano()" title="Busca piezas que se superponen entre sí, para revisarlas una por una"><span class="ico"><i class="ph-bold ph-warning"></i></span><span class="lbl">Interferencias</span></button>
+          <!-- Las de arriba seleccionan PIEZAS (áreas dibujadas) -- ésta selecciona ETIQUETAS (las
+               medidas/notas numeradas), que es otra cosa. Se repite acá a propósito (también vive
+               en el cajón "Etiquetas") porque "Revisar" es justo el lugar donde cualquiera la va a
+               buscar primero. -->
+          <button class="tool-card" onclick="iniciarModoSeleccionMultiple()" title="Elegí varias etiquetas (medidas/notas) a la vez, para cambiarles la categoría o el estado juntas, o para elegirlas todas las de una categoría"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Etiquetas</span></button>
         </div>
       </div>
 
@@ -31589,15 +31594,18 @@ function renderAnotacionesTocables(){
     btn.style.left = (a.x*zoomActual - anchoTotal/2)+"px";
     btn.style.top = (a.y*zoomActual)+"px";
     btn.style.width = anchoTotal+"px";
-    btn.title = "Tocá para editar -- mantené pulsado para mover";
+    btn.title = "Doble toque para editar -- mantené pulsado para mover";
     activarArrastreAnotacion(btn, idx);
     cont.appendChild(btn);
   });
 }
-// Mantener pulsado sobre una etiqueta ya puesta la deja mover de lugar arrastrando -- un toque
-// rápido y normal (sin mantener) sigue abriendo la edición, como siempre. Mientras se arrastra,
-// se muestra un "fantasma" que sigue el dedo en vez de redibujar el canvas en cada movimiento
-// (evita romper el propio gesto de arrastre al reconstruir los botones táctiles a mitad de camino).
+// Mantener pulsado sobre una etiqueta ya puesta la deja mover de lugar arrastrando. Editar el
+// estado hace falta DOS toques seguidos (antes era uno solo): un simple roce del dedo al leer el
+// plano, o al pasar de largo hacia otra zona, abría el editor de estado por error y lo modificaba
+// sin querer -- con el toque único era demasiado fácil disparar un cambio real sin intención.
+// Mismo umbral (400ms, sin exigir que sea exactamente en el mismo lugar porque ya es el mismo
+// botón) que ya usa detectarDobleTapEnArea() para las piezas del plano.
+let ultimoTapEtiqueta = {idx: null, tiempo: 0};
 let ghostArrastreAnotacion = null;
 function activarArrastreAnotacion(btn, idx){
   let timer = null, moviendo = false, inicioX = 0, inicioY = 0;
@@ -31648,7 +31656,15 @@ function activarArrastreAnotacion(btn, idx){
       showToast("✓ Etiqueta movida");
       return;
     }
-    abrirSelectorEstadoRapido(idx);
+    const ahora = Date.now();
+    const esDobleTap = ultimoTapEtiqueta.idx===idx && (ahora-ultimoTapEtiqueta.tiempo)<400;
+    if(esDobleTap){
+      ultimoTapEtiqueta = {idx: null, tiempo: 0}; // se consume, para que un 3er toque no cuente como otro doble
+      abrirSelectorEstadoRapido(idx);
+    }else{
+      ultimoTapEtiqueta = {idx, tiempo: ahora};
+      if(navigator.vibrate) navigator.vibrate(8); // aviso sutil de "tocá de nuevo para editar", sin abrir nada todavía
+    }
   });
   btn.addEventListener("pointercancel", ()=>{ clearTimeout(timer); moviendo=false; quitarGhostAnotacion(); redibujar(); });
   btn.addEventListener("pointerleave", (e)=>{
