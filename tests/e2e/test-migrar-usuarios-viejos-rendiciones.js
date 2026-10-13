@@ -57,8 +57,11 @@ const { chromium } = require("playwright");
       await guardarRendicionDetalle(rendicionesCache[r.id]);
     }
     ingresarComo({ username: "Jesús chimino", role: "admin", permisos: {} });
+    // A propósito SOLO irA("caja") -- es el camino real por la barra de navegación de abajo, que
+    // llama a renderListaRendiciones() directo sin pasar por cambiarVistaCaja("lista"). Un primer
+    // intento de este fix quedó enganchado adentro de cambiarVistaCaja() y nunca se disparaba por
+    // este camino (el usuario reportó "no sale nada nuevo" después de mergeado).
     irA("caja");
-    cambiarVistaCaja("lista");
   });
   await page.waitForTimeout(200);
 
@@ -71,8 +74,8 @@ const { chromium } = require("playwright");
   // ---- Es idempotente: tocarla de nuevo (otra visita a la lista) no duplica ni rompe nada ----
   const resultadoSegundaVez = await page.evaluate(async () => {
     const antes = rendicionesIndex.length;
-    cambiarVistaCaja("nueva");
-    cambiarVistaCaja("lista");
+    irA("pedidos");
+    irA("caja");
     await new Promise(r => setTimeout(r, 150));
     return { antes, despues: rendicionesIndex.length, siguenVacios: rendicionesIndex.every(r => r.usuario !== "JESUS CHIMINO" && r.usuario !== "Agustín Bobarin") };
   });
@@ -84,7 +87,6 @@ const { chromium } = require("playwright");
     migracionUsuariosRendicionesIntentada = false;
     ingresarComo({ username: "capataz1", role: "capataz", permisos: { caja: true } });
     irA("caja");
-    cambiarVistaCaja("lista");
     await new Promise(r => setTimeout(r, 150));
     return { siguioSinUsuario: rendicionesIndex.find(r => r.id === "otra").usuario === "JESUS CHIMINO" };
   });
