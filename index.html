@@ -3898,31 +3898,32 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
       </div>
 
-      <!-- ---- Cajón Selección y revisión (antes eran 4 íconos sueltos: 2 en el riel, 2 en Dibujar) ---- -->
+      <!-- ---- Cajón Seleccionar (antes "Selección y revisión" -- antes eran 4 íconos sueltos: 2
+           en el riel, 2 en Dibujar) ---- -->
       <div class="cad-flyout" id="drawer-revisar" style="display:none;">
-        <div class="cad-flyout-titulo">Selección y revisión</div>
+        <div class="cad-flyout-titulo">Seleccionar</div>
         <div class="grid-tools">
           <button class="tool-card" onclick="iniciarSeleccionRectangulo()" title="Elegí varias piezas a la vez marcando un recuadro alrededor"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
           <button class="tool-card" onclick="iniciarSeleccionLibre()" title="Elegí varias piezas a la vez dibujando una forma libre alrededor"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
           <button class="tool-card" onclick="verificarInterferenciasPlano()" title="Busca piezas que se superponen entre sí, para revisarlas una por una"><span class="ico"><i class="ph-bold ph-warning"></i></span><span class="lbl">Interferencias</span></button>
           <!-- Las de arriba seleccionan PIEZAS (áreas dibujadas) -- ésta selecciona ETIQUETAS (las
                medidas/notas numeradas), que es otra cosa. Se repite acá a propósito (también vive
-               en el cajón "Etiquetas") porque "Revisar" es justo el lugar donde cualquiera la va a
-               buscar primero. -->
+               en el cajón "Etiquetas") porque "Seleccionar" es justo el lugar donde cualquiera la
+               va a buscar primero. -->
           <button class="tool-card" onclick="iniciarModoSeleccionMultiple()" title="Elegí varias etiquetas (medidas/notas) a la vez, para cambiarles la categoría o el estado juntas, o para elegirlas todas las de una categoría"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Etiquetas</span></button>
         </div>
       </div>
 
       <!-- ---- Cajón Etiquetas -- agrupa todo lo que tiene que ver con etiquetas/anotaciones: crear
-           (Texto, antes en "Más"), el cuadro de medidas (antes en "Medir") y la revisión en lote
-           (antes en "Revisar") -- antes estaban repartidas en 3 cajones distintos sin relación entre
-           sí a simple vista. ---- -->
+           (Texto, antes en "Más"), el cuadro de medidas (antes en "Medir") y la selección en lote
+           (antes en "Seleccionar") -- antes estaban repartidas en 3 cajones distintos sin relación
+           entre sí a simple vista. ---- -->
       <div class="cad-flyout" id="drawer-etiquetas" style="display:none;">
         <div class="cad-flyout-titulo">Etiquetas</div>
         <div class="grid-tools">
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarColocarTextoPlano();" title="Coloca un cuadro de texto nuevo: una medida o una nota libre"><span class="ico"><i class="ph-bold ph-text-t"></i></span><span class="lbl">Texto</span></button>
           <button class="tool-card" onclick="abrirTablaMedidas()" title="Ve el resumen de todas las medidas cargadas en este plano"><span class="ico"><i class="ph-bold ph-table"></i></span><span class="lbl">Medidas</span></button>
-          <button class="tool-card" onclick="iniciarModoSeleccionMultiple()" title="Elegí varias etiquetas tocándolas, para cambiarles la categoría o el estado juntas"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Revisar</span></button>
+          <button class="tool-card" onclick="iniciarModoSeleccionMultiple()" title="Elegí varias etiquetas tocándolas, para cambiarles la categoría o el estado juntas"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Seleccionar</span></button>
         </div>
       </div>
 
@@ -26125,8 +26126,8 @@ function renderRielAdaptativo(){
     <button class="cad-riel-btn" id="btn-drawer-capas" data-nombre-corto="CAPAS" onclick="toggleDrawerHerramientas('capas')" title="Capas: mostrar u ocultar actividades"><span class="ico"><i class="ph-bold ph-stack"></i></span></button>
     <button class="cad-riel-btn" id="btn-drawer-dibujar" data-nombre-corto="DIBUJAR" onclick="toggleDrawerHerramientas('dibujar')" title="Dibujar: marcar un área nueva"><span class="ico"><i class="ph-bold ph-pencil-simple"></i></span></button>
     <button class="cad-riel-btn" id="btn-drawer-medir" data-nombre-corto="MEDIR" onclick="toggleDrawerHerramientas('medir')" title="Medir y alinear: cinta métrica, ejes, escala"><span class="ico"><i class="ph-bold ph-ruler"></i></span></button>
-    <button class="cad-riel-btn" id="btn-drawer-revisar" data-nombre-corto="REVISAR" onclick="toggleDrawerHerramientas('revisar')" title="Selección y revisión: recuadro, forma libre, interferencias"><span class="ico"><i class="ph-bold ph-check-square"></i></span></button>
-    <button class="cad-riel-btn" id="btn-drawer-etiquetas" data-nombre-corto="ETIQUETAS" onclick="toggleDrawerHerramientas('etiquetas')" title="Etiquetas: colocar texto, cuadro de medidas, revisar en lote"><span class="ico"><i class="ph-bold ph-tag"></i></span></button>
+    <button class="cad-riel-btn" id="btn-drawer-revisar" data-nombre-corto="SELECCIONAR" onclick="toggleDrawerHerramientas('revisar')" title="Seleccionar: piezas (recuadro, forma libre, interferencias) o etiquetas"><span class="ico"><i class="ph-bold ph-check-square"></i></span></button>
+    <button class="cad-riel-btn" id="btn-drawer-etiquetas" data-nombre-corto="ETIQUETAS" onclick="toggleDrawerHerramientas('etiquetas')" title="Etiquetas: colocar texto, cuadro de medidas, seleccionar en lote"><span class="ico"><i class="ph-bold ph-tag"></i></span></button>
     <div class="cad-riel-sep"></div>
     <button class="cad-riel-btn" id="btn-mover-elementos" data-nombre-corto="MOVER" onclick="iniciarMoverElementos()" title="Mover: elegí una o varias piezas/etiquetas y desplazalas juntas"><span class="ico"><i class="ph-bold ph-arrows-out-cardinal"></i></span></button>
     <button class="cad-riel-btn" data-nombre-corto="DESHACER" onclick="deshacerGeneral()" title="Deshace la última acción (cerrar área, editar, eliminar, duplicar, ajustar %, mover o borrar un cuadro de texto)"><span class="ico"><i class="ph-bold ph-arrow-u-up-left"></i></span></button>
@@ -31001,7 +31002,7 @@ function abrirSeleccionarPorCategoria(){
 }
 // Entrada desde la Paleta de Comandos: a diferencia del botón "🎯 Categoría" de la barra de
 // selección múltiple (que ya asume que el modo está activo), este primero prende el modo si hace
-// falta -- así funciona de un solo toque sin tener que pasar antes por "Revisar".
+// falta -- así funciona de un solo toque sin tener que pasar antes por "Seleccionar".
 function comandoSeleccionarPorCategoria(){
   if(!modoSeleccionMultiple) iniciarModoSeleccionMultiple();
   if(modoSeleccionMultiple) abrirSeleccionarPorCategoria();
