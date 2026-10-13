@@ -2134,7 +2134,8 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 #barra-ancla-texto{position:fixed;display:flex;gap:8px;align-items:center;background:#8B5CF6;border-radius:999px;padding:7px 8px 7px 16px;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:610;transform:translateX(-50%);top:16px;left:50%;}
 #barra-ancla-texto .txt-paso{color:#fff;font-size:11.5px;font-weight:800;white-space:nowrap;}
 #barra-ancla-texto button{width:32px;height:32px;border-radius:50%;border:none;background:rgba(0,0,0,.25);color:#fff;font-size:14px;font-weight:800;flex-shrink:0;}
-#barra-seleccion-multiple{position:fixed;display:flex;gap:6px;align-items:center;background:#0A2540;border-radius:999px;padding:7px 8px 7px 14px;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:610;transform:translateX(-50%);top:16px;left:50%;}
+#barra-seleccion-multiple{position:fixed;display:flex;gap:6px;align-items:center;background:#0A2540;border-radius:999px;padding:7px 8px 7px 14px;box-shadow:0 4px 14px rgba(0,0,0,.4);z-index:610;transform:translateX(-50%);top:16px;left:50%;max-width:calc(100vw - 20px);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+#barra-seleccion-multiple::-webkit-scrollbar{display:none;}
 #barra-seleccion-multiple .txt-paso{color:#fff;font-size:11px;font-weight:800;white-space:nowrap;margin-right:2px;}
 #barra-seleccion-multiple button{height:32px;padding:0 10px;border-radius:16px;border:none;background:rgba(255,255,255,.14);color:#fff;font-size:11.5px;font-weight:800;flex-shrink:0;white-space:nowrap;}
 
@@ -28990,6 +28991,7 @@ function comandosDisponibles(){
     {n:"Calibrar escala", d:"Definir la medida real del plano", i:"📐", solo:"avance", f:()=>iniciarCalibracionEscala()},
     {n:"Tabla de medidas", d:"Ver el resumen de medidas cargadas", i:"🧮", solo:"avance", f:()=>abrirTablaMedidas()},
     {n:"Colocar texto", d:"Poner una nota o etiqueta en el plano", i:"🔤", solo:"avance", f:()=>iniciarColocarTextoPlano()},
+    {n:"Seleccionar por categoría", d:"Elegir todas las etiquetas de una categoría (ej: todas las Ventana)", i:"🎯", solo:"avance", f:()=>comandoSeleccionarPorCategoria()},
     {n:"Reporte PDF", d:"Generar el informe del plano", i:"🖨", solo:"avance", f:()=>generarReportePlanoAvancePDF()},
     // --- Plano maestro ---
     {n:"Agregar pin", d:"Poner un pin nuevo en una zona", i:"📍", solo:"maestro", f:()=>toggleModoAgregarPin()},
@@ -30991,6 +30993,13 @@ function abrirSeleccionarPorCategoria(){
   document.getElementById("foto-avance-overlay").style.display = "flex";
   _fotoAvanceAbiertoTs = Date.now();
   habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
+}
+// Entrada desde la Paleta de Comandos: a diferencia del botón "🎯 Categoría" de la barra de
+// selección múltiple (que ya asume que el modo está activo), este primero prende el modo si hace
+// falta -- así funciona de un solo toque sin tener que pasar antes por "Revisar".
+function comandoSeleccionarPorCategoria(){
+  if(!modoSeleccionMultiple) iniciarModoSeleccionMultiple();
+  if(modoSeleccionMultiple) abrirSeleccionarPorCategoria();
 }
 function seleccionarPorCategoria(categoria){
   anotacionesTexto.forEach((a,i)=>{ if(a.tipo==="numero" && a.categoria===categoria) anotacionesSeleccionadas.add(i); });
