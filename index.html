@@ -4148,7 +4148,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <input type="text" id="prompt-texto-plano-codigo" placeholder="automático" style="width:100%;padding:9px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:10px;">
     </div>
     <div id="prompt-texto-plano-ubicacion-wrap">
-      <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:6px;">Ubicación (opcional)</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:11px;color:var(--tinta-suave);">Ubicación (opcional)</div>
+        <button type="button" onclick="abrirSelectorUbicacionMaestro()" title="Elegir el nombre del área desde un pin del Plano Maestro" style="border:none;background:none;font-size:14px;color:var(--tinta-suave);cursor:pointer;">📍</button>
+      </div>
       <input type="text" id="prompt-texto-plano-ubicacion" placeholder="ej: Pasillo B — Piso 1" style="width:100%;padding:9px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;box-sizing:border-box;">
     </div>
     <div id="prompt-texto-plano-estado-wrap">
@@ -23637,6 +23640,8 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   // mismo nombre que otro ya oculto en un plano anterior aparecía oculta sin que nadie la hubiera
   // tocado ahí.
   capasOcultasCad = new Set();
+  categoriasOcultasCad = new Set();
+  pinesOcultosCad = new Set();
   capaAisladaActual = null;
   gruposExpandidosActividad = new Set();
   // Esto es más serio: el historial de "Deshacer" también tiene que arrancar de cero -- si no,
@@ -25870,6 +25875,10 @@ let modoPlanoMaestro = false;
 let pinesMaestro = [];
 let modoAgregarPin = false;
 let pinAbiertoId = null;
+// Pines apagados con el ojito de "Todos los pines" (solo en esta sesión, no se guarda) -- igual
+// criterio que capasOcultasCad para las áreas del plano de avance: los saca de circulación en
+// renderPinesMaestro() sin borrar nada ni tocar el archivo guardado.
+let pinesOcultosCad = new Set();
 const RUBROS_PIN_MAESTRO = ["Albañilería","Carpintería","Electricidad","Plomería","Pintura","Herrería","Vidriería","Otro"];
 // Caché de los polígonos de OTROS planos (los de contratistas) que se van consultando para
 // calcular el % de las actividades vinculadas a un pin -- evita re-pedirle lo mismo a Firestore
@@ -26014,6 +26023,7 @@ function renderPinesMaestro(){
   cont.innerHTML = "";
   if(!modoPlanoMaestro) return;
   pinesMaestro.forEach(pin=>{
+    if(pinesOcultosCad.has(pin.id)) return;
     const div = document.createElement("div");
     div.className = "pin-maestro-tocable";
     div.dataset.pinId = pin.id;
@@ -26326,6 +26336,12 @@ async function centrarPinEnZona(){
 // esto reemplaza el "acordarme dónde estaba ese" por "lo veo directo arriba de la lista".
 function abrirResumenPines(){
   if(pinesMaestro.length===0){ showToast("Todavía no hay ningún pin en este plano."); return; }
+  renderListaResumenPines();
+  document.getElementById("foto-avance-overlay").style.display = "flex";
+  _fotoAvanceAbiertoTs = Date.now();
+  habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
+}
+function renderListaResumenPines(){
   const filas = pinesMaestro.map(p=>{
     const checklist = p.checklist || [];
     const pendientes = checklist.filter(t=>!t.hecho);
@@ -26340,25 +26356,32 @@ function abrirResumenPines(){
   const cont = document.getElementById("foto-avance-cuerpo");
   cont.innerHTML = `
     <h2 style="margin-top:0;color:#fff;">📑 Todos los pines</h2>
-    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Ordenados con lo más urgente primero. Tocá cualquiera para entrar directo, sin pasar por el mapa.</p>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Ordenados con lo más urgente primero. Tocá cualquiera para entrar directo, sin pasar por el mapa. El 👁 lo apaga del mapa sin borrarlo.</p>
     ${filas.map(f=>{
       const color = f.hayUrgente ? "#DC5B4A" : f.cantPendientes>0 ? "#E9A23B" : "#0E9488";
+      const oculto = pinesOcultosCad.has(f.p.id);
       const barra = f.pct===null ? `<div style="font-size:10px;color:#9fb0b8;font-style:italic;margin-top:3px;">Sin checklist cargado</div>` :
         `<div style="height:5px;background:#233038;border-radius:3px;margin-top:6px;overflow:hidden;"><div style="height:100%;width:${f.pct}%;background:${color};"></div></div>`;
-      return `<div onclick="cerrarFotoAvanceOverlay(); abrirPanelPinMaestro('${f.p.id}')" style="background:#111820;border-radius:10px;padding:10px 12px;margin-bottom:7px;cursor:pointer;">
+      return `<div style="background:#111820;border-radius:10px;padding:10px 12px;margin-bottom:7px;${oculto?'opacity:.55;':''}">
         <div style="display:flex;align-items:center;gap:8px;">
-          ${f.hayUrgente ? '<span style="font-size:12px;">🔴</span>' : `<div style="width:9px;height:9px;border-radius:50%;background:${color};flex-shrink:0;"></div>`}
-          <div style="flex:1;color:#e7eef1;font-weight:700;font-size:12.5px;">${esc(f.p.nombre||"(sin nombre)")}</div>
-          ${f.p.tipoAmbiente ? `<span style="font-size:9.5px;color:#9fb0b8;">${esc(f.p.tipoAmbiente)}</span>` : ""}
-          ${f.pct!==null ? `<span style="font-size:10.5px;font-weight:800;color:${color};">${f.pct}%</span>` : ""}
+          <div onclick="cerrarFotoAvanceOverlay(); abrirPanelPinMaestro('${f.p.id}')" style="flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;min-width:0;">
+            ${f.hayUrgente ? '<span style="font-size:12px;">🔴</span>' : `<div style="width:9px;height:9px;border-radius:50%;background:${color};flex-shrink:0;"></div>`}
+            <div style="flex:1;color:#e7eef1;font-weight:700;font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;">${esc(f.p.nombre||"(sin nombre)")}</div>
+            ${f.p.tipoAmbiente ? `<span style="font-size:9.5px;color:#9fb0b8;flex-shrink:0;">${esc(f.p.tipoAmbiente)}</span>` : ""}
+            ${f.pct!==null ? `<span style="font-size:10.5px;font-weight:800;color:${color};flex-shrink:0;">${f.pct}%</span>` : ""}
+          </div>
+          <button type="button" onclick="event.stopPropagation(); toggleOcultarPinCad('${f.p.id}')" title="${oculto?'Mostrar este pin':'Ocultar este pin'}" style="border:none;background:transparent;color:#9fb0b8;font-size:14px;cursor:pointer;flex-shrink:0;">${oculto?'🚫':'👁'}</button>
         </div>
         ${barra}
       </div>`;
     }).join("")}
     <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:6px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cerrar</button>`;
-  document.getElementById("foto-avance-overlay").style.display = "flex";
-  _fotoAvanceAbiertoTs = Date.now();
-  habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
+}
+function toggleOcultarPinCad(pinId){
+  if(pinesOcultosCad.has(pinId)) pinesOcultosCad.delete(pinId);
+  else pinesOcultosCad.add(pinId);
+  renderListaResumenPines();
+  renderPinesMaestro();
 }
 // El panel del pin tapa buena parte de abajo de la pantalla -- sin esto, un pin ubicado en la
 // mitad inferior del plano quedaba directamente tapado por su propio panel al abrirlo, así que no
@@ -26820,7 +26843,12 @@ function desvincularCapaPin(i){
 // planoId+nombreCompleto como una COPIA (no una referencia viva): sin este barrido, un pin vinculado
 // a algo borrado o renombrado queda mostrando "sin marcar todavía" para siempre, en silencio.
 async function conTodosLosPinesMaestro(obra, mutador){
-  const maestros = planosIndex.filter(p=>p.obra===obra && p.tipo==="maestro");
+  // planosIndex ya está scopeado a UNA obra por su propia clave de storage (se carga y guarda
+  // como "planos_avance_index_<obra>") -- sus ítems nunca tienen un campo .obra propio. Filtrar
+  // también por "p.obra===obra" comparaba siempre undefined contra un string real: daba false
+  // para TODOS los planos, así que este barrido nunca encontraba ningún Maestro y era un no-op
+  // silencioso (ningún pin se sincronizaba nunca al borrar/renombrar una capa o categoría).
+  const maestros = planosIndex.filter(p=>p.tipo==="maestro");
   for(const m of maestros){
     const esActual = m.id===planoActualId;
     let pines;
@@ -27798,55 +27826,84 @@ function actualizarTypeSelectorCad(){
 // Capas ocultas de la VISTA (solo en esta sesión, no se guarda) -- el ojito del panel de capas
 // las saca de circulación en redibujar() sin borrar nada ni tocar el archivo guardado.
 let capasOcultasCad = new Set();
+// Mismo criterio, pero para CATEGORÍAS de etiquetas (Ventana, Puerta...) -- apaga de una todos los
+// carteles de esa categoría, sin tener que tocarlos uno por uno. Guarda la categoría (texto), no
+// índices sueltos, porque la lista de anotacionesTexto puede reordenarse/crecer entre renders.
+let categoriasOcultasCad = new Set();
 function renderPanelCapasCad(){
   const cont = document.getElementById("lista-capas-cad");
   if(!cont) return;
+  let html = "";
   if(poligonos.length===0){
-    cont.innerHTML = `<p style="font-size:11px;color:#7c8f98;margin:4px;">Todavía no marcaste ninguna actividad en este plano.</p>`;
-    return;
+    html += `<p style="font-size:11px;color:#7c8f98;margin:4px;">Todavía no marcaste ninguna actividad en este plano.</p>`;
+  }else{
+    // Cualquier área -- sea el 100% total o una capa de avance -- puede estar formada por VARIAS
+    // piezas sueltas que comparten el mismo nombre (ej: 3 pedazos de "Estructura" marcados en
+    // sesiones distintas). Acá se agrupan TODAS por su nombre completo y se suma el área, para
+    // que se vea una sola fila con el % acumulado, en vez de una fila repetida por cada pedazo.
+    const yaListado = new Set();
+    html += poligonos.map((p,idx)=>{
+      if(yaListado.has(p.nombreCompleto)) return "";
+      yaListado.add(p.nombreCompleto);
+      const piezas = poligonos.filter(q=>q.nombreCompleto===p.nombreCompleto);
+      const oculto = capasOcultasCad.has(p.nombreCompleto);
+      let pct = 100;
+      if(p.capa){
+        const areaTot = areaTotalDe(p.nombreBase);
+        // Se suman los % YA REDONDEADOS de cada pieza (los mismos números que se ven flotando
+        // sobre el plano, ej: 5% + 15%) en vez de redondear la suma exacta de áreas -- así el
+        // acumulado de la lista siempre coincide con lo que el usuario ve pieza por pieza en el
+        // plano, aunque sea un pelito menos "matemáticamente exacto" (redondear y sumar puede
+        // desviar 1-2 puntos contra la suma exacta real).
+        pct = areaTot ? Math.min(100, piezas.reduce((s,q)=>s+Math.round((q.area/areaTot)*100),0)) : 0;
+      }
+      const estado = estadosCapas[p.nombreCompleto];
+      const pausada = estado && estado.estado==="pausada";
+      const revisadaSinAvance = estado && estado.estado==="revisado_sin_avance";
+      // "Pausar" solo tiene sentido para una capa de avance (no para el área total, que no se
+      // "trabaja" en sí misma) -- la etiqueta de "revisado: sin avance" ya quedó marcada, si
+      // corresponde, desde el cajón Dibujar (ver toggleRevisadoSinAvance) antes de que existiera
+      // ninguna pieza acá; se muestra también en esta lista una vez que la capa aparece.
+      const btnPausar = p.capa ? `<div class="pausa ${pausada?'activa':''}" onclick="event.stopPropagation(); togglePausarCapa('${esc(p.nombreCompleto).replace(/'/g,"\\'")}')" title="${pausada?'Reanudar':'Pausar'} esta capa">${pausada?'▶':'⏸'}</div>` : "";
+      const badgeRevisada = revisadaSinAvance ? `<span class="badge-revisado-sin-avance" title="Revisado: confirmado sin avance">✓0%</span>` : "";
+      return `
+      <div class="fila-capa-cad${pausada?' pausada':''}" onclick="seleccionarCapaDesdePanelCad(${idx})">
+        <div class="swatch" style="background:${p.color};"></div>
+        <div class="nombre">${esc(p.capa ? p.nombreCompleto : p.nombreBase)}${badgeRevisada}</div>
+        <div class="pct mono">${pct}%</div>
+        ${btnPausar}
+        <div class="ojo ${oculto?'apagado':''}" onclick="event.stopPropagation(); toggleOcultarCapaCad('${esc(p.nombreCompleto).replace(/'/g,"\\'")}')" title="${oculto?'Mostrar':'Ocultar'}">${oculto?'🚫':'👁'}</div>
+      </div>`;
+    }).join("");
   }
-  // Cualquier área -- sea el 100% total o una capa de avance -- puede estar formada por VARIAS
-  // piezas sueltas que comparten el mismo nombre (ej: 3 pedazos de "Estructura" marcados en
-  // sesiones distintas). Acá se agrupan TODAS por su nombre completo y se suma el área, para
-  // que se vea una sola fila con el % acumulado, en vez de una fila repetida por cada pedazo.
-  const yaListado = new Set();
-  cont.innerHTML = poligonos.map((p,idx)=>{
-    if(yaListado.has(p.nombreCompleto)) return "";
-    yaListado.add(p.nombreCompleto);
-    const piezas = poligonos.filter(q=>q.nombreCompleto===p.nombreCompleto);
-    const oculto = capasOcultasCad.has(p.nombreCompleto);
-    let pct = 100;
-    if(p.capa){
-      const areaTot = areaTotalDe(p.nombreBase);
-      // Se suman los % YA REDONDEADOS de cada pieza (los mismos números que se ven flotando
-      // sobre el plano, ej: 5% + 15%) en vez de redondear la suma exacta de áreas -- así el
-      // acumulado de la lista siempre coincide con lo que el usuario ve pieza por pieza en el
-      // plano, aunque sea un pelito menos "matemáticamente exacto" (redondear y sumar puede
-      // desviar 1-2 puntos contra la suma exacta real).
-      pct = areaTot ? Math.min(100, piezas.reduce((s,q)=>s+Math.round((q.area/areaTot)*100),0)) : 0;
-    }
-    const estado = estadosCapas[p.nombreCompleto];
-    const pausada = estado && estado.estado==="pausada";
-    const revisadaSinAvance = estado && estado.estado==="revisado_sin_avance";
-    // "Pausar" solo tiene sentido para una capa de avance (no para el área total, que no se
-    // "trabaja" en sí misma) -- la etiqueta de "revisado: sin avance" ya quedó marcada, si
-    // corresponde, desde el cajón Dibujar (ver toggleRevisadoSinAvance) antes de que existiera
-    // ninguna pieza acá; se muestra también en esta lista una vez que la capa aparece.
-    const btnPausar = p.capa ? `<div class="pausa ${pausada?'activa':''}" onclick="event.stopPropagation(); togglePausarCapa('${esc(p.nombreCompleto).replace(/'/g,"\\'")}')" title="${pausada?'Reanudar':'Pausar'} esta capa">${pausada?'▶':'⏸'}</div>` : "";
-    const badgeRevisada = revisadaSinAvance ? `<span class="badge-revisado-sin-avance" title="Revisado: confirmado sin avance">✓0%</span>` : "";
-    return `
-    <div class="fila-capa-cad${pausada?' pausada':''}" onclick="seleccionarCapaDesdePanelCad(${idx})">
-      <div class="swatch" style="background:${p.color};"></div>
-      <div class="nombre">${esc(p.capa ? p.nombreCompleto : p.nombreBase)}${badgeRevisada}</div>
-      <div class="pct mono">${pct}%</div>
-      ${btnPausar}
-      <div class="ojo ${oculto?'apagado':''}" onclick="event.stopPropagation(); toggleOcultarCapaCad('${esc(p.nombreCompleto).replace(/'/g,"\\'")}')" title="${oculto?'Mostrar':'Ocultar'}">${oculto?'🚫':'👁'}</div>
-    </div>`;
-  }).join("");
+  // Categorías de etiquetas (Ventana, Puerta...) -- mismo ojito, estilo "apagar capa" de AutoCAD,
+  // pero para carteles en vez de áreas. Solo cuenta categorías reales (no cuadros de texto libre
+  // sin categoría, que no tienen nada en común entre sí para agrupar y apagar de una).
+  const categorias = [...new Set(anotacionesTexto.map(a=>a.categoria).filter(Boolean))];
+  if(categorias.length>0){
+    html += `<div style="font-size:10.5px;font-weight:800;color:#7c8f98;text-transform:uppercase;letter-spacing:.4px;margin:10px 4px 4px;">🏷️ Etiquetas</div>`;
+    html += categorias.map(cat=>{
+      const cantidad = anotacionesTexto.filter(a=>a.categoria===cat).length;
+      const oculta = categoriasOcultasCad.has(cat);
+      return `
+      <div class="fila-capa-cad">
+        <div class="nombre">${esc(cat)}</div>
+        <div class="pct mono">${cantidad}</div>
+        <div class="ojo ${oculta?'apagado':''}" onclick="event.stopPropagation(); toggleOcultarCategoriaCad('${esc(cat).replace(/'/g,"\\'")}')" title="${oculta?'Mostrar':'Ocultar'} esta categoría">${oculta?'🚫':'👁'}</div>
+      </div>`;
+    }).join("");
+  }
+  cont.innerHTML = html || `<p style="font-size:11px;color:#7c8f98;margin:4px;">Todavía no marcaste ninguna actividad en este plano.</p>`;
 }
 function toggleOcultarCapaCad(nombreCompleto){
   if(capasOcultasCad.has(nombreCompleto)) capasOcultasCad.delete(nombreCompleto);
   else capasOcultasCad.add(nombreCompleto);
+  renderPanelCapasCad();
+  redibujar();
+}
+function toggleOcultarCategoriaCad(categoria){
+  if(categoriasOcultasCad.has(categoria)) categoriasOcultasCad.delete(categoria);
+  else categoriasOcultasCad.add(categoria);
   renderPanelCapasCad();
   redibujar();
 }
@@ -33215,6 +33272,98 @@ function cerrarPromptTextoPlano(){
   document.getElementById("prompt-texto-plano-overlay").style.display = "none";
   idxAnotacionEditando = null;
 }
+// Junta los pines de TODOS los Planos Maestro de la obra (el que esté abierto en memoria, y el
+// resto directo de storage) en una sola lista plana -- para el selector de "Ubicación" de abajo.
+// Mismo criterio de lectura que conTodosLosPinesMaestro(), pero de solo lectura (no muta nada).
+async function cargarTodosLosPinesMaestro(obra){
+  const maestros = planosIndex.filter(p=>p.tipo==="maestro");
+  const resultado = [];
+  for(const m of maestros){
+    let pines;
+    if(m.id===planoActualId){
+      pines = pinesMaestro;
+    }else{
+      try{
+        const r = await window.storage.get(`plano_maestro_pines_${obra}_${m.id}`, true);
+        pines = r && r.value ? JSON.parse(r.value) : [];
+      }catch(e){ pines = []; }
+    }
+    pines.forEach(pin=>{ if(pin.nombre) resultado.push({pin, planoId: m.id, planoNombre: m.nombre}); });
+  }
+  return resultado;
+}
+// Pedido del usuario: al colocar una etiqueta (ej: una ventana) en el plano de avance, poder
+// traer el nombre del área/aula directo de un pin del Plano Maestro en vez de escribirlo a mano
+// cada vez (y, de paso, repetirlo distinto entre dos etiquetas de la misma habitación). Elegir un
+// pin acá también registra el vínculo pin↔categoría (capasVinculadas, tipo "anotacion") para este
+// plano -- el mismo dato que ya usa "Vincular" del lado del pin, pero completado desde este lado.
+async function abrirSelectorUbicacionMaestro(){
+  const obra = claveObraPlanoAvance();
+  if(!obra){ showToast("No se pudo determinar la obra."); return; }
+  const todos = await cargarTodosLosPinesMaestro(obra);
+  if(todos.length===0){ showToast("Todavía no hay ningún pin cargado en un Plano Maestro de esta obra."); return; }
+  const porPlano = {};
+  todos.forEach(({pin, planoId, planoNombre})=>{
+    if(!porPlano[planoId]) porPlano[planoId] = {planoNombre, pines:[]};
+    porPlano[planoId].pines.push(pin);
+  });
+  const cont = document.getElementById("foto-avance-cuerpo");
+  cont.innerHTML = `
+    <h2 style="margin-top:0;color:#fff;">📍 Elegir del Plano Maestro</h2>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Tocá el pin (área/aula) que corresponde -- se usa su nombre como ubicación.</p>
+    ${Object.entries(porPlano).map(([planoId, g])=>`
+      <div style="font-size:10.5px;font-weight:800;color:#9fb0b8;text-transform:uppercase;letter-spacing:.4px;margin:10px 0 4px;">${esc(g.planoNombre)}</div>
+      ${g.pines.map(pin=>`
+        <div onclick="elegirUbicacionDesdeMaestro('${planoId}','${pin.id}')" style="background:#111820;border-radius:9px;padding:9px 12px;margin-bottom:6px;cursor:pointer;color:#e7eef1;font-weight:700;font-size:12.5px;">📍 ${esc(pin.nombre)}</div>
+      `).join("")}
+    `).join("")}
+    <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:8px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cancelar</button>`;
+  document.getElementById("foto-avance-overlay").style.display = "flex";
+  _fotoAvanceAbiertoTs = Date.now();
+  habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
+}
+async function elegirUbicacionDesdeMaestro(planoId, pinId){
+  const obra = claveObraPlanoAvance();
+  const todos = await cargarTodosLosPinesMaestro(obra);
+  const encontrado = todos.find(({pin, planoId: pId})=>pin.id===pinId && pId===planoId);
+  if(!encontrado) return;
+  const { pin, planoNombre } = encontrado;
+  document.getElementById("prompt-texto-plano-ubicacion").value = pin.nombre;
+  cerrarFotoAvanceOverlay();
+  // Si ya hay una categoría elegida, de paso se registra el vínculo pin↔categoría para este plano
+  // -- así "Vincular" del lado del Maestro ya lo encuentra marcado, sin tener que repetir el paso
+  // ahí también. Sin categoría (texto libre), solo se completa la ubicación -- no hay categoría
+  // para vincular.
+  const categoria = categoriaSeleccionadaEnPromptTexto();
+  if(!categoria) return;
+  await vincularPinACategoriaPlano(planoId, pinId, obra, planoActualId, categoria);
+}
+// Registra (si no estaba ya) el vínculo pin↔categoría en el pin dado -- reusa el mismo criterio de
+// toggleVinculoCapaPinDesdeInput, pero puede tocar un pin de OTRO Plano Maestro (no el que está
+// abierto ahora, que es un plano de avance), así que lee/guarda directo de storage cuando haga
+// falta, igual que conTodosLosPinesMaestro().
+async function vincularPinACategoriaPlano(planoIdMaestro, pinId, obra, planoIdAvance, categoria){
+  const esActual = planoIdMaestro===planoActualId;
+  let pines;
+  if(esActual){
+    pines = pinesMaestro;
+  }else{
+    try{
+      const r = await window.storage.get(`plano_maestro_pines_${obra}_${planoIdMaestro}`, true);
+      pines = r && r.value ? JSON.parse(r.value) : [];
+    }catch(e){ return; }
+  }
+  const pin = pines.find(p=>p.id===pinId);
+  if(!pin) return;
+  pin.capasVinculadas = pin.capasVinculadas || [];
+  const planoAvance = planosIndex.find(p=>p.id===planoIdAvance);
+  const yaVinculado = pin.capasVinculadas.some(v=>v.tipo==="anotacion" && v.planoId===planoIdAvance && v.categoria===categoria);
+  if(!yaVinculado){
+    pin.capasVinculadas.push({tipo:"anotacion", planoId: planoIdAvance, planoNombre: planoAvance ? planoAvance.nombre : "", categoria});
+  }
+  if(esActual) await guardarPinesMaestro();
+  else await guardarClave(`plano_maestro_pines_${obra}_${planoIdMaestro}`, JSON.stringify(pines));
+}
 async function confirmarPromptTextoPlano(){
   const valor = document.getElementById("prompt-texto-plano-input").value.trim();
   if(!valor){ showToast("Escribí algo antes de colocarlo."); return; }
@@ -33485,6 +33634,7 @@ function renderAnotacionesTocables(){
   const fontSize = Math.max(14, canvas.width/55);
   ctx.font = `bold ${fontSize}px sans-serif`;
   anotacionesTexto.forEach((a, idx)=>{
+    if(a.categoria && categoriasOcultasCad.has(a.categoria)) return;
     const texto = textoDeAnotacion(a);
     const anchoTexto = ctx.measureText(texto).width;
     const padX = fontSize*0.5;
@@ -34958,6 +35108,7 @@ function redibujar(){
   // de lejos se ve el avance real de instalación, sin tener que tocar cada cartel. Las notas de
   // texto libre (sin estado) siguen con el morado fijo de siempre.
   anotacionesTexto.forEach((a, idxAnot)=>{
+    if(a.categoria && categoriasOcultasCad.has(a.categoria)) return;
     const texto = textoDeAnotacion(a);
     const fontSize = Math.max(14, canvas.width/55);
     ctx.font = `bold ${fontSize}px sans-serif`;
