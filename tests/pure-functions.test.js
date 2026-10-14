@@ -29,6 +29,9 @@ const { calcularCielorraso } = cargarDesdeApp([{ nombre: "calcularCielorraso" }]
 const { calcularTecho } = cargarDesdeApp([{ nombre: "calcularTecho" }]);
 const { calcularMallaElectrosoldada } = cargarDesdeApp([{ nombre: "calcularMallaElectrosoldada" }]);
 const { calcularLosaViguetas } = cargarDesdeApp([{ nombre: "calcularLosaViguetas" }]);
+const { convertirAEnvases, calcularPintura } = cargarDesdeApp([{ nombre: "convertirAEnvases" }, { nombre: "calcularPintura" }]);
+const { calcularMembranaLiquida } = cargarDesdeApp([{ nombre: "convertirAEnvases" }, { nombre: "calcularMembranaLiquida" }]);
+const { calcularMembranaRollos } = cargarDesdeApp([{ nombre: "calcularMembranaRollos" }]);
 
 test("pad2 rellena con cero a la izquierda", () => {
   assert.equal(pad2(1), "01");
@@ -232,4 +235,38 @@ test("calcularLosaViguetas: a menor altura, menos separacion entre viguetas y ma
   const h12 = calcularLosaViguetas({ modo:"telgopor", altura:"12", ancho:4, largo:5 });
   assert.equal(h12.separacion, 42);
   assert.equal(h12.viguetasCant, 11); // ceil(4/0.42)+1
+});
+
+test("convertirAEnvases: reparte de mayor a menor y redondea hacia arriba en el ultimo tamaño", () => {
+  assert.deepEqual(convertirAEnvases(6, [20,10,4,1]), { 20:0, 10:0, 4:1, 1:2 });
+  assert.deepEqual(convertirAEnvases(0, [20,10,4,1]), { 20:0, 10:0, 4:0, 1:0 });
+});
+
+test("calcularPintura: 10x3m, 2 manos, rendimiento 10 m2/L, con fijador", () => {
+  const r = calcularPintura({ ancho:10, largo:3, manos:2, rendimiento:10, conFijador:true });
+  assert.equal(r.area, 30);
+  assert.equal(r.litros, 6); // 30*2/10
+  assert.deepEqual(r.latas, { 20:0, 10:0, 4:1, 1:2 });
+  assert.equal(r.fijadorLitros, 4.29); // 30/7
+});
+
+test("calcularPintura: sin fijador da 0 litros de fijador", () => {
+  const r = calcularPintura({ ancho:10, largo:3, manos:2, rendimiento:10, conFijador:false });
+  assert.equal(r.fijadorLitros, 0);
+});
+
+test("calcularMembranaLiquida: 10x3m, 2 manos, con imprimacion", () => {
+  const r = calcularMembranaLiquida({ ancho:10, largo:3, manos:2, kgPorM2PorMano:1.35, conImprimacion:true });
+  assert.equal(r.area, 30);
+  assert.equal(r.kg, 81); // 30*1.35*2
+  assert.deepEqual(r.baldes, { 25:3, 20:0, 10:0, 5:2 });
+  assert.equal(r.imprimacionLitros, 6.67); // 30/4.5
+});
+
+test("calcularMembranaRollos: 5x12m, rollo 1m util x 10m, 10% de solape, con imprimacion", () => {
+  const r = calcularMembranaRollos({ ancho:5, largo:12, anchoUtilRollo:1, largoRollo:10, solape:10, conImprimacion:true });
+  assert.equal(r.rollosAncho, 6); // ceil(5/1*1.1) = ceil(5.5)
+  assert.equal(r.rollosLargo, 2); // ceil(12/10)
+  assert.equal(r.totalRollos, 12);
+  assert.equal(r.imprimacionLitros, 13.33); // (5*12)/4.5
 });

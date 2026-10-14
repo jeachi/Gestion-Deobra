@@ -6754,6 +6754,58 @@ function calcularLosaViguetas(state){
   return { area, separacion: info.separacion, viguetasCant, viguetasMetros, ladrillos, malla, volumenCompresion, cemento, arena, piedra };
 }
 
+/* ---------------- Calculadora de Materiales — conversión genérica a envases comerciales ----------------
+   Reparte una cantidad (litros, kg, lo que sea) en envases de tamaños fijos, de mayor a menor,
+   redondeando siempre hacia arriba en el envase más chico que falte (nunca compra de menos).
+   tamanos: array de tamaños DESCENDENTE, ej [20,10,4,1]. */
+function convertirAEnvases(cantidad, tamanos){
+  let restante = Math.max(0, cantidad);
+  const envases = {};
+  tamanos.forEach((t, i)=>{
+    const esUltimo = i===tamanos.length-1;
+    const cant = esUltimo ? Math.ceil(restante/t) : Math.floor(restante/t);
+    envases[t] = cant;
+    restante = Math.round((restante - cant*t)*100)/100;
+  });
+  return envases;
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Pintura ----------------
+   state = {ancho, largo, manos, rendimiento (m²/L por mano), conFijador} */
+function calcularPintura(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const rendimiento = state.rendimiento || 10;
+  const litros = Math.round((area * (state.manos||1) / rendimiento) * 100) / 100;
+  const latas = convertirAEnvases(litros, [20,10,4,1]);
+  const fijadorLitros = state.conFijador ? Math.round((area/7)*100)/100 : 0;
+  return { area, litros, latas, fijadorLitros };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Membrana líquida ----------------
+   state = {ancho, largo, manos, kgPorM2PorMano, conImprimacion} */
+function calcularMembranaLiquida(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const kgPorM2 = state.kgPorM2PorMano || 1.35;
+  const kg = Math.round(area * kgPorM2 * (state.manos||1) * 100) / 100;
+  const baldes = convertirAEnvases(kg, [25,20,10,5]);
+  const imprimacionLitros = state.conImprimacion ? Math.round((area/4.5)*100)/100 : 0;
+  return { area, kg, baldes, imprimacionLitros };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Membrana en rollos ----------------
+   state = {ancho, largo, anchoUtilRollo, largoRollo, solape (%), conImprimacion} */
+function calcularMembranaRollos(state){
+  const ancho = state.ancho||0, largo = state.largo||0;
+  const area = Math.max(0, ancho*largo);
+  const anchoUtilRollo = state.anchoUtilRollo || 1;
+  const largoRollo = state.largoRollo || 10;
+  const rollosAncho = anchoUtilRollo>0 ? Math.ceil(ancho/anchoUtilRollo * (1 + (state.solape||0)/100)) : 0;
+  const rollosLargo = largoRollo>0 ? Math.ceil(largo/largoRollo) : 0;
+  const totalRollos = rollosAncho * rollosLargo;
+  const imprimacionLitros = state.conImprimacion ? Math.round((area/4.5)*100)/100 : 0;
+  return { area, rollosAncho, rollosLargo, totalRollos, imprimacionLitros };
+}
+
 async function onCambioDia(){
   const val = document.getElementById("sel-dia").value;
   if(!val) return;
