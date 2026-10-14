@@ -133,8 +133,23 @@ const { chromium } = require("playwright");
     throw new Error("La copia debería quedar en el punto destino tocado: " + JSON.stringify(trasCopiar));
   }
 
+  // ---- 6b) Pedido del usuario: la copia queda seleccionada (no el original) para poder moverla
+  //          enseguida con "✋ Mover", sin tener que volver a elegirla a mano ----
+  const quedaSeleccionadaLaCopia = await page.evaluate(() => ({
+    seleccion: [...seleccionAreaResultado],
+    barraVisible: document.getElementById("barra-seleccion-area").style.display !== "none",
+    movibleDesdeAca: totalSeleccionAreaMixta() > 0,
+  }));
+  if (quedaSeleccionadaLaCopia.seleccion.includes("p1") || quedaSeleccionadaLaCopia.seleccion.length !== 1) {
+    throw new Error("Tras copiar, debería quedar seleccionada SOLO la copia nueva (no el original 'p1'): " + JSON.stringify(quedaSeleccionadaLaCopia));
+  }
+  if (!quedaSeleccionadaLaCopia.barraVisible || !quedaSeleccionadaLaCopia.movibleDesdeAca) {
+    throw new Error("Tras copiar, la barra debería seguir abierta y lista para 'Mover': " + JSON.stringify(quedaSeleccionadaLaCopia));
+  }
+
   // ---- 7) Eliminar borra todo lo elegido (con doble toque de confirmación) ----
   const trasEliminar = await page.evaluate(() => {
+    cancelarSeleccionArea(); // la copia del paso anterior queda elegida -- se arranca de cero
     const idsAntes = pinesMaestro.map(p=>p.id);
     idsAntes.forEach(id=>alternarPinParaSeleccionArea(id));
     const btnEliminar = document.querySelector('#barra-seleccion-area button[onclick^="eliminarSeleccionArea"]');
@@ -186,14 +201,23 @@ const { chromium } = require("playwright");
   const copiaMixta = await page.evaluate(() => {
     iniciarCopiarSeleccionArea();
     confirmarCopiarSeleccionArea(700, 300);
-    return { piezas: poligonos.length, etiquetas: anotacionesTexto.length, formas: formasPlano.length };
+    return {
+      piezas: poligonos.length, etiquetas: anotacionesTexto.length, formas: formasPlano.length,
+      seleccionApuntaALaCopia: seleccionAreaResultado[0] === poligonos.length-1,
+      etiquetaSeleccionadaEsLaCopia: [...etiquetasSeleccionArea][0] === anotacionesTexto.length-1,
+      barraVisible: document.getElementById("barra-seleccion-area").style.display !== "none",
+    };
   });
   if (copiaMixta.piezas !== 2) throw new Error("Copiar debería duplicar la pieza elegida (quedar en 2): " + JSON.stringify(copiaMixta));
   if (copiaMixta.etiquetas !== 2) throw new Error("Copiar debería duplicar la etiqueta elegida (quedar en 2): " + JSON.stringify(copiaMixta));
   if (copiaMixta.formas !== 2) throw new Error("Copiar debería duplicar la línea elegida (quedar en 2): " + JSON.stringify(copiaMixta));
+  if (!copiaMixta.seleccionApuntaALaCopia || !copiaMixta.etiquetaSeleccionadaEsLaCopia || !copiaMixta.barraVisible) {
+    throw new Error("Tras copiar, deberían quedar elegidas las copias nuevas (no los originales), con la barra abierta para poder moverlas: " + JSON.stringify(copiaMixta));
+  }
 
   // ---- 10) Eliminar la selección mixta borra los 3 tipos juntos ----
   const eliminarMixta = await page.evaluate(() => {
+    cancelarSeleccionArea(); // las copias del paso anterior quedaron elegidas -- se arranca de cero
     const canvas = document.getElementById("canvas-plano");
     const rect = canvas.getBoundingClientRect();
     const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
