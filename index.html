@@ -4344,6 +4344,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <button type="button" onclick="irASiguientePinCercano()" style="border:none;background:#fff;border:1.5px solid var(--borde);width:30px;height:30px;border-radius:8px;font-size:13px;cursor:pointer;flex-shrink:0;">▶</button>
     </div>
     <div style="padding:12px 14px 18px;">
+      <div id="pin-maestro-area-m2"></div>
       <div style="display:flex;align-items:center;margin-bottom:6px;">
         <span style="font-size:10.5px;font-weight:800;color:var(--tinta-suave);text-transform:uppercase;letter-spacing:.4px;flex:1;">📊 Avance (de los planos de los contratistas)</span>
         <button type="button" onclick="abrirVincularCapasPin()" style="border:none;background:var(--fondo);color:var(--tinta);font-size:10.5px;font-weight:800;padding:5px 9px;border-radius:8px;cursor:pointer;">🔗 Vincular</button>
@@ -26498,6 +26499,34 @@ function centrarVistaEnPin(pin){
   wrap.scrollLeft = Math.max(0, pin.x*zoomObjetivo - rect.width/2);
   wrap.scrollTop = Math.max(0, pin.y*zoomObjetivo - centroFranjaVisibleY);
 }
+// El usuario pidió que, con el plano ya calibrado, un pin ubicado dentro de un contorno cerrado
+// (una habitación, por ejemplo) muestre de una el área aproximada en m² de ESE lugar -- sin tener
+// que marcarla a mano como pieza. Reutiliza el mismo motor que ya usa "Contorno interno"/detección
+// automática de habitaciones: inunda el área libre conectada al punto del pin y, si quedó
+// encerrada por líneas (no tocó el borde de la imagen), convierte los píxeles inundados a m² con
+// la escala calibrada. Si el plano no tiene escala, o el pin no cae dentro de ningún contorno
+// cerrado, no muestra nada (no es un error, simplemente no hay nada para calcular ahí).
+function calcularAreaAproximadaEnPin(pin){
+  if(!metrosPorPixelPlano) return null;
+  if(!mapaBordesPlano) construirMapaBordes();
+  if(!mapaBordesPlano) return null;
+  const {datos, w, h} = mapaBordesPlano;
+  const x = Math.round(pin.x), y = Math.round(pin.y);
+  if(x<0||x>=w||y<0||y>=h) return null;
+  if(datos[y*w+x]) return null; // el pin quedó justo sobre una línea -- no hay "adentro" claro
+  const relleno = inundarAreaLibre(datos, w, h, x, y, w*h+1);
+  if(relleno.tocoElBorde) return null; // no está encerrado por completo
+  if(relleno.contador < 20) return null; // región ínfima -- probablemente ruido, no un ambiente real
+  return relleno.contador * metrosPorPixelPlano * metrosPorPixelPlano;
+}
+function renderAreaAproximadaPin(pin){
+  const cont = document.getElementById("pin-maestro-area-m2");
+  if(!cont) return;
+  const m2 = calcularAreaAproximadaEnPin(pin);
+  cont.innerHTML = m2!==null
+    ? `<div style="font-size:11.5px;color:var(--tinta-suave);margin-bottom:10px;">📐 ≈ <b style="color:var(--tinta);">${m2.toFixed(1)} m²</b> (contorno cerrado detectado en el plano, con la escala calibrada)</div>`
+    : "";
+}
 function abrirPanelPinMaestro(id, recienCreado, continuandoRecorrido){
   pinAbiertoId = id;
   if(!continuandoRecorrido) historialRecorridoPines = []; // entrada "de cero" -- no arrastra el camino de un recorrido anterior
@@ -26506,6 +26535,7 @@ function abrirPanelPinMaestro(id, recienCreado, continuandoRecorrido){
   document.getElementById("pin-maestro-nombre").value = pin.nombre || "";
   const visitadosRecorrido = historialRecorridoPines.length + 1; // +1 por el que está abierto ahora
   document.getElementById("pin-maestro-contador").textContent = `Recorrido: ${visitadosRecorrido} de ${pinesMaestro.length}`;
+  renderAreaAproximadaPin(pin);
   renderAvancePin(pin);
   renderChecklistPin(pin);
   document.getElementById("panel-pin-maestro-overlay").style.display = "flex";
