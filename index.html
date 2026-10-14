@@ -15433,6 +15433,44 @@ async function guardarRecordatoriosIndex(){
   if(errorCargaRecordatorios){ showToast("⚠ No se guardó — no se pudo leer bien antes (revisá conexión y volvé a entrar)."); return false; }
   return guardarClave("recordatorios_index", JSON.stringify(recordatorios));
 }
+
+/* ---------------- Calculadora de Materiales — "Mi cómputo" ----------------
+   Mismo patrón de guardado que Recordatorios/Observaciones: un solo índice global, cada ítem
+   tiene su propio campo .obra (no una clave por obra). */
+let calcMaterialesItems = [];
+let errorCargaCalcMateriales = false;
+async function cargarCalcMateriales(){
+  try{
+    const r = await window.storage.get("calc_materiales_index", true);
+    calcMaterialesItems = r && r.value ? JSON.parse(r.value) : [];
+    errorCargaCalcMateriales = false;
+  }catch(e){
+    if(String(e.message||"").includes("Clave no encontrada")){ calcMaterialesItems = []; errorCargaCalcMateriales = false; }
+    else{ errorCargaCalcMateriales = true; }
+  }
+}
+async function guardarCalcMaterialesIndex(){
+  if(errorCargaCalcMateriales){ showToast("⚠ No se guardó — no se pudo leer bien antes (revisá conexión y volvé a entrar)."); return false; }
+  return guardarClave("calc_materiales_index", JSON.stringify(calcMaterialesItems));
+}
+function actualizarBadgeComputoCalc(){
+  const badge = document.getElementById("calc-computo-badge");
+  if(!badge) return;
+  if(calcMaterialesItems.length>0){ badge.style.display="inline-block"; badge.textContent = calcMaterialesItems.length; }
+  else badge.style.display = "none";
+}
+async function agregarItemComputoCalc(item){
+  calcMaterialesItems.push(item);
+  const ok = await guardarCalcMaterialesIndex();
+  actualizarBadgeComputoCalc();
+  return ok;
+}
+async function quitarItemComputoCalc(id){
+  calcMaterialesItems = calcMaterialesItems.filter(it=>it.id!==id);
+  await guardarCalcMaterialesIndex();
+  actualizarBadgeComputoCalc();
+}
+
 // Regla de escalado: nunca baja sola, solo sube según cuántos días faltan para la fecha.
 function diasHastaRecordatorio(r){
   if(!r.fecha) return null;
@@ -20273,6 +20311,7 @@ async function iniciarAppData(){
     cargarEquivalencias(),
     cargarMontoBaseCaja(),
     cargarRecordatorios(),
+    cargarCalcMateriales(),
     cargarClimaCiudadRef(),
     cargarAliasMateriales(),
     cargarConfigAsistente(),
