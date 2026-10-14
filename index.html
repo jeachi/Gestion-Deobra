@@ -6806,6 +6806,55 @@ function calcularMembranaRollos(state){
   return { area, rollosAncho, rollosLargo, totalRollos, imprimacionLitros };
 }
 
+/* ---------------- Calculadora de Materiales — cálculo puro de Contrapiso / Hormigón ----------------
+   state = {ancho, largo, espesor (m)} -- dosificación de referencia ~1:3:3 (mismos ratios que la
+   capa de compresión de Losa de viguetas, por m³: 7 bolsas de cemento, 0.5 m³ arena, 0.5 m³ piedra) */
+function calcularContrapiso(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const espesor = state.espesor || 0.05;
+  const volumen = Math.round(area * espesor * 100) / 100;
+  const cemento = Math.max(0, Math.ceil(volumen * 7));
+  const arena = Math.round(volumen * 0.5 * 100) / 100;
+  const piedra = Math.round(volumen * 0.5 * 100) / 100;
+  return { area, volumen, cemento, arena, piedra };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Piso cerámico ----------------
+   state = {ancho, largo, m2PorCaja, desperdicio (%), m2PorBolsaPegamento, rendimientoPastina (kg/m²)} */
+function calcularPisoCeramico(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const m2PorCaja = state.m2PorCaja || 1.44;
+  const cajas = Math.ceil(area / m2PorCaja * (1 + (state.desperdicio||0)/100));
+  const m2PorBolsaPegamento = state.m2PorBolsaPegamento || 4;
+  const bolsasPegamento = Math.ceil(area / m2PorBolsaPegamento);
+  const rendimientoPastina = state.rendimientoPastina || 0.4;
+  const pastinaKg = Math.round(area * rendimientoPastina * 100) / 100;
+  return { area, cajas, bolsasPegamento, pastinaKg };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Revoque ----------------
+   state = {ancho, alto, tipo: "grueso"|"fino", espesor (m, opcional -- si no, usa el típico del tipo)} */
+function calcularRevoque(state){
+  const area = Math.max(0, (state.ancho||0) * (state.alto||0));
+  const esFino = state.tipo === "fino";
+  const espesor = state.espesor || (esFino ? 0.003 : 0.015);
+  const volumen = Math.round(area * espesor * 100) / 100;
+  const cemento = Math.max(0, Math.ceil(volumen * (esFino ? 2 : 4)));
+  const cal = Math.max(0, Math.ceil(volumen * (esFino ? 6 : 4)));
+  const arena = Math.round(volumen * (esFino ? 0.6 : 0.8) * 100) / 100;
+  return { area, volumen, cemento, cal, arena };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Aislación térmica ----------------
+   state = {ancho, largo, solape (%), m2PorRollo} */
+function calcularAislacionTermica(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const m2Necesarios = Math.round(area * (1 + (state.solape||0)/100) * 100) / 100;
+  const m2PorRollo = state.m2PorRollo || 12;
+  const rollos = Math.ceil(m2Necesarios / m2PorRollo);
+  return { area, m2Necesarios, rollos };
+}
+
 async function onCambioDia(){
   const val = document.getElementById("sel-dia").value;
   if(!val) return;
