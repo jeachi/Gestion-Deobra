@@ -3742,6 +3742,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
       <button type="button" class="btn btn-outline" id="vr-btn-certificar" style="width:100%;margin-top:8px;display:none;" onclick="usarAvanceEnNuevoCertificado()">🧾 Usar en un certificado nuevo</button>
       <button type="button" class="btn btn-outline" id="vr-btn-compartir" style="width:100%;margin-top:8px;" onclick="compartirAvancePlano()">📤 Compartir avance</button>
+      <button type="button" class="btn btn-outline" id="vr-btn-reporte" style="width:100%;margin-top:8px;" onclick="generarReporteDesdeVistaRapida()">🧾 Reporte PDF</button>
     </div>
 
   <div class="card" id="card-canvas" style="display:none;padding:8px;">
@@ -3820,6 +3821,8 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button type="button" class="cad-status-btn" id="btn-bloqueo-orto" onclick="toggleBloqueoOrtogonal()"><span class="ico"><i class="ph-bold ph-right-angle"></i></span><span class="lbl">ORTO</span></button>
           <button type="button" class="cad-status-btn" id="btn-grid-plano" onclick="toggleGridPlano()"><span class="ico"><i class="ph-bold ph-grid-four"></i></span><span class="lbl">GRID</span></button>
           <button type="button" class="cad-status-btn" onclick="abrirAjustesGrid()" title="Tamaño de la cuadrícula y dónde arranca"><span class="ico"><i class="ph-bold ph-gear-six"></i></span><span class="lbl">GRID</span></button>
+          <button type="button" class="cad-status-btn" id="btn-cruz-cursor" onclick="toggleCruzCursor()"><span class="ico"><i class="ph-bold ph-crosshair-simple"></i></span><span class="lbl">CRUZ</span></button>
+          <button type="button" class="cad-status-btn" onclick="abrirAjustesCruzCursor()" title="Color del cursor en cruz"><span class="ico"><i class="ph-bold ph-gear-six"></i></span><span class="lbl">CRUZ</span></button>
           <button type="button" class="cad-status-btn btn-primary" id="btn-referencias-plano" onclick="toggleReferenciasPlano()"><span class="ico"><i class="ph-bold ph-map-pin"></i></span><span class="lbl">REF</span></button>
           <button type="button" class="cad-status-btn" id="btn-orden-badges" onclick="ciclarOrdenBadgesPct()" title="Cómo se acomodan los % cuando dos quedan pegados"><span class="ico" id="ico-orden-badges">🔀</span><span class="lbl" id="lbl-orden-badges">AUTO</span></button>
           <span class="cad-status-zoom" id="zoom-pct-bar">100%</span>
@@ -4244,6 +4247,19 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   </div>
 </div>
 
+<div id="ajustes-cruz-overlay" style="display:none;position:fixed;inset:0;background:rgba(6,10,13,.5);z-index:2340;align-items:flex-end;justify-content:center;" onclick="if(event.target===this) cerrarAjustesCruzCursor();">
+  <div style="background:var(--papel);border-radius:18px 18px 0 0;max-width:420px;width:100%;padding:16px;">
+    <h2 style="margin:0 0 4px;">✛ Cursor en cruz</h2>
+    <p class="helper" style="margin-bottom:12px;">Dos líneas que atraviesan todo el plano siguiendo el dedo/mouse, como el cursor de AutoCAD -- ayudan a alinear al dibujar o ubicar un pin/etiqueta.</p>
+    <label class="chip-opt" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:14px;">
+      <input type="checkbox" id="input-cruz-activa" onchange="guardarAjustesCruzCursor()" style="margin:0;"> Mostrar el cursor en cruz
+    </label>
+    <label style="font-size:11.5px;font-weight:800;color:var(--tinta-suave);display:block;margin-bottom:6px;">Color de las líneas</label>
+    <input type="color" id="input-cruz-color" onchange="guardarAjustesCruzCursor()" style="width:100%;height:40px;border:1.5px solid var(--borde);border-radius:9px;padding:2px;margin-bottom:14px;">
+    <button type="button" onclick="cerrarAjustesCruzCursor()" style="width:100%;padding:11px;border-radius:10px;border:none;background:var(--fondo);color:var(--tinta);font-weight:700;">Cerrar</button>
+  </div>
+</div>
+
 <!-- ---- Panel de propiedades: un solo lugar para lo que tengas seleccionado ---- -->
 <div class="panel-propiedades" id="panel-propiedades" style="display:none;">
   <div class="prop-handle"><div class="barra"></div></div>
@@ -4325,6 +4341,12 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   <canvas id="lupa-canvas" width="130" height="130"></canvas>
   <div id="lupa-colita" style="position:absolute;bottom:-13px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:11px solid transparent;border-right:11px solid transparent;border-top:15px solid #fff;"></div>
 </div>
+
+<!-- ---- Cursor en cruz estilo AutoCAD/Revit: dos líneas que atraviesan todo el plano, siguiendo
+     el dedo/mouse, para ayudar a alinear al dibujar o ubicar un pin/etiqueta. Son overlays fijos
+     (no se dibujan en el <canvas>) para no pesar el redibujado en cada micro-movimiento. ---- -->
+<div id="cruz-cursor-h" style="display:none;position:fixed;height:1px;pointer-events:none;z-index:900;"></div>
+<div id="cruz-cursor-v" style="display:none;position:fixed;width:1px;pointer-events:none;z-index:900;"></div>
 
 
 
@@ -22181,6 +22203,7 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   }
   calibracionActiva = false;
   calibracionPuntos = [];
+  ocultarCruzCursor(); // si quedó visible justo al salir, no debe seguir flotando sobre otra pantalla
   // La selección múltiple de etiquetas guarda ÍNDICES de anotacionesTexto -- si queda activa al
   // cambiar de plano, esos índices quedan sueltos apuntando al array del plano NUEVO (que tiene
   // otro contenido), y "Eliminar seleccionadas" borraría lo que haya en esas posiciones ahí, no lo
@@ -22380,6 +22403,9 @@ function mostrarVistaRapidaPlano(){
   // "Compartir avance" dibuja la mini-leyenda de capas sobre la imagen -- un Plano Maestro no
   // tiene capas (solo pines), así que por ahora este botón es solo para planos de contratista.
   document.getElementById("vr-btn-compartir").style.display = modoPlanoMaestro ? "none" : "block";
+  // El reporte en PDF tiene la tabla de % POR ACTIVIDAD -- un Plano Maestro no tiene actividades
+  // (solo pines), así que tampoco aplica ahí, igual que "Compartir avance".
+  document.getElementById("vr-btn-reporte").style.display = modoPlanoMaestro ? "none" : "block";
   // "Usar en un certificado nuevo" solo tiene sentido si este plano ya está vinculado a un
   // contratista -- sin eso no hay a quién certificarle nada.
   document.getElementById("vr-btn-certificar").style.display = (!modoPlanoMaestro && plano && plano.contratistaId) ? "block" : "none";
@@ -22516,6 +22542,7 @@ function volverASelectorPlanos(){
   }
   calibracionActiva = false;
   calibracionPuntos = [];
+  ocultarCruzCursor();
   if(modoSeleccionMultiple) salirModoSeleccionMultiple();
   detenerAnimacionSeleccion();
   const contPines = document.getElementById("capa-pines-maestro");
@@ -24045,6 +24072,19 @@ function imagenCanvasParaReporte(canvasOrigen, ladoMaximo, rotar90){
   tctx.drawImage(fuente, 0, 0, tmp.width, tmp.height);
   return tmp.toDataURL("image/jpeg", 0.82);
 }
+// Llamado desde "🧾 Reporte PDF" en la Vista rápida (modo lectura) -- a diferencia de los otros
+// disparadores (riel, cajón "Más", Paleta de comandos), que viven DENTRO del editor completo
+// (donde iniciarCanvas() ya dimensionó y pintó el <canvas id="canvas-plano"> real), acá ese canvas
+// nunca se inicializó: generarReportePlanoAvancePDF() lo toma tal cual está para armar la imagen
+// del PDF, así que hay que dimensionarlo y pintarlo primero (sin mostrar el editor completo).
+function generarReporteDesdeVistaRapida(){
+  if(!imagenPlano){ showToast("Esperá que termine de cargar el plano."); return; }
+  const canvas = document.getElementById("canvas-plano");
+  canvas.width = imagenPlano.width;
+  canvas.height = imagenPlano.height;
+  redibujar();
+  generarReportePlanoAvancePDF();
+}
 async function generarReportePlanoAvancePDF(orientacionElegida){
   if(!imagenPlano || !planoActualId){ showToast("Cargá o elegí un plano primero."); return; }
   try{
@@ -24779,14 +24819,7 @@ function iniciarCopiarPin(){
   if(btn) btn.classList.add("btn-primary");
   showToast("📋 Tocá el plano donde va la copia (con los mismos pendientes -- después cambiale el nombre)", 5000);
 }
-async function manejarTapAgregarPin(e){
-  e.preventDefault();
-  const punto = e.touches ? e.touches[0] : e;
-  if(!punto) return;
-  const canvas = document.getElementById("canvas-plano");
-  const rect = canvas.getBoundingClientRect();
-  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
-  let x = (punto.clientX-rect.left)*escalaX, y = (punto.clientY-rect.top)*escalaY;
+async function manejarTapAgregarPin(x,y){
   modoAgregarPin = false;
   const btn = document.getElementById("btn-agregar-pin-maestro");
   if(btn) btn.classList.remove("btn-primary");
@@ -26505,6 +26538,9 @@ function iniciarCanvas(){
   renderSelectorActividades();
   canvas.onmousedown = iniciarColocarPunto;
   canvas.ontouchstart = iniciarColocarPunto;
+  canvas.onpointermove = manejarMovimientoCruzCursor;
+  canvas.onpointerleave = ocultarCruzCursor;
+  document.getElementById("btn-cruz-cursor").classList.toggle("btn-primary", cruzCursorActiva);
   construirMapaBordes();
 }
 // ---------------- Imán a los bordes de la imagen (líneas del plano) ----------------
@@ -26799,14 +26835,8 @@ function iniciarContornoPorPuntoInterno(){
   est.style.display = "block";
   est.textContent = `🪣 Tocá un punto ADENTRO de "${nombreParaMostrar}" -- rodeado de líneas por todos lados, no sobre una línea.`;
 }
-function manejarTapContornoInterno(e){
-  e.preventDefault();
-  const punto = e.touches ? e.touches[0] : e;
-  if(!punto) return;
-  const canvas = document.getElementById("canvas-plano");
-  const rect = canvas.getBoundingClientRect();
-  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
-  const x = Math.round((punto.clientX-rect.left)*escalaX), y = Math.round((punto.clientY-rect.top)*escalaY);
+function manejarTapContornoInterno(x,y){
+  x = Math.round(x); y = Math.round(y);
   const resultado = detectarContornoPorPuntoInterno(x, y);
   if(!resultado.ok){
     showToast(resultado.motivo, 4200);
@@ -27267,15 +27297,9 @@ function reiniciarOrigenGrid(){
 }
 // Se llama desde iniciarColocarPunto cuando modoUbicarOrigenGrid está activo -- el próximo toque
 // en el plano pasa a ser el punto por el que arranca la cuadrícula.
-function confirmarUbicarOrigenGrid(e){
-  e.preventDefault();
-  const punto = e.touches ? e.touches[0] : e;
-  if(!punto) return;
-  const canvas = document.getElementById("canvas-plano");
-  const rect = canvas.getBoundingClientRect();
-  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
-  gridOffsetX = (punto.clientX-rect.left)*escalaX;
-  gridOffsetY = (punto.clientY-rect.top)*escalaY;
+function confirmarUbicarOrigenGrid(x,y){
+  gridOffsetX = x;
+  gridOffsetY = y;
   try{ localStorage.setItem("grid_offset_x_plano", gridOffsetX); localStorage.setItem("grid_offset_y_plano", gridOffsetY); }catch(e){}
   modoUbicarOrigenGrid = false;
   redibujar();
@@ -27300,6 +27324,59 @@ function toggleGridPlano(){
   gridPlanoActivo = !gridPlanoActivo;
   document.getElementById("btn-grid-plano").classList.toggle("btn-primary", gridPlanoActivo);
   redibujar();
+}
+// ---------------- Cursor en cruz estilo AutoCAD/Revit ----------------
+// Dos líneas (overlays fijos, no se dibujan en el <canvas>) que atraviesan todo el plano siguiendo
+// el dedo/mouse -- ayuda a alinear al dibujar o ubicar un pin/etiqueta. Activado por defecto;
+// color configurable, guardado como preferencia del celular (no es un dato de la obra).
+let cruzCursorActiva = (localStorage.getItem("cruz_cursor_activa") ?? "1") === "1";
+let colorCruzCursor = localStorage.getItem("cruz_cursor_color") || "#00BCD4";
+function toggleCruzCursor(){
+  cruzCursorActiva = !cruzCursorActiva;
+  try{ localStorage.setItem("cruz_cursor_activa", cruzCursorActiva ? "1" : "0"); }catch(e){}
+  document.getElementById("btn-cruz-cursor").classList.toggle("btn-primary", cruzCursorActiva);
+  if(!cruzCursorActiva) ocultarCruzCursor();
+}
+function abrirAjustesCruzCursor(){
+  document.getElementById("input-cruz-activa").checked = cruzCursorActiva;
+  document.getElementById("input-cruz-color").value = colorCruzCursor;
+  document.getElementById("ajustes-cruz-overlay").style.display = "flex";
+}
+function cerrarAjustesCruzCursor(){
+  document.getElementById("ajustes-cruz-overlay").style.display = "none";
+}
+function guardarAjustesCruzCursor(){
+  cruzCursorActiva = document.getElementById("input-cruz-activa").checked;
+  colorCruzCursor = document.getElementById("input-cruz-color").value;
+  try{
+    localStorage.setItem("cruz_cursor_activa", cruzCursorActiva ? "1" : "0");
+    localStorage.setItem("cruz_cursor_color", colorCruzCursor);
+  }catch(e){}
+  document.getElementById("btn-cruz-cursor").classList.toggle("btn-primary", cruzCursorActiva);
+  if(!cruzCursorActiva) ocultarCruzCursor();
+}
+// clientX/clientY llegan tal cual del evento (mouse o touch) -- las líneas se posicionan relativas
+// a la ventana (position:fixed), igual que ya hace la lupa, así no hace falta tocar coordenadas
+// nativas del plano para esto: es puramente visual, no un dato que se guarde en ningún lado.
+function actualizarCruzCursor(clientX, clientY){
+  if(!cruzCursorActiva){ ocultarCruzCursor(); return; }
+  const canvas = document.getElementById("canvas-plano");
+  if(!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const h = document.getElementById("cruz-cursor-h"), v = document.getElementById("cruz-cursor-v");
+  h.style.left = rect.left+"px"; h.style.width = rect.width+"px"; h.style.top = clientY+"px";
+  h.style.background = colorCruzCursor; h.style.display = "block";
+  v.style.top = rect.top+"px"; v.style.height = rect.height+"px"; v.style.left = clientX+"px";
+  v.style.background = colorCruzCursor; v.style.display = "block";
+}
+function ocultarCruzCursor(){
+  document.getElementById("cruz-cursor-h").style.display = "none";
+  document.getElementById("cruz-cursor-v").style.display = "none";
+}
+function manejarMovimientoCruzCursor(e){
+  const punto = e.touches ? e.touches[0] : e;
+  if(!punto) return;
+  actualizarCruzCursor(punto.clientX, punto.clientY);
 }
 function toggleReferenciasPlano(){
   referenciasSnapActivo = !referenciasSnapActivo;
@@ -27468,16 +27545,14 @@ async function usarEscalaDeOtroPlano(metrosPorPixel){
 }
 function capturarPuntoCalibracion(e){
   if(!calibracionActiva) return;
-  e.preventDefault();
-  const canvas = document.getElementById("canvas-plano");
-  const rect = canvas.getBoundingClientRect();
-  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
-  const x = (e.clientX-rect.left)*escalaX, y = (e.clientY-rect.top)*escalaY;
+  iniciarColocacionConLupa(e, "calibrar", confirmarPuntoCalibracion);
+}
+function confirmarPuntoCalibracion(x,y){
   calibracionPuntos.push([x,y]);
   if(calibracionPuntos.length===1){
     showToast("Ahora tocá el SEGUNDO punto de esa misma distancia");
   }else{
-    canvas.removeEventListener("pointerdown", capturarPuntoCalibracion);
+    document.getElementById("canvas-plano").removeEventListener("pointerdown", capturarPuntoCalibracion);
     calibracionActiva = false;
     const distPx = Math.hypot(calibracionPuntos[1][0]-calibracionPuntos[0][0], calibracionPuntos[1][1]-calibracionPuntos[0][1]);
     abrirPromptDistanciaReal(distPx);
@@ -27660,18 +27735,18 @@ function terminarPinch(e){
 function iniciarColocarPunto(e){
   if(e.touches && e.touches.length>=2){ iniciarPinch(e); return; }
   if(modoLineal){ manejarTapLineal(e); return; }
-  if(modoCinta){ manejarTapCinta(e); return; }
-  if(modoUbicarOrigenGrid){ confirmarUbicarOrigenGrid(e); return; }
-  if(modoAgregarPin){ manejarTapAgregarPin(e); return; }
+  if(modoCinta){ iniciarColocacionConLupa(e, "cinta", confirmarPuntoCinta); return; }
+  if(modoUbicarOrigenGrid){ iniciarColocacionConLupa(e, "grid", confirmarUbicarOrigenGrid); return; }
+  if(modoAgregarPin){ iniciarColocacionConLupa(e, "pin", manejarTapAgregarPin); return; }
   if(modoCopiarContorno){ manejarTapCopiarContorno(e); return; }
   if(modoCopiarPiezaDirecto){ manejarTapCopiarPiezaDirecto(e); return; }
-  if(modoColocarReferencia){ manejarTapColocarReferencia(e); return; }
-  if(modoAnclaTextoPlano){ confirmarAnclaTextoPlano(e); return; }
-  if(modoAnclaFotoAvance){ confirmarAnclaFotoAvance(e); return; }
+  if(modoColocarReferencia){ iniciarColocacionConLupa(e, "ejes", manejarTapColocarReferencia); return; }
+  if(modoAnclaTextoPlano){ iniciarColocacionConLupa(e, "pin", confirmarAnclaTextoPlano); return; }
+  if(modoAnclaFotoAvance){ iniciarColocacionConLupa(e, "pin", confirmarAnclaFotoAvance); return; }
   if(moviendoPiezaIdx!==null){ iniciarArrastrePiezaCompleta(e); return; }
   if(moviendoGrupoActivo){ iniciarArrastreGrupo(e); return; }
   if(modoMoverTapSeleccionando){ manejarTapParaElegirMover(e); return; }
-  if(modoContornoInterno){ manejarTapContornoInterno(e); return; }
+  if(modoContornoInterno){ iniciarColocacionConLupa(e, "libre", manejarTapContornoInterno); return; }
   if(!dibujando || modoMoverActivo){
     // En modo "Mover", mientras hay un área en construcción NO se procesa el doble-tap para
     // editar otra zona: si al desplazar el dedo para paniar el plano dos toques caían por
@@ -28262,6 +28337,53 @@ function ocultarLupa(){
   lupaCruzActiva = null;
   redibujar();
 }
+// ---------------- Colocar un punto nuevo con lupa, para herramientas de "tocar y ubicar" que no
+// sean el dibujo de áreas (que ya tiene su propio mecanismo, más complejo, con imanes/cierre más
+// arriba) -- cinta métrica, calibración de escala, agregar pin, etiqueta nueva, ejes, origen de
+// grilla, foto de avance y contorno interno. Antes cada una fijaba el punto apenas se tocaba, sin
+// lupa ni chance de corregir -- el dedo tapaba justo lo que había que ver. Ahora, igual que al
+// dibujar un área: se mantiene presionado, aparece la lupa, se puede arrastrar para ajustar, y
+// recién al soltar se confirma el punto (llamando a onConfirmar con la posición final).
+let colocacionLupaPendiente = null; // {modo, onConfirmar, ultimaPos} mientras se arrastra, o null
+function obtenerXYCanvasPlano(clientX, clientY){
+  const canvas = document.getElementById("canvas-plano");
+  const rect = canvas.getBoundingClientRect();
+  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
+  return [(clientX-rect.left)*escalaX, (clientY-rect.top)*escalaY];
+}
+function iniciarColocacionConLupa(e, modo, onConfirmar){
+  if(e.touches && e.touches.length>=2) return; // pinch de zoom -- no interferir
+  e.preventDefault();
+  const punto = e.touches ? e.touches[0] : e;
+  if(!punto) return;
+  const [x,y] = obtenerXYCanvasPlano(punto.clientX, punto.clientY);
+  colocacionLupaPendiente = {modo, onConfirmar, ultimaPos:{x,y}};
+  actualizarLupa(punto.clientX, punto.clientY, x, y, modo);
+  document.addEventListener("mousemove", moverColocacionConLupa);
+  document.addEventListener("touchmove", moverColocacionConLupa, {passive:false});
+  document.addEventListener("mouseup", soltarColocacionConLupa);
+  document.addEventListener("touchend", soltarColocacionConLupa);
+}
+function moverColocacionConLupa(e){
+  if(!colocacionLupaPendiente) return;
+  e.preventDefault();
+  const punto = e.touches ? e.touches[0] : e;
+  if(!punto) return;
+  const [x,y] = obtenerXYCanvasPlano(punto.clientX, punto.clientY);
+  colocacionLupaPendiente.ultimaPos = {x,y};
+  actualizarLupa(punto.clientX, punto.clientY, x, y, colocacionLupaPendiente.modo);
+}
+function soltarColocacionConLupa(e){
+  if(!colocacionLupaPendiente) return;
+  const {onConfirmar, ultimaPos} = colocacionLupaPendiente;
+  document.removeEventListener("mousemove", moverColocacionConLupa);
+  document.removeEventListener("touchmove", moverColocacionConLupa);
+  document.removeEventListener("mouseup", soltarColocacionConLupa);
+  document.removeEventListener("touchend", soltarColocacionConLupa);
+  ocultarLupa();
+  colocacionLupaPendiente = null;
+  onConfirmar(ultimaPos.x, ultimaPos.y);
+}
 
 // Llena el desplegable con las actividades que ya tienen área total marcada -- cada una aparece
 // DOS veces (sumar más al 100% / agregar capa), en vez de un checkbox aparte que complicaba
@@ -28796,14 +28918,7 @@ function iniciarCintaMetrica(){
   est.style.display = "block";
   est.textContent = "📐 Tocá puntos para ir midiendo el recorrido. El imán se engancha a los vértices ya marcados.";
 }
-function manejarTapCinta(e){
-  e.preventDefault();
-  const punto = e.touches ? e.touches[0] : e;
-  if(!punto) return;
-  const canvas = document.getElementById("canvas-plano");
-  const rect = canvas.getBoundingClientRect();
-  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
-  let x = (punto.clientX-rect.left)*escalaX, y = (punto.clientY-rect.top)*escalaY;
+function confirmarPuntoCinta(x,y){
   if(referenciasSnapActivo){
     const snap = buscarPuntoCercano(x, y, null);
     if(snap){ x=snap[0]; y=snap[1]; }
@@ -29039,6 +29154,8 @@ function comandosDisponibles(){
     {n:"Seleccionar forma libre", d:"Elegir varios rodeándolos", i:"➰", solo:null, f:()=>iniciarSeleccionLibre()},
     {n:"Cuadrícula", d:"Mostrar u ocultar la grilla", i:"▦", solo:null, f:()=>toggleGridPlano()},
     {n:"Ajustes de cuadrícula", d:"Tamaño y origen de la grilla", i:"⚙️", solo:null, f:()=>abrirAjustesGrid()},
+    {n:"Cursor en cruz", d:"Mostrar u ocultar el cursor en cruz (estilo AutoCAD)", i:"✛", solo:null, f:()=>toggleCruzCursor()},
+    {n:"Ajustes del cursor en cruz", d:"Color de las líneas del cursor en cruz", i:"⚙️", solo:null, f:()=>abrirAjustesCruzCursor()},
     {n:"Deshacer", d:"Deshacer la última acción", i:"↩️", solo:null, f:()=>deshacerGeneral()},
     {n:"Rehacer", d:"Rehacer lo último deshecho", i:"↪️", solo:null, f:()=>rehacerGeneral()},
     {n:"Ajustar a pantalla", d:"Encuadrar el plano completo", i:"⛶", solo:null, f:()=>zoomAjustar()},
@@ -29388,14 +29505,7 @@ function iniciarColocarReferencia(){
   renderMiniLeyendaCapas(); // se oculta -- comparte lugar en pantalla con btn-listo-referencia
   showToast("📏 Tocá un punto para poner un eje horizontal y uno vertical ahí.", 4000);
 }
-function manejarTapColocarReferencia(e){
-  e.preventDefault();
-  const punto = e.touches ? e.touches[0] : e;
-  if(!punto) return;
-  const canvas = document.getElementById("canvas-plano");
-  const rect = canvas.getBoundingClientRect();
-  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
-  let x = (punto.clientX-rect.left)*escalaX, y = (punto.clientY-rect.top)*escalaY;
+function manejarTapColocarReferencia(x,y){
   if(referenciasSnapActivo){
     const snap = buscarPuntoCercano(x, y, null);
     if(snap){ x=snap[0]; y=snap[1]; }
@@ -30801,13 +30911,8 @@ function cancelarAnclaFotoAvance(){
   document.getElementById("cad-riel").style.display = "flex";
   document.getElementById("barra-ancla-foto").style.display = "none";
 }
-function confirmarAnclaFotoAvance(e){
-  e.preventDefault();
-  const punto = e.touches ? e.changedTouches[0] : e;
-  const canvas = document.getElementById("canvas-plano");
-  const rect = canvas.getBoundingClientRect();
-  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
-  fotoAvanceAncla = {x:(punto.clientX-rect.left)*escalaX, y:(punto.clientY-rect.top)*escalaY};
+function confirmarAnclaFotoAvance(x,y){
+  fotoAvanceAncla = {x,y};
   modoAnclaFotoAvance = false;
   document.getElementById("cad-riel").style.display = "flex";
   document.getElementById("barra-ancla-foto").style.display = "none";
@@ -31183,13 +31288,7 @@ function cancelarAnclaTextoPlano(){
   document.getElementById("cad-riel").style.display = "flex";
   document.getElementById("barra-ancla-texto").style.display = "none";
 }
-async function confirmarAnclaTextoPlano(e){
-  e.preventDefault();
-  const punto = e.touches ? e.changedTouches[0] : e;
-  const canvas = document.getElementById("canvas-plano");
-  const rect = canvas.getBoundingClientRect();
-  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
-  const x = (punto.clientX-rect.left)*escalaX, y = (punto.clientY-rect.top)*escalaY;
+async function confirmarAnclaTextoPlano(x,y){
   if(modoMoverEtiquetaIdx!==null){
     const idxMover = modoMoverEtiquetaIdx;
     modoAnclaTextoPlano = false;
