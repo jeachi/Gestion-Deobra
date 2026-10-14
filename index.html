@@ -3972,14 +3972,23 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
       </div>
 
+      <!-- ---- Plano Maestro: cajón Seleccionar (antes vivía mezclado adentro de "Herramientas",
+           sin ningún botón propio en el riel que lo nombrara -- igual que ya tiene el plano de
+           avance con "SELECCIONAR") ---- -->
+      <div class="cad-flyout" id="drawer-revisarMaestro" style="display:none;">
+        <div class="cad-flyout-titulo">Seleccionar</div>
+        <div class="grid-tools">
+          <button class="tool-card" onclick="iniciarSeleccionRectangulo()" title="Elegí varios pines a la vez marcando un recuadro alrededor"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
+          <button class="tool-card" onclick="iniciarSeleccionLibre()" title="Elegí varios pines a la vez dibujando una forma libre alrededor"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
+        </div>
+      </div>
+
       <!-- ---- Plano Maestro: cajón Herramientas (antes eran 4 íconos sueltos en su riel) ---- -->
       <div class="cad-flyout" id="drawer-herramientasMaestro" style="display:none;">
         <div class="cad-flyout-titulo">Herramientas</div>
         <div class="grid-tools">
           <button class="tool-card" id="btn-semaforo-maestro" onclick="toggleModoSemaforo()" title="Muestra un resplandor de color alrededor de cada pin según su urgencia: rojo, naranja o verde"><span class="ico">🔥</span><span class="lbl">Semáforo</span></button>
-          <button class="tool-card" onclick="iniciarSeleccionRectangulo()" title="Elegí varios pines a la vez marcando un recuadro alrededor"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
-          <button class="tool-card" onclick="iniciarSeleccionLibre()" title="Elegí varios pines a la vez dibujando una forma libre alrededor"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
-          <button class="tool-card" onclick="detectarHabitacionesAutomatico()" title="Detecta automáticamente los contornos de las habitaciones del plano, siguiendo sus líneas"><span class="ico"><i class="ph-bold ph-magic-wand"></i></span><span class="lbl">Detectar habitaciones</span></button>
+          <button class="tool-card" onclick="detectarHabitacionesAutomatico()" title="Detecta automáticamente las habitaciones: si hay un plano de contratista vinculado usa sus áreas ya dibujadas, y si no, analiza directamente las líneas de esta imagen para encontrarlas igual"><span class="ico"><i class="ph-bold ph-magic-wand"></i></span><span class="lbl">Detectar habitaciones</span></button>
         </div>
       </div>
 
@@ -23704,6 +23713,7 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
     // pines. Se salta toda esa carga y va directo a traer los pines. Las Cotas sí están disponibles
     // en los dos modos (Maestro y avance), así que su carga no se salta acá.
     cotasPlano = await cargarCotasPlano(obra, id);
+    lineasReferencia = await cargarLineasReferencia(obra, id);
     await cargarPinesMaestro();
     plantillasChecklistPin = await cargarPlantillasChecklistPin(obra);
     document.getElementById("card-snapshots").style.display = "none";
@@ -26232,7 +26242,10 @@ async function detectarHabitacionesAutomatico(){
   }
   const candidatos = planosIndex.filter(p=>p.tipo!=='maestro' && p.miniatura===planoMaestroActual.miniatura);
   if(candidatos.length===0){
-    showToast("Ningún plano de contratista comparte esta imagen -- la detección automática necesita eso (creá el Maestro con \"🏛️ Usar como Maestro\" desde ese plano).", 6000);
+    // Sin ningún plano de contratista vinculado no hay ninguna "área total" ya dibujada de dónde
+    // leer -- pero igual se puede analizar directamente el dibujo de ESTA imagen (líneas/paredes)
+    // con el mismo motor que ya usa "Contorno interno", en vez de rendirse.
+    detectarHabitacionesPorImagen();
     return;
   }
   showToast("Buscando habitaciones...");
@@ -26253,6 +26266,65 @@ async function detectarHabitacionesAutomatico(){
   // Se descartan los puntos donde YA hay un pin cerca -- para poder correr esto de nuevo más
   // adelante (si agregaste habitaciones nuevas al plano) sin duplicar las que ya tenés.
   const radioDuplicado = imagenPlano ? imagenPlano.width*0.03 : 100;
+  const nuevos = centros.filter(([cx,cy])=>!pinesMaestro.some(p=>Math.hypot(p.x-cx,p.y-cy)<radioDuplicado));
+  if(nuevos.length===0){
+    showToast("No encontré habitaciones nuevas -- ya tenés un pin cerca de cada una.");
+    return;
+  }
+  abrirConfirmarDeteccionHabitaciones(nuevos);
+}
+// Alternativa cuando este Maestro no tiene ningún plano de contratista vinculado (o ninguno
+// comparte su misma imagen): en vez de leer un área YA dibujada en otro plano, se analiza
+// directamente el dibujo de ESTA imagen con el mismo motor que ya usa "Contorno interno" (mapa
+// de bordes + inundar área libre + trazado de contorno) -- pero en vez de esperar un toque
+// adentro de cada ambiente, recorre toda la imagen en una grilla y prueba desde cada punto libre
+// que no haya quedado ya adentro de una región encontrada antes, así cada ambiente cerrado por
+// líneas se detecta solo, sin tocar el plano ni una vez.
+function detectarHabitacionesPorImagen(){
+  if(!imagenPlano){ showToast("Este Maestro no tiene una imagen cargada todavía."); return; }
+  if(!mapaBordesPlano) construirMapaBordes();
+  if(!mapaBordesPlano){ showToast("No se pudo analizar la imagen de este plano para encontrar habitaciones."); return; }
+  showToast("Analizando la imagen para encontrar habitaciones...", 3000);
+  const {datos, w, h} = mapaBordesPlano;
+  const total = w*h;
+  const visitado = new Uint8Array(total);
+  const PASO = 4;
+  const AREA_MIN = Math.max(400, total*0.0003);
+  const AREA_MAX = total*0.55;
+  const centros = [];
+  for(let y=0; y<h; y+=PASO){
+    const fila = y*w;
+    for(let x=0; x<w; x+=PASO){
+      const idx = fila+x;
+      if(visitado[idx] || datos[idx]) continue;
+      // Presupuesto sin tope -- acá no interesa detectar "se escapó por un hueco" (eso lo hace
+      // tocoElBorde más abajo), interesa que la mancha se termine de inundar siempre, de una sola
+      // vez, para no tener que repetir el flood-fill de la misma región gigante (el fondo fuera
+      // del edificio, por ejemplo) una vez por cada punto de la grilla que caiga adentro suyo.
+      const relleno = inundarAreaLibre(datos, w, h, x, y, total+1);
+      for(let yy=relleno.minY; yy<=relleno.maxY; yy++){
+        const filaY = yy*w;
+        for(let xx=relleno.minX; xx<=relleno.maxX; xx++){
+          const ii = filaY+xx;
+          if(relleno.dentro[ii]) visitado[ii] = 1;
+        }
+      }
+      if(relleno.tocoElBorde) continue; // no está cerrada por completo -- no es un ambiente válido
+      if(relleno.contador < AREA_MIN || relleno.contador > AREA_MAX) continue;
+      const crudo = trazarContornoDesdeMascara(relleno.dentro, w, h, relleno.minX, relleno.minY, relleno.maxX, relleno.maxY);
+      if(!crudo || crudo.length<3) continue;
+      const colineal = simplificarColineales(crudo);
+      const simplificado = simplificarContornoCerrado(colineal, 2.5);
+      if(simplificado.length<3) continue;
+      const c = centroidePoligono(simplificado);
+      if(c) centros.push(c);
+    }
+  }
+  if(centros.length===0){
+    showToast("No encontré ninguna habitación cerrada analizando la imagen -- probá marcar los pines a mano, o revisá que las paredes del plano estén bien cerradas entre sí.", 6500);
+    return;
+  }
+  const radioDuplicado = imagenPlano.width*0.03;
   const nuevos = centros.filter(([cx,cy])=>!pinesMaestro.some(p=>Math.hypot(p.x-cx,p.y-cy)<radioDuplicado));
   if(nuevos.length===0){
     showToast("No encontré habitaciones nuevas -- ya tenés un pin cerca de cada una.");
@@ -27656,13 +27728,15 @@ function renderRielAdaptativo(){
       <button class="cad-riel-btn" data-nombre-corto="COMANDOS" onclick="abrirPaletaComandos()" title="Buscar y ejecutar cualquier comando escribiendo"><span class="ico">⌘</span></button>
       <button class="cad-riel-btn" id="btn-drawer-vista" data-nombre-corto="VISTA" onclick="toggleDrawerHerramientas('vista')" title="Vista: acercar, alejar, ajustar, mover"><span class="ico"><i class="ph-bold ph-magnifying-glass"></i></span></button>
       <button class="cad-riel-btn" id="btn-agregar-pin-maestro" data-nombre-corto="PIN" onclick="toggleModoAgregarPin()" title="Agregar un pin nuevo en la zona que toques"><span class="ico"><i class="ph-bold ph-map-pin"></i></span></button>
+      <button class="cad-riel-btn" id="btn-drawer-revisar-maestro" data-nombre-corto="SELECCIONAR" onclick="toggleDrawerHerramientas('revisarMaestro')" title="Seleccionar varios pines a la vez (recuadro o forma libre) -- para alinearlos, moverlos o borrarlos juntos"><span class="ico"><i class="ph-bold ph-check-square"></i></span></button>
+      <button class="cad-riel-btn" id="btn-colocar-referencia-maestro" data-nombre-corto="EJES" onclick="iniciarOEditarReferencia()" title="Poné líneas de referencia para alinear pines -- se pueden borrar después"><span class="ico"><i class="ph-bold ph-ruler"></i></span></button>
       <button class="cad-riel-btn" data-nombre-corto="INFORME" onclick="abrirInformeMaestro()" title="Ver todos los pendientes de todas las zonas juntos"><span class="ico"><i class="ph-bold ph-clipboard-text"></i></span></button>
       <button class="cad-riel-btn" data-nombre-corto="LISTA" onclick="abrirResumenPines()" title="Lista de todos los pines para saltar directo a cualquiera, sin buscarlo en el mapa"><span class="ico"><i class="ph-bold ph-list-checks"></i></span></button>
       <div class="cad-riel-sep"></div>
       <button class="cad-riel-btn" id="btn-mover-elementos" data-nombre-corto="MOVER" onclick="iniciarMoverElementos()" title="Mover: elegí uno o varios pines y desplazalos juntos"><span class="ico"><i class="ph-bold ph-arrows-out-cardinal"></i></span></button>
       <button class="cad-riel-btn" data-nombre-corto="DESHACER" onclick="deshacerGeneral()" title="Deshacer"><span class="ico"><i class="ph-bold ph-arrow-u-up-left"></i></span></button>
       <div class="cad-riel-sep"></div>
-      <button class="cad-riel-btn" id="btn-drawer-herramientas-maestro" data-nombre-corto="HERRAM." onclick="toggleDrawerHerramientas('herramientasMaestro')" title="Semáforo, selección por recuadro/forma libre, detección automática de habitaciones"><span class="ico"><i class="ph-bold ph-wrench"></i></span></button>
+      <button class="cad-riel-btn" id="btn-drawer-herramientas-maestro" data-nombre-corto="HERRAM." onclick="toggleDrawerHerramientas('herramientasMaestro')" title="Semáforo y detección automática de habitaciones"><span class="ico"><i class="ph-bold ph-wrench"></i></span></button>
     `;
     prepararBotonesRiel(riel);
     return;
@@ -27744,8 +27818,8 @@ document.addEventListener("pointerdown", (e)=>{
 });
 ["pointerup","pointercancel"].forEach(ev=>document.addEventListener(ev, ()=>clearTimeout(_timerTooltipToolCard)));
 function toggleDrawerHerramientas(cual){
-  const drawers = {vista:"drawer-vista", capas:"drawer-capas", dibujar:"drawer-dibujar", medir:"drawer-medir", revisar:"drawer-revisar", etiquetas:"drawer-etiquetas", mas:"drawer-mas", herramientasMaestro:"drawer-herramientasMaestro"};
-  const botones = {vista:"btn-drawer-vista", capas:"btn-drawer-capas", dibujar:"btn-drawer-dibujar", medir:"btn-drawer-medir", revisar:"btn-drawer-revisar", etiquetas:"btn-drawer-etiquetas", mas:"btn-drawer-mas", herramientasMaestro:"btn-drawer-herramientas-maestro"};
+  const drawers = {vista:"drawer-vista", capas:"drawer-capas", dibujar:"drawer-dibujar", medir:"drawer-medir", revisar:"drawer-revisar", etiquetas:"drawer-etiquetas", mas:"drawer-mas", herramientasMaestro:"drawer-herramientasMaestro", revisarMaestro:"drawer-revisarMaestro"};
+  const botones = {vista:"btn-drawer-vista", capas:"btn-drawer-capas", dibujar:"btn-drawer-dibujar", medir:"btn-drawer-medir", revisar:"btn-drawer-revisar", etiquetas:"btn-drawer-etiquetas", mas:"btn-drawer-mas", herramientasMaestro:"btn-drawer-herramientas-maestro", revisarMaestro:"btn-drawer-revisar-maestro"};
   Object.keys(drawers).forEach(k=>{
     const el = document.getElementById(drawers[k]);
     const btn = document.getElementById(botones[k]);
@@ -27762,11 +27836,11 @@ function toggleDrawerHerramientas(cual){
 // cierra solo apenas se toca afuera de él (sin bloquear el toque -- el plano igual responde
 // normal al mismo toque que lo cerró).
 function cerrarFlyoutsAbiertos(){
-  ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro"].forEach(id=>{
+  ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro","drawer-revisarMaestro"].forEach(id=>{
     const el = document.getElementById(id);
     if(el && el.style.display!=="none") el.style.display = "none";
   });
-  ["btn-drawer-vista","btn-drawer-capas","btn-drawer-dibujar","btn-drawer-medir","btn-drawer-revisar","btn-drawer-etiquetas","btn-drawer-herramientas-maestro"].forEach(id=>{
+  ["btn-drawer-vista","btn-drawer-capas","btn-drawer-dibujar","btn-drawer-medir","btn-drawer-revisar","btn-drawer-etiquetas","btn-drawer-herramientas-maestro","btn-drawer-revisar-maestro"].forEach(id=>{
     const btn = document.getElementById(id);
     if(btn) btn.classList.remove("abierto");
   });
@@ -27774,7 +27848,7 @@ function cerrarFlyoutsAbiertos(){
 (function inicializarCierreFlyoutsPlano(){
   document.addEventListener("pointerdown", (e)=>{
     if(e.target.closest(".cad-flyout, .cad-riel, .cad-type-selector")) return; // el toque fue adentro de un cajón/riel/la píldora que los abre -- no cerrar
-    const hayAlgunoAbierto = ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro"].some(id=>{
+    const hayAlgunoAbierto = ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro","drawer-revisarMaestro"].some(id=>{
       const el = document.getElementById(id);
       return el && el.style.display!=="none";
     });
@@ -31136,6 +31210,8 @@ function iniciarColocarReferencia(){
   modoColocarReferencia = true;
   const btn = document.getElementById("btn-colocar-referencia");
   if(btn) btn.classList.add("btn-primary");
+  const btnMaestro = document.getElementById("btn-colocar-referencia-maestro");
+  if(btnMaestro) btnMaestro.classList.add("btn-primary");
   const btnListo = document.getElementById("btn-listo-referencia");
   if(btnListo) btnListo.style.display = "block";
   actualizarModoFlotante();
@@ -31156,6 +31232,8 @@ function salirDeColocarReferencia(){
   modoColocarReferencia = false;
   const btn = document.getElementById("btn-colocar-referencia");
   if(btn) btn.classList.remove("btn-primary");
+  const btnMaestro = document.getElementById("btn-colocar-referencia-maestro");
+  if(btnMaestro) btnMaestro.classList.remove("btn-primary");
   const btnListo = document.getElementById("btn-listo-referencia");
   if(btnListo) btnListo.style.display = "none";
   actualizarModoFlotante();
@@ -35005,6 +35083,7 @@ function redibujar(){
     // grid (para ubicar pines con precisión). Antes esta salida temprana lo saltaba directo,
     // por eso "no se veía nada" aunque estuviera activado.
     if(gridPlanoActivo) dibujarGridPlano(ctx, canvas);
+    dibujarLineasReferencia(ctx, canvas);
     if(modoSeleccionRectangulo || modoSeleccionLibre) dibujarPreviaSeleccion(ctx, canvas);
     dibujarCotasPlano(ctx, canvas);
     dibujarCintaMetrica(ctx, canvas);
