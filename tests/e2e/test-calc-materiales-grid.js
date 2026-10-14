@@ -1,7 +1,6 @@
 // Calculadora de Materiales -- pantalla de grilla: confirma que el tab nuevo navega a la
-// vista, que la grilla muestra los 13 rubros, y que tocar uno deshabilitado avisa
-// "Próximamente" sin intentar llamar a ninguna función de formulario (todavía no existe en
-// este punto del PR -- se agrega en el task siguiente).
+// vista y que la grilla muestra los 13 rubros, todos habilitados (el último, PR5, completa
+// los 13 planeados en el spec) y cada uno con una función de "abrir" real definida.
 const { chromium } = require("playwright");
 
 (async () => {
@@ -40,12 +39,14 @@ const { chromium } = require("playwright");
   const tarjetas = await page.evaluate(() => document.querySelectorAll("#calc-grid .dash-card").length);
   if (tarjetas !== 13) throw new Error("Se esperaban 13 tarjetas, hubo " + tarjetas);
 
-  const toastTrasTocarDeshabilitada = await page.evaluate(() => {
-    const noDisponible = [...document.querySelectorAll("#calc-grid .dash-card")].find((c) => c.style.opacity && c.style.opacity !== "1");
-    noDisponible.click();
-    return document.getElementById("toast").textContent;
-  });
-  if (!/Próximamente/.test(toastTrasTocarDeshabilitada)) throw new Error("No avisó 'Próximamente' al tocar una tarjeta deshabilitada: " + toastTrasTocarDeshabilitada);
+  const estado = await page.evaluate(() => ({
+    todosDisponibles: RUBROS_CALC.every((r) => r.disponible === true),
+    todosConAbrirValido: RUBROS_CALC.every((r) => typeof window[r.abrir] === "function"),
+    ningunaDeshabilitadaVisualmente: [...document.querySelectorAll("#calc-grid .dash-card")].every((c) => c.style.opacity === "" || c.style.opacity === "1"),
+  }));
+  if (!estado.todosDisponibles) throw new Error("Con el PR5 ya deberían estar los 13 rubros disponibles: " + JSON.stringify(RUBROS_CALC.filter((r) => !r.disponible)));
+  if (!estado.todosConAbrirValido) throw new Error("Algún rubro disponible no tiene una función 'abrir' real definida");
+  if (!estado.ningunaDeshabilitadaVisualmente) throw new Error("Alguna tarjeta todavía se ve deshabilitada (opacidad reducida)");
 
   if (errs.length) throw new Error("Errores de página: " + errs.join(" | "));
   await browser.close();
