@@ -32131,12 +32131,17 @@ function confirmarCopiarSeleccionArea(xDestino, yDestino){
   const refX = puntos.reduce((s,p)=>s+p[0],0)/puntos.length;
   const refY = puntos.reduce((s,p)=>s+p[1],0)/puntos.length;
   const dx = xDestino-refX, dy = yDestino-refY;
+  // Las copias nuevas quedan seleccionadas (en vez de limpiar la selección) -- así se puede tocar
+  // "✋ Mover" enseguida para terminar de ubicarlas, sin tener que volver a elegirlas una por una.
+  const pinesNuevos = [], piezasNuevas = [], etiquetasNuevas = new Set(), formasNuevas = new Set();
   let creadas = 0;
   if(modoPlanoMaestro){
     seleccionAreaResultado.forEach(id=>{
       const p = pinesMaestro.find(pp=>pp.id===id);
       if(!p) return;
-      pinesMaestro.push({...p, id: uid(), x: p.x+dx, y: p.y+dy, checklist: (p.checklist||[]).map(c=>({...c})), capasVinculadas: []});
+      const nuevoId = uid();
+      pinesMaestro.push({...p, id: nuevoId, x: p.x+dx, y: p.y+dy, checklist: (p.checklist||[]).map(c=>({...c})), capasVinculadas: []});
+      pinesNuevos.push(nuevoId);
       creadas++;
     });
     guardarPinesMaestro();
@@ -32153,18 +32158,22 @@ function confirmarCopiarSeleccionArea(xDestino, yDestino){
         piezasExtra: (original.piezasExtra||[]).map(an=>an.map(([x,y])=>[x+dx, y+dy])),
         area: original.area,
       });
+      piezasNuevas.push(poligonos.length-1);
       creadas++;
     });
     etiquetasSeleccionArea.forEach(idx=>{
       const original = anotacionesTexto[idx];
       if(!original) return;
       anotacionesTexto.push({...original, x: original.x+dx, y: original.y+dy});
+      etiquetasNuevas.add(anotacionesTexto.length-1);
       creadas++;
     });
     formasSeleccionArea.forEach(id=>{
       const original = formasPlano.find(ff=>ff.id===id);
       if(!original) return;
-      formasPlano.push({...original, id: uid(), x1: original.x1+dx, y1: original.y1+dy, x2: original.x2+dx, y2: original.y2+dy});
+      const nuevoId = uid();
+      formasPlano.push({...original, id: nuevoId, x1: original.x1+dx, y1: original.y1+dy, x2: original.x2+dx, y2: original.y2+dy});
+      formasNuevas.add(nuevoId);
       creadas++;
     });
     redibujar();
@@ -32175,9 +32184,11 @@ function confirmarCopiarSeleccionArea(xDestino, yDestino){
     guardarAnotacionesTexto();
     guardarFormasPlano();
   }
-  limpiarSeleccionAreaMixta();
-  document.getElementById("barra-seleccion-area").style.display = "none";
-  showToast(`✓ ${creadas} copiado${creadas===1?"":"s"}`);
+  seleccionAreaResultado = modoPlanoMaestro ? pinesNuevos : piezasNuevas;
+  etiquetasSeleccionArea = etiquetasNuevas;
+  formasSeleccionArea = formasNuevas;
+  mostrarBarraSeleccionArea();
+  showToast(`✓ ${creadas} copiado${creadas===1?"":"s"} -- queda${creadas===1?"":"n"} elegido${creadas===1?"":"s"} para moverlo${creadas===1?"":"s"} si hace falta`, 4000);
 }
 // "Mover" sobre la selección mixta -- le pasa lo elegido (piezas/pines + etiquetas + formas) al
 // mismo mecanismo de arrastre que ya usa el botón "Mover" del riel, solo que la selección ya
