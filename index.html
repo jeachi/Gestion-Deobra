@@ -15642,6 +15642,37 @@ async function calcMampAgregarAComputo(){
   if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
 }
 
+/* ---------------- Calculadora de Materiales — pantalla "Mi cómputo" ---------------- */
+function abrirMiComputoCalc(){
+  abrirPromptGenerico(htmlMiComputoCalc());
+}
+function htmlMiComputoCalc(){
+  if(calcMaterialesItems.length===0){
+    return `<h2 style="margin-top:0;">📋 Mi cómputo</h2><p class="helper">Todavía no agregaste ningún rubro. Entrá a un rubro de la calculadora y tocá "Agregar al cómputo".</p>`;
+  }
+  const filas = calcMaterialesItems.map(it=>`
+    <div class="card" style="margin-bottom:8px;">
+      <div class="row-flex" style="justify-content:space-between;align-items:flex-start;">
+        <div>
+          <div style="font-weight:800;">${esc(it.rubro)}</div>
+          <div class="helper" style="margin:2px 0;">${esc(it.modo)} · ${esc(it.obra)}</div>
+          <div style="font-size:12px;color:var(--tinta-suave);">${Object.entries(it.resultado).map(([k,v])=>`${esc(k)}: <strong>${esc(v)}</strong>`).join(" · ")}</div>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="quitarItemComputoCalcUI('${it.id}')">🗑</button>
+      </div>
+    </div>
+  `).join("");
+  return `
+    <h2 style="margin-top:0;">📋 Mi cómputo (${calcMaterialesItems.length})</h2>
+    ${filas}
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="generarReporteCalcMaterialesPDF()">🧾 Generar reporte PDF</button>
+  `;
+}
+async function quitarItemComputoCalcUI(id){
+  await quitarItemComputoCalc(id);
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlMiComputoCalc();
+}
+
 // Regla de escalado: nunca baja sola, solo sube según cuántos días faltan para la fecha.
 function diasHastaRecordatorio(r){
   if(!r.fecha) return null;
