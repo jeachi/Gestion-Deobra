@@ -68,21 +68,24 @@ const { chromium } = require("playwright");
     await new Promise(r => setTimeout(r, 400));
   });
 
-  // ---- 1) El riel del Maestro ahora tiene "SELECCIONAR" y "EJES" propios ----
+  // ---- 1) El riel del Maestro ahora tiene "SELECCIONAR" y "ALINEAR" (Ejes/Escala/Rejilla) propios ----
   const riel = await page.evaluate(() => {
     const btnSel = document.getElementById("btn-drawer-revisar-maestro");
+    const btnAlinear = document.getElementById("btn-drawer-medir-maestro");
     const btnEjes = document.getElementById("btn-colocar-referencia-maestro");
     return {
       existeSeleccionar: !!btnSel,
       lblSeleccionar: btnSel ? btnSel.textContent.trim() : null,
+      existeAlinear: !!btnAlinear,
+      lblAlinear: btnAlinear ? btnAlinear.textContent.trim() : null,
       existeEjes: !!btnEjes,
-      lblEjes: btnEjes ? btnEjes.textContent.trim() : null,
     };
   });
   if (!riel.existeSeleccionar) throw new Error("El riel del Plano Maestro debería tener un botón 'Seleccionar' propio");
   if (!riel.lblSeleccionar.includes("SELECCIONAR")) throw new Error("El botón de selección del Maestro debería decir SELECCIONAR: " + riel.lblSeleccionar);
-  if (!riel.existeEjes) throw new Error("El riel del Plano Maestro debería tener un botón 'Ejes' propio");
-  if (!riel.lblEjes.includes("EJES")) throw new Error("El botón de ejes del Maestro debería decir EJES: " + riel.lblEjes);
+  if (!riel.existeAlinear) throw new Error("El riel del Plano Maestro debería tener un botón 'Alinear' propio");
+  if (!riel.lblAlinear.includes("ALINEAR")) throw new Error("El botón de alinear del Maestro debería decir ALINEAR: " + riel.lblAlinear);
+  if (!riel.existeEjes) throw new Error("El cajón de Alinear del Maestro debería tener el botón de Ejes adentro");
 
   // ---- 2) El cajón "Seleccionar" del Maestro tiene Recuadro/Forma libre; "Herramientas" ya no ----
   const cajones = await page.evaluate(() => {

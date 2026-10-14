@@ -3925,6 +3925,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <div class="grid-tools">
           <button class="tool-card" id="btn-colocar-referencia" onclick="iniciarOEditarReferencia()" title="Poné líneas de referencia para alinear cortes -- se pueden borrar después"><span class="ico"><i class="ph-bold ph-crosshair-simple"></i></span><span class="lbl">Ejes</span></button>
           <button class="tool-card" onclick="iniciarCalibracionEscala()" title="Calibrá la escala real del plano para que se muestren m² aproximados"><span class="ico"><i class="ph-bold ph-arrows-horizontal"></i></span><span class="lbl">Escala</span></button>
+          <button class="tool-card" onclick="iniciarRejilla()" title="Cuadrícula numerada estilo Revit (columnas 1,2,3 y filas A,B,C) -- tocás una línea por vez y tipeás la distancia a la siguiente; sirve para colocar etiquetas en cada cruce de una"><span class="ico"><i class="ph-bold ph-grid-four"></i></span><span class="lbl">Rejilla</span></button>
         </div>
       </div>
 
@@ -3969,6 +3970,17 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarFotoAvance();" title="Sacá una foto y que la IA reconozca el avance para marcarlo sola"><span class="ico"><i class="ph-bold ph-camera"></i></span><span class="lbl">Foto</span></button>
           <button class="tool-card" id="btn-modo-exterior" onclick="toggleModoAltoContraste();" title="Sube el contraste del relleno y agrega un borde oscuro grueso a cada pieza -- para leer el plano bajo sol directo"><span class="ico">☀️</span><span class="lbl">Exterior</span></button>
           <button class="tool-card" id="btn-guia-fantasma" onclick="toggleGuiaFantasma();" title="Muestra de fondo, en punteado, el contorno de la última semana cerrada -- para no re-trazar lo mismo ni dejar huecos mientras marcás el avance de hoy"><span class="ico">👻</span><span class="lbl">Guía semana ant.</span></button>
+        </div>
+      </div>
+
+      <!-- ---- Plano Maestro: cajón Alinear y calibrar (antes "Ejes" era un botón suelto en el
+           riel; ahora agrupa Ejes + Escala + Rejilla, igual que ya hace el plano de avance) ---- -->
+      <div class="cad-flyout" id="drawer-medirMaestro" style="display:none;">
+        <div class="cad-flyout-titulo">Alinear y calibrar</div>
+        <div class="grid-tools">
+          <button class="tool-card" id="btn-colocar-referencia-maestro" onclick="iniciarOEditarReferencia()" title="Poné líneas de referencia para alinear pines -- se pueden borrar después"><span class="ico"><i class="ph-bold ph-crosshair-simple"></i></span><span class="lbl">Ejes</span></button>
+          <button class="tool-card" onclick="iniciarCalibracionEscala()" title="Calibrá la escala real del plano para poder tipear distancias en metros (por ejemplo, al armar una Rejilla)"><span class="ico"><i class="ph-bold ph-arrows-horizontal"></i></span><span class="lbl">Escala</span></button>
+          <button class="tool-card" onclick="iniciarRejilla()" title="Cuadrícula numerada estilo Revit (columnas 1,2,3 y filas A,B,C) -- tocás una línea por vez y tipeás la distancia a la siguiente; sirve para colocar un pin en cada cruce de una"><span class="ico"><i class="ph-bold ph-grid-four"></i></span><span class="lbl">Rejilla</span></button>
         </div>
       </div>
 
@@ -23617,6 +23629,9 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   // dejaba además un listener de "pointerdown" pegado al <canvas> (se reutiliza entre planos)
   // escuchando para siempre.
   modoColocarReferencia = false;
+  modoRejillaColumnas = false;
+  modoRejillaFilas = false;
+  rejillaEnCurso = null;
   modoAnclaTextoPlano = false;
   modoMoverEtiquetaIdx = null;
   modoMoverTapSeleccionando = false;
@@ -23709,11 +23724,16 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
     }
   }catch(e){ /* no debería pasar si el índice está bien, pero por las dudas no rompemos nada */ }
   if(modoPlanoMaestro){
-    // Un Plano Maestro no tiene capas de avance, calibración ni cuadro de medidas propios -- solo
-    // pines. Se salta toda esa carga y va directo a traer los pines. Las Cotas sí están disponibles
-    // en los dos modos (Maestro y avance), así que su carga no se salta acá.
+    // Un Plano Maestro no tiene capas de avance ni cuadro de medidas propios -- solo pines. Se
+    // salta toda esa carga y va directo a traer los pines. Cotas, Ejes y la escala calibrada sí
+    // están disponibles en los dos modos (Maestro y avance): la escala le hace falta a la Rejilla
+    // para poder tipear distancias en metros.
     cotasPlano = await cargarCotasPlano(obra, id);
     lineasReferencia = await cargarLineasReferencia(obra, id);
+    try{
+      const rCalib = await window.storage.get(`plano_avance_calibracion_${obra}_${id}`, true);
+      metrosPorPixelPlano = rCalib && rCalib.value ? JSON.parse(rCalib.value).metrosPorPixel : null;
+    }catch(e){ metrosPorPixelPlano = null; }
     await cargarPinesMaestro();
     plantillasChecklistPin = await cargarPlantillasChecklistPin(obra);
     document.getElementById("card-snapshots").style.display = "none";
@@ -23963,6 +23983,9 @@ function volverASelectorPlanos(){
   // modos a medio hacer (sobre todo la calibración, que deja un listener pegado al <canvas>
   // reutilizado) dejaba la trampa lista para el PRÓXIMO plano que se abriera.
   modoColocarReferencia = false;
+  modoRejillaColumnas = false;
+  modoRejillaFilas = false;
+  rejillaEnCurso = null;
   modoAnclaTextoPlano = false;
   modoMoverEtiquetaIdx = null;
   modoMoverTapSeleccionando = false;
@@ -27729,7 +27752,7 @@ function renderRielAdaptativo(){
       <button class="cad-riel-btn" id="btn-drawer-vista" data-nombre-corto="VISTA" onclick="toggleDrawerHerramientas('vista')" title="Vista: acercar, alejar, ajustar, mover"><span class="ico"><i class="ph-bold ph-magnifying-glass"></i></span></button>
       <button class="cad-riel-btn" id="btn-agregar-pin-maestro" data-nombre-corto="PIN" onclick="toggleModoAgregarPin()" title="Agregar un pin nuevo en la zona que toques"><span class="ico"><i class="ph-bold ph-map-pin"></i></span></button>
       <button class="cad-riel-btn" id="btn-drawer-revisar-maestro" data-nombre-corto="SELECCIONAR" onclick="toggleDrawerHerramientas('revisarMaestro')" title="Seleccionar varios pines a la vez (recuadro o forma libre) -- para alinearlos, moverlos o borrarlos juntos"><span class="ico"><i class="ph-bold ph-check-square"></i></span></button>
-      <button class="cad-riel-btn" id="btn-colocar-referencia-maestro" data-nombre-corto="EJES" onclick="iniciarOEditarReferencia()" title="Poné líneas de referencia para alinear pines -- se pueden borrar después"><span class="ico"><i class="ph-bold ph-ruler"></i></span></button>
+      <button class="cad-riel-btn" id="btn-drawer-medir-maestro" data-nombre-corto="ALINEAR" onclick="toggleDrawerHerramientas('medirMaestro')" title="Alinear y calibrar: ejes, escala, rejilla"><span class="ico"><i class="ph-bold ph-ruler"></i></span></button>
       <button class="cad-riel-btn" data-nombre-corto="INFORME" onclick="abrirInformeMaestro()" title="Ver todos los pendientes de todas las zonas juntos"><span class="ico"><i class="ph-bold ph-clipboard-text"></i></span></button>
       <button class="cad-riel-btn" data-nombre-corto="LISTA" onclick="abrirResumenPines()" title="Lista de todos los pines para saltar directo a cualquiera, sin buscarlo en el mapa"><span class="ico"><i class="ph-bold ph-list-checks"></i></span></button>
       <div class="cad-riel-sep"></div>
@@ -27818,8 +27841,8 @@ document.addEventListener("pointerdown", (e)=>{
 });
 ["pointerup","pointercancel"].forEach(ev=>document.addEventListener(ev, ()=>clearTimeout(_timerTooltipToolCard)));
 function toggleDrawerHerramientas(cual){
-  const drawers = {vista:"drawer-vista", capas:"drawer-capas", dibujar:"drawer-dibujar", medir:"drawer-medir", revisar:"drawer-revisar", etiquetas:"drawer-etiquetas", mas:"drawer-mas", herramientasMaestro:"drawer-herramientasMaestro", revisarMaestro:"drawer-revisarMaestro"};
-  const botones = {vista:"btn-drawer-vista", capas:"btn-drawer-capas", dibujar:"btn-drawer-dibujar", medir:"btn-drawer-medir", revisar:"btn-drawer-revisar", etiquetas:"btn-drawer-etiquetas", mas:"btn-drawer-mas", herramientasMaestro:"btn-drawer-herramientas-maestro", revisarMaestro:"btn-drawer-revisar-maestro"};
+  const drawers = {vista:"drawer-vista", capas:"drawer-capas", dibujar:"drawer-dibujar", medir:"drawer-medir", revisar:"drawer-revisar", etiquetas:"drawer-etiquetas", mas:"drawer-mas", herramientasMaestro:"drawer-herramientasMaestro", revisarMaestro:"drawer-revisarMaestro", medirMaestro:"drawer-medirMaestro"};
+  const botones = {vista:"btn-drawer-vista", capas:"btn-drawer-capas", dibujar:"btn-drawer-dibujar", medir:"btn-drawer-medir", revisar:"btn-drawer-revisar", etiquetas:"btn-drawer-etiquetas", mas:"btn-drawer-mas", herramientasMaestro:"btn-drawer-herramientas-maestro", revisarMaestro:"btn-drawer-revisar-maestro", medirMaestro:"btn-drawer-medir-maestro"};
   Object.keys(drawers).forEach(k=>{
     const el = document.getElementById(drawers[k]);
     const btn = document.getElementById(botones[k]);
@@ -27836,11 +27859,11 @@ function toggleDrawerHerramientas(cual){
 // cierra solo apenas se toca afuera de él (sin bloquear el toque -- el plano igual responde
 // normal al mismo toque que lo cerró).
 function cerrarFlyoutsAbiertos(){
-  ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro","drawer-revisarMaestro"].forEach(id=>{
+  ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro","drawer-revisarMaestro","drawer-medirMaestro"].forEach(id=>{
     const el = document.getElementById(id);
     if(el && el.style.display!=="none") el.style.display = "none";
   });
-  ["btn-drawer-vista","btn-drawer-capas","btn-drawer-dibujar","btn-drawer-medir","btn-drawer-revisar","btn-drawer-etiquetas","btn-drawer-herramientas-maestro","btn-drawer-revisar-maestro"].forEach(id=>{
+  ["btn-drawer-vista","btn-drawer-capas","btn-drawer-dibujar","btn-drawer-medir","btn-drawer-revisar","btn-drawer-etiquetas","btn-drawer-herramientas-maestro","btn-drawer-revisar-maestro","btn-drawer-medir-maestro"].forEach(id=>{
     const btn = document.getElementById(id);
     if(btn) btn.classList.remove("abierto");
   });
@@ -27848,7 +27871,7 @@ function cerrarFlyoutsAbiertos(){
 (function inicializarCierreFlyoutsPlano(){
   document.addEventListener("pointerdown", (e)=>{
     if(e.target.closest(".cad-flyout, .cad-riel, .cad-type-selector")) return; // el toque fue adentro de un cajón/riel/la píldora que los abre -- no cerrar
-    const hayAlgunoAbierto = ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro","drawer-revisarMaestro"].some(id=>{
+    const hayAlgunoAbierto = ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas","drawer-medir","drawer-revisar","drawer-etiquetas","drawer-herramientasMaestro","drawer-revisarMaestro","drawer-medirMaestro"].some(id=>{
       const el = document.getElementById(id);
       return el && el.style.display!=="none";
     });
@@ -28823,6 +28846,8 @@ function actualizarModoFlotante(){
   if(typeof modoCopiarContorno!=="undefined" && modoCopiarContorno){ ico="📐"; txt="Copiar contorno activo"; }
   else if(typeof modoCopiarPiezaDirecto!=="undefined" && modoCopiarPiezaDirecto){ ico="📋"; txt="Copiar pieza: tocá la que querés"; }
   else if(typeof modoColocarReferencia!=="undefined" && modoColocarReferencia){ ico="📏"; txt="Tocá un punto para poner los ejes ahí"; }
+  else if(typeof modoRejillaColumnas!=="undefined" && modoRejillaColumnas){ ico="🔲"; txt=`Tocá un punto para la columna ${rejillaEnCurso.columnas.length+1}`; }
+  else if(typeof modoRejillaFilas!=="undefined" && modoRejillaFilas){ ico="🔲"; txt=`Tocá un punto para la fila ${letraSecuencial(rejillaEnCurso.filas.length)}`; }
   else if(modoAutoContorno){ ico="🪄"; txt="Auto contorno activo"; }
   else if(modoSeguirPared){ ico="🧱"; txt="Seguir pared activo"; }
   else if(modoBorrarPunto){ ico="🧹"; txt="Borrar punto activo"; }
@@ -28840,6 +28865,7 @@ function salirDeModosDibujoActivos(){
   if(typeof modoCopiarContorno!=="undefined" && modoCopiarContorno) toggleModoCopiarContorno();
   else if(typeof modoCopiarPiezaDirecto!=="undefined" && modoCopiarPiezaDirecto) toggleModoCopiarPiezaDirecto();
   else if(typeof modoColocarReferencia!=="undefined" && modoColocarReferencia) salirDeColocarReferencia();
+  else if(typeof modoRejillaColumnas!=="undefined" && (modoRejillaColumnas || modoRejillaFilas)){ modoRejillaColumnas = false; modoRejillaFilas = false; actualizarModoFlotante(); }
   else if(modoAutoContorno) toggleModoAutoContorno();
   else if(modoSeguirPared) toggleModoSeguirPared();
   else if(modoBorrarPunto) toggleModoBorrarPunto();
@@ -29342,6 +29368,8 @@ function iniciarColocarPunto(e){
   if(modoCopiarContorno){ manejarTapCopiarContorno(e); return; }
   if(modoCopiarPiezaDirecto){ manejarTapCopiarPiezaDirecto(e); return; }
   if(modoColocarReferencia){ iniciarColocacionConLupa(e, "ejes", manejarTapColocarReferencia); return; }
+  if(modoRejillaColumnas){ iniciarColocacionConLupa(e, "ejes", manejarTapRejillaColumna); return; }
+  if(modoRejillaFilas){ iniciarColocacionConLupa(e, "ejes", manejarTapRejillaFila); return; }
   if(modoAnclaTextoPlano){ iniciarColocacionConLupa(e, "pin", confirmarAnclaTextoPlano); return; }
   if(modoAnclaFotoAvance){ iniciarColocacionConLupa(e, "pin", confirmarAnclaFotoAvance); return; }
   if(moviendoPiezaIdx!==null){ iniciarArrastrePiezaCompleta(e); return; }
@@ -31269,6 +31297,28 @@ function dibujarLineasReferencia(ctx, canvas){
   });
   ctx.setLineDash([]);
   ctx.restore();
+  // Burbuja con el número/letra, estilo Revit -- solo las líneas de una Rejilla la tienen
+  // (las líneas sueltas de "Ejes" de siempre quedan igual, sin nombre).
+  lineasReferencia.forEach(l=>{
+    if(!l.nombre) return;
+    const radio = Math.max(10, canvas.width/70);
+    const cx = l.orientacion==="v" ? l.pos : radio+4;
+    const cy = l.orientacion==="v" ? radio+4 : l.pos;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, radio, 0, Math.PI*2);
+    ctx.fillStyle = "#EC4899";
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = Math.max(1, grosor*0.7);
+    ctx.stroke();
+    ctx.fillStyle = "#fff";
+    ctx.font = `bold ${Math.round(radio*1.1)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(l.nombre, cx, cy+1);
+    ctx.restore();
+  });
 }
 function abrirGestionLineasReferencia(){
   const cont = document.getElementById("foto-avance-cuerpo");
@@ -31290,12 +31340,46 @@ function renderListaLineasReferencia(){
     cont.innerHTML = `<p style="color:#9fb0b8;font-size:11px;font-style:italic;">No hay ninguna todavía.</p>`;
     return;
   }
-  cont.innerHTML = lineasReferencia.map((l,i)=>`
-    <div style="display:flex;align-items:center;gap:8px;background:#111820;border-radius:9px;padding:9px 12px;margin-bottom:6px;">
-      <span style="color:#EC4899;font-weight:800;">${l.orientacion==="h"?"↔":"↕"}</span>
-      <span style="flex:1;color:#e7eef1;font-size:12px;">${l.orientacion==="h"?"Horizontal":"Vertical"} en ${Math.round(l.pos)}px</span>
-      <button onclick="borrarLineaReferencia(${i})" style="border:none;background:transparent;color:#9fb0b8;font-size:14px;cursor:pointer;">🗑</button>
-    </div>`).join("");
+  // Las líneas de una Rejilla (tienen grupoId) se listan agrupadas, con sus propias acciones
+  // (colocar en los cruces, agregar una más, borrar la rejilla entera) -- los ejes sueltos de
+  // siempre (sin grupoId) siguen listados uno por uno, igual que antes.
+  const grupos = {};
+  const sueltas = [];
+  lineasReferencia.forEach((l,i)=>{
+    if(l.grupoId){ (grupos[l.grupoId] = grupos[l.grupoId] || []).push({...l, i}); }
+    else sueltas.push({...l, i});
+  });
+  let html = "";
+  Object.entries(grupos).forEach(([grupoId, lineas])=>{
+    const columnas = lineas.filter(l=>l.orientacion==="v");
+    const filas = lineas.filter(l=>l.orientacion==="h");
+    html += `
+      <div style="background:#111820;border-radius:9px;padding:10px 12px;margin-bottom:8px;">
+        <div style="color:#e7eef1;font-size:12px;font-weight:800;margin-bottom:8px;">🔲 Rejilla -- ${columnas.length} columna${columnas.length===1?"":"s"} × ${filas.length} fila${filas.length===1?"":"s"}</div>
+        ${columnas.length>0 && filas.length>0 ? `<button onclick="abrirColocarEnRejilla('${grupoId}')" style="width:100%;margin-bottom:8px;padding:9px;border-radius:8px;border:none;background:var(--verde);color:#fff;font-weight:800;font-size:11.5px;">📍 Colocar en cada cruce</button>` : ""}
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button onclick="agregarLineaRejillaExtra('${grupoId}','v')" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#9fb0b8;font-size:11px;">➕ Columna</button>
+          <button onclick="agregarLineaRejillaExtra('${grupoId}','h')" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#9fb0b8;font-size:11px;">➕ Fila</button>
+        </div>
+        <button onclick="borrarGrupoLineasReferencia('${grupoId}')" style="width:100%;padding:8px;border-radius:8px;border:1px solid #DC5B4A;background:transparent;color:#FF8A80;font-weight:700;font-size:11px;">🗑️ Borrar esta rejilla completa</button>
+      </div>`;
+  });
+  sueltas.forEach(l=>{
+    html += `
+      <div style="display:flex;align-items:center;gap:8px;background:#111820;border-radius:9px;padding:9px 12px;margin-bottom:6px;">
+        <span style="color:#EC4899;font-weight:800;">${l.orientacion==="h"?"↔":"↕"}</span>
+        <span style="flex:1;color:#e7eef1;font-size:12px;">${l.orientacion==="h"?"Horizontal":"Vertical"} en ${Math.round(l.pos)}px</span>
+        <button onclick="borrarLineaReferencia(${l.i})" style="border:none;background:transparent;color:#9fb0b8;font-size:14px;cursor:pointer;">🗑</button>
+      </div>`;
+  });
+  cont.innerHTML = html;
+}
+function borrarGrupoLineasReferencia(grupoId){
+  lineasReferencia = lineasReferencia.filter(l=>l.grupoId!==grupoId);
+  guardarLineasReferencia();
+  renderListaLineasReferencia();
+  redibujar();
+  showToast("✓ Rejilla borrada (los pines/etiquetas que ya creaste con ella no se tocan)");
 }
 function borrarLineaReferencia(i){
   lineasReferencia.splice(i,1);
@@ -31309,6 +31393,235 @@ function borrarTodasLasReferencias(){
   cerrarFotoAvanceOverlay();
   redibujar();
   showToast("✓ Líneas de referencia borradas");
+}
+
+// ================= REJILLA (cuadrícula numerada estilo Revit) =================
+// El usuario pidió "líneas de ejes que crean una cuadrícula y donde se intersectan permita
+// colocar pines o etiquetas" -- investigado cómo funciona en Revit: las líneas de grilla se
+// numeran solas (columnas 1,2,3... / filas A,B,C...), se ponen una por vez tipeando la distancia
+// a la siguiente, y sus cruces sirven para ubicar elementos con precisión (ahí un pin/etiqueta
+// queda identificado por su cruce, ej. "A1"). Reutiliza el mismo array lineasReferencia de
+// siempre (los Ejes sueltos siguen iguales, sin nombre ni grupoId) -- una Rejilla es solo un
+// grupo de líneas CON nombre y un grupoId en común.
+let modoRejillaColumnas = false; // esperando el toque de la próxima columna (vertical)
+let modoRejillaFilas = false; // esperando el toque de la próxima fila (horizontal)
+let rejillaEnCurso = null; // {grupoId, columnas:[...], filas:[...]} -- solo mientras se está armando
+function letraSecuencial(n){
+  // n es 0-based: 0->A, 1->B, ..., 25->Z, 26->AA, 27->AB...
+  let s = "", num = n+1;
+  while(num>0){
+    const r = (num-1)%26;
+    s = String.fromCharCode(65+r) + s;
+    num = Math.floor((num-1)/26);
+  }
+  return s;
+}
+function iniciarRejilla(){
+  if(!metrosPorPixelPlano){ showToast("Primero calibrá la escala de este plano (botón Escala) -- la Rejilla necesita eso para poder tipear distancias en metros.", 5500); return; }
+  if(dibujando){ showToast("Terminá o cancelá lo que estás dibujando antes."); return; }
+  cerrarFlyoutsAbiertos();
+  rejillaEnCurso = {grupoId: uid(), columnas: [], filas: []};
+  modoRejillaColumnas = true;
+  actualizarModoFlotante();
+  showToast("🔲 Tocá un punto para la primera línea vertical (columna 1).", 4500);
+}
+function manejarTapRejillaColumna(x,y){
+  modoRejillaColumnas = false;
+  const nombre = String(rejillaEnCurso.columnas.length+1);
+  const linea = {id: uid(), orientacion:"v", pos:x, nombre, grupoId: rejillaEnCurso.grupoId};
+  lineasReferencia.push(linea);
+  rejillaEnCurso.columnas.push(linea);
+  guardarLineasReferencia();
+  actualizarModoFlotante();
+  redibujar();
+  abrirPromptPasoRejilla("v");
+}
+function iniciarRejillaFilas(){
+  modoRejillaFilas = true;
+  actualizarModoFlotante();
+  showToast("🔲 Tocá un punto para la primera línea horizontal (fila A).", 4500);
+}
+function manejarTapRejillaFila(x,y){
+  modoRejillaFilas = false;
+  const nombre = letraSecuencial(rejillaEnCurso.filas.length);
+  const linea = {id: uid(), orientacion:"h", pos:y, nombre, grupoId: rejillaEnCurso.grupoId};
+  lineasReferencia.push(linea);
+  rejillaEnCurso.filas.push(linea);
+  guardarLineasReferencia();
+  actualizarModoFlotante();
+  redibujar();
+  abrirPromptPasoRejilla("h");
+}
+function abrirPromptPasoRejilla(orientacion){
+  const esColumna = orientacion==="v";
+  const lista = esColumna ? rejillaEnCurso.columnas : rejillaEnCurso.filas;
+  const ultimaEtiqueta = lista[lista.length-1].nombre;
+  const tipoTxt = esColumna ? "columna" : "fila";
+  const botonPasarAFilas = esColumna
+    ? `<button class="btn btn-outline" style="width:100%;margin-bottom:8px;" onclick="cerrarPromptGenerico(); iniciarRejillaFilas();">↳ Pasar a las filas (horizontales)</button>`
+    : "";
+  abrirPromptGenerico(`
+    <h2 style="margin-top:0;">🔲 Rejilla -- ${tipoTxt} "${ultimaEtiqueta}" puesta</h2>
+    <p class="helper" style="margin-bottom:10px;">¿A qué distancia va la próxima ${tipoTxt}? (en metros)</p>
+    <input type="number" id="rejilla-distancia" step="0.01" placeholder="ej: 4.00" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;text-align:center;box-sizing:border-box;margin-bottom:10px;">
+    <button class="btn btn-primary" style="width:100%;margin-bottom:8px;" onclick="confirmarSiguienteLineaRejilla('${orientacion}')">➕ Agregar ${esColumna?"otra columna":"otra fila"}</button>
+    ${botonPasarAFilas}
+    <button class="btn" style="width:100%;margin-bottom:8px;" onclick="cerrarPromptGenerico(); terminarRejilla();">✓ Terminar la rejilla</button>
+    <button class="btn btn-outline" style="width:100%;color:#DC5B4A;" onclick="cancelarRejillaEnCurso()">✕ Cancelar esta rejilla</button>
+  `);
+}
+function confirmarSiguienteLineaRejilla(orientacion){
+  const metros = parseFloat(document.getElementById("rejilla-distancia").value);
+  if(isNaN(metros) || metros<=0){ showToast("Poné una distancia válida."); return; }
+  const distPx = metros / metrosPorPixelPlano;
+  const esColumna = orientacion==="v";
+  const lista = esColumna ? rejillaEnCurso.columnas : rejillaEnCurso.filas;
+  const anterior = lista[lista.length-1];
+  const nombre = esColumna ? String(lista.length+1) : letraSecuencial(lista.length);
+  const linea = {id: uid(), orientacion, pos: anterior.pos+distPx, nombre, grupoId: rejillaEnCurso.grupoId};
+  lineasReferencia.push(linea);
+  lista.push(linea);
+  guardarLineasReferencia();
+  cerrarPromptGenerico();
+  redibujar();
+  abrirPromptPasoRejilla(orientacion);
+}
+function terminarRejilla(){
+  modoRejillaColumnas = false;
+  modoRejillaFilas = false;
+  const cantColumnas = rejillaEnCurso ? rejillaEnCurso.columnas.length : 0;
+  const cantFilas = rejillaEnCurso ? rejillaEnCurso.filas.length : 0;
+  rejillaEnCurso = null;
+  actualizarModoFlotante();
+  redibujar();
+  showToast(`✓ Rejilla lista: ${cantColumnas} columna${cantColumnas===1?"":"s"} × ${cantFilas} fila${cantFilas===1?"":"s"}`, 4000);
+}
+function cancelarRejillaEnCurso(){
+  if(rejillaEnCurso){
+    lineasReferencia = lineasReferencia.filter(l=>l.grupoId!==rejillaEnCurso.grupoId);
+    guardarLineasReferencia();
+  }
+  modoRejillaColumnas = false;
+  modoRejillaFilas = false;
+  rejillaEnCurso = null;
+  cerrarPromptGenerico();
+  actualizarModoFlotante();
+  redibujar();
+}
+// "Agregar una columna/fila más" desde "Gestionar ejes" (estilo Copiar/Array de Revit): si ya
+// hay 2+ líneas de esa orientación en la rejilla, repite la misma distancia entre las últimas
+// dos sin preguntar nada; si solo hay 1 todavía, pide la distancia (no hay espaciado para copiar).
+function agregarLineaRejillaExtra(grupoId, orientacion){
+  const lineasGrupo = lineasReferencia.filter(l=>l.grupoId===grupoId && l.orientacion===orientacion).sort((a,b)=>a.pos-b.pos);
+  if(lineasGrupo.length===0) return;
+  if(lineasGrupo.length===1){
+    abrirPromptGenerico(`
+      <h2 style="margin-top:0;">➕ ${orientacion==="v"?"Agregar columna":"Agregar fila"}</h2>
+      <p class="helper" style="margin-bottom:10px;">¿A qué distancia va, en metros?</p>
+      <input type="number" id="rejilla-extra-distancia" step="0.01" placeholder="ej: 4.00" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;text-align:center;box-sizing:border-box;margin-bottom:10px;">
+      <button class="btn btn-primary" style="width:100%;" onclick="confirmarAgregarLineaRejillaExtra('${grupoId}','${orientacion}')">✓ Agregar</button>
+      <button class="btn btn-outline" style="width:100%;margin-top:8px;" onclick="cerrarPromptGenerico()">Cancelar</button>
+    `);
+    return;
+  }
+  const delta = lineasGrupo[lineasGrupo.length-1].pos - lineasGrupo[lineasGrupo.length-2].pos;
+  agregarLineaRejillaConDelta(grupoId, orientacion, lineasGrupo, delta);
+}
+function confirmarAgregarLineaRejillaExtra(grupoId, orientacion){
+  const metros = parseFloat(document.getElementById("rejilla-extra-distancia").value);
+  if(isNaN(metros) || metros<=0){ showToast("Poné una distancia válida."); return; }
+  if(!metrosPorPixelPlano){ showToast("Este plano no tiene escala calibrada."); return; }
+  const distPx = metros / metrosPorPixelPlano;
+  const lineasGrupo = lineasReferencia.filter(l=>l.grupoId===grupoId && l.orientacion===orientacion).sort((a,b)=>a.pos-b.pos);
+  cerrarPromptGenerico();
+  agregarLineaRejillaConDelta(grupoId, orientacion, lineasGrupo, distPx);
+}
+function agregarLineaRejillaConDelta(grupoId, orientacion, lineasGrupo, delta){
+  const ultima = lineasGrupo[lineasGrupo.length-1];
+  const nombre = orientacion==="v" ? String(lineasGrupo.length+1) : letraSecuencial(lineasGrupo.length);
+  const linea = {id: uid(), orientacion, pos: ultima.pos+delta, nombre, grupoId};
+  lineasReferencia.push(linea);
+  guardarLineasReferencia();
+  renderListaLineasReferencia();
+  redibujar();
+  showToast(`✓ ${orientacion==="v"?"Columna":"Fila"} "${nombre}" agregada`);
+}
+// Cruces (intersecciones) de una rejilla -- cada uno se identifica por fila+columna (ej "A1"),
+// igual que en Revit.
+function calcularInterseccionesGrupo(grupoId){
+  const columnas = lineasReferencia.filter(l=>l.grupoId===grupoId && l.orientacion==="v");
+  const filas = lineasReferencia.filter(l=>l.grupoId===grupoId && l.orientacion==="h");
+  const cruces = [];
+  filas.forEach(f=>{
+    columnas.forEach(c=>{
+      cruces.push({x: c.pos, y: f.pos, nombre: f.nombre+c.nombre});
+    });
+  });
+  return cruces;
+}
+// "Colocar en cada cruce": en el Maestro crea un pin por cruce (como ya hace "Detectar
+// habitaciones"); en el plano de avance pide antes la categoría (define el código automático,
+// igual que el formulario normal de etiquetas) y crea una etiqueta por cruce.
+function abrirColocarEnRejilla(grupoId){
+  const cruces = calcularInterseccionesGrupo(grupoId);
+  if(cruces.length===0){ showToast("Esta rejilla necesita al menos 1 columna y 1 fila para tener cruces."); return; }
+  if(modoPlanoMaestro) abrirConfirmarPinesEnRejilla(cruces);
+  else abrirSelectorCategoriaParaRejilla(cruces);
+}
+let _crucesRejillaPendientes = [];
+function abrirConfirmarPinesEnRejilla(cruces){
+  const radioDuplicado = imagenPlano ? imagenPlano.width*0.03 : 100;
+  const nuevos = cruces.filter(c=>!pinesMaestro.some(p=>Math.hypot(p.x-c.x,p.y-c.y)<radioDuplicado));
+  if(nuevos.length===0){ showToast("Ya hay un pin cerca de cada cruce de esta rejilla."); return; }
+  _crucesRejillaPendientes = nuevos;
+  abrirPromptGenerico(`
+    <h2 style="margin-top:0;">📍 Colocar pines en la rejilla</h2>
+    <p class="helper" style="margin-bottom:12px;">Se va a crear un pin nombrado por su cruce (ej. "A1") en cada uno de los ${nuevos.length} cruces nuevos.</p>
+    <button class="btn btn-primary" style="width:100%;margin-bottom:8px;" onclick="confirmarPinesEnRejilla()">✓ Crear ${nuevos.length} pin${nuevos.length===1?"":"es"}</button>
+    <button class="btn btn-outline" style="width:100%;" onclick="cerrarPromptGenerico()">Cancelar</button>
+  `);
+}
+function confirmarPinesEnRejilla(){
+  const cantidad = _crucesRejillaPendientes.length;
+  _crucesRejillaPendientes.forEach(({x,y,nombre})=>{
+    pinesMaestro.push({id: uid(), x, y, nombre, checklist:[], tipoAmbiente:null, capasVinculadas:[]});
+  });
+  _crucesRejillaPendientes = [];
+  guardarPinesMaestro();
+  renderPinesMaestro();
+  cerrarPromptGenerico();
+  showToast(`✓ ${cantidad} pin${cantidad===1?"":"es"} creado${cantidad===1?"":"s"} en la rejilla`, 4500);
+}
+const CATEGORIAS_RAPIDAS_REJILLA = [
+  {val:"Ventana", lbl:"🪟 Ventana"},
+  {val:"Puerta", lbl:"🚪 Puerta"},
+  {val:"Portón", lbl:"🔲 Portón"},
+  {val:"Reja", lbl:"⛓️ Reja"},
+];
+function abrirSelectorCategoriaParaRejilla(cruces){
+  _crucesRejillaPendientes = cruces;
+  abrirPromptGenerico(`
+    <h2 style="margin-top:0;">📍 Colocar etiquetas en la rejilla</h2>
+    <p class="helper" style="margin-bottom:10px;">Se va a crear una etiqueta en cada uno de los ${cruces.length} cruces -- elegí antes la categoría (define el código automático).</p>
+    ${CATEGORIAS_RAPIDAS_REJILLA.map(o=>`<button class="btn btn-outline" style="width:100%;margin-bottom:6px;text-align:left;" onclick="confirmarEtiquetasEnRejilla('${o.val}')">${o.lbl}</button>`).join("")}
+    <button class="btn" style="width:100%;margin-top:6px;" onclick="cerrarPromptGenerico()">Cancelar</button>
+  `);
+}
+function confirmarEtiquetasEnRejilla(categoria){
+  const radioDuplicado = imagenPlano ? imagenPlano.width*0.02 : 60;
+  let creadas = 0;
+  _crucesRejillaPendientes.forEach(({x,y,nombre})=>{
+    if(anotacionesTexto.some(a=>Math.hypot(a.x-x,a.y-y)<radioDuplicado)) return;
+    const codigo = generarCodigoParaCategoria(categoria);
+    anotacionesTexto.push({x, y, valor:"", tipo:"numero", unidad:"", cantidad:1, ubicacion:nombre, categoria, codigo, estado:"pendiente"});
+    creadas++;
+  });
+  const total = _crucesRejillaPendientes.length;
+  _crucesRejillaPendientes = [];
+  cerrarPromptGenerico();
+  redibujar();
+  guardarAnotacionesTexto();
+  showToast(creadas>0 ? `✓ ${creadas} etiqueta${creadas===1?"":"s"} creada${creadas===1?"":"s"} en la rejilla` : `Ya hay una etiqueta cerca de cada uno de los ${total} cruces de esta rejilla.`, 4500);
 }
 
 /* ==================== Formas libres: Línea, Flecha, Círculo ====================
@@ -31671,8 +31984,13 @@ function cancelarDibujo(){
   modoCinta = false;
   puntosCinta = [];
   seleccionAreaResultado = [];
-  lineasReferencia = [];
+  // OJO: antes acá había un "lineasReferencia = []" que borraba TODOS los ejes/rejillas ya
+  // puestos del plano con solo cancelar un dibujo cualquiera (cerrar un área, cinta métrica,
+  // etc.) -- no tiene nada que ver con esta función, era un bug (probablemente una confusión con
+  // la línea de arriba). Se saca: cancelar un dibujo no debe tocar los ejes.
   modoColocarReferencia = false;
+  modoRejillaColumnas = false;
+  modoRejillaFilas = false;
   primerEsquinaRectangulo = null;
   modoBorrarPunto = false;
   contadorPiezasActividadActual = 0;
