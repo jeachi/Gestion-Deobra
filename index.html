@@ -3940,7 +3940,8 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="cad-flyout" id="drawer-etiquetas" style="display:none;">
         <div class="cad-flyout-titulo">Anotaciones</div>
         <div class="grid-tools">
-          <button class="tool-card destacado" onclick="iniciarCintaMetrica()" title="Coloca una cota: medí una distancia tocando dos puntos del plano"><span class="ico"><i class="ph-bold ph-ruler"></i></span><span class="lbl">Cotas</span></button>
+          <button class="tool-card destacado" onclick="iniciarCintaMetrica()" title="Coloca una cota: medí una distancia tocando dos o más puntos y tocá ✓ Aceptar para dejarla puesta en el plano"><span class="ico"><i class="ph-bold ph-ruler"></i></span><span class="lbl">Cotas</span></button>
+          <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); abrirGestionCotas();" title="Ver y borrar las cotas ya puestas"><span class="ico"><i class="ph-bold ph-eraser"></i></span><span class="lbl">Gestionar cotas</span></button>
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarColocarTextoPlano();" title="Coloca un cuadro de texto nuevo: una medida o una nota libre"><span class="ico"><i class="ph-bold ph-text-t"></i></span><span class="lbl">Texto</span></button>
           <button class="tool-card" onclick="abrirTablaMedidas()" title="Ve el resumen de todas las medidas cargadas en este plano"><span class="ico"><i class="ph-bold ph-table"></i></span><span class="lbl">Medidas</span></button>
           <button class="tool-card" onclick="iniciarModoSeleccionMultiple()" title="Elegí varias etiquetas tocándolas, para cambiarles la categoría o el estado juntas"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Seleccionar</span></button>
@@ -3982,7 +3983,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <button id="btn-listo-referencia" onclick="salirDeColocarReferencia()" style="display:none;position:absolute;left:50%;top:106px;transform:translateX(-50%);z-index:40;background:var(--verde);color:#fff;border:none;border-radius:999px;padding:13px 24px;font-weight:800;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.35);cursor:pointer;">✓ Listo, dejar de poner ejes</button>
       <div class="cad-bottom-actions" id="cad-bottom-actions" style="display:none;">
         <button class="cad-action gris" onclick="deshacerPunto()" title="Deshace el último punto colocado (no toda la pieza)"><span class="ico">↩</span>Deshacer</button>
-        <button class="cad-action verde" onclick="modoLineal ? terminarLineal(false) : cerrarPoligono()" id="btn-cerrar" disabled><span class="ico">✓</span><span id="btn-cerrar-lbl">Cerrar</span></button>
+        <button class="cad-action verde" onclick="modoCinta ? terminarCinta() : (modoLineal ? terminarLineal(false) : cerrarPoligono())" id="btn-cerrar" disabled><span class="ico">✓</span><span id="btn-cerrar-lbl">Cerrar</span></button>
         <button class="cad-action rojo" onclick="cancelarDibujo()"><span class="ico">✕</span>Cancelar</button>
         <button class="cad-action verde" onclick="terminarPiezasMultiples()" id="btn-terminar-piezas" style="display:none;"><span class="ico">🏁</span>Terminar</button>
       </div>
@@ -23218,7 +23219,7 @@ function persistirHistorialPlano(){
   }catch(e){} // storage lleno o bloqueado (modo privado) -- el historial en memoria sigue funcionando igual
 }
 function guardarEnHistorial(){
-  historialPoligonos.push(JSON.stringify({poligonos, anotacionesTexto}));
+  historialPoligonos.push(JSON.stringify({poligonos, anotacionesTexto, cotasPlano}));
   if(historialPoligonos.length > MAX_HISTORIAL_DESHACER) historialPoligonos.shift();
   historialFuturo = []; // toda acción nueva invalida lo que se podía "rehacer" (igual que en Word/Excel)
   persistirHistorialPlano();
@@ -23245,18 +23246,22 @@ function describirProximoDeshacer(){
     for(let i=0;i<ahoraTxt.length;i++){
       if(JSON.stringify(ahoraTxt[i])!==JSON.stringify(antesTxt[i])) return "editar un cuadro de texto";
     }
+    const antesCotas = snap.cotasPlano||[], ahoraCotas = cotasPlano||[];
+    if(ahoraCotas.length > antesCotas.length) return "agregar una cota";
+    if(ahoraCotas.length < antesCotas.length) return "borrar una cota";
   }catch(e){}
   return "la última acción";
 }
 async function deshacerGeneral(){
   if(historialPoligonos.length===0){ showToast("No hay nada para deshacer todavía."); return; }
   const descripcion = describirProximoDeshacer();
-  historialFuturo.push(JSON.stringify({poligonos, anotacionesTexto}));
+  historialFuturo.push(JSON.stringify({poligonos, anotacionesTexto, cotasPlano}));
   if(historialFuturo.length > MAX_HISTORIAL_DESHACER) historialFuturo.shift();
   const snapshot = JSON.parse(historialPoligonos.pop());
   persistirHistorialPlano();
   poligonos = snapshot.poligonos;
   anotacionesTexto = snapshot.anotacionesTexto || [];
+  cotasPlano = snapshot.cotasPlano || cotasPlano;
   if(indiceEditando!==null){
     indiceEditando=null;
     document.getElementById("panel-edicion").style.display="none";
@@ -23269,15 +23274,17 @@ async function deshacerGeneral(){
   renderActividades();
   await guardarPlanoAvancePoligonos();
   await guardarAnotacionesTexto();
+  await guardarCotasPlano();
   showToast(descripcion ? `↩️ Deshecho: ${descripcion}` : "↩️ Deshecho");
 }
 async function rehacerGeneral(){
   if(historialFuturo.length===0){ showToast("No hay nada para rehacer."); return; }
-  historialPoligonos.push(JSON.stringify({poligonos, anotacionesTexto}));
+  historialPoligonos.push(JSON.stringify({poligonos, anotacionesTexto, cotasPlano}));
   const snapshot = JSON.parse(historialFuturo.pop());
   persistirHistorialPlano();
   poligonos = snapshot.poligonos;
   anotacionesTexto = snapshot.anotacionesTexto || [];
+  cotasPlano = snapshot.cotasPlano || cotasPlano;
   if(indiceEditando!==null){
     indiceEditando=null;
     document.getElementById("panel-edicion").style.display="none";
@@ -23290,6 +23297,7 @@ async function rehacerGeneral(){
   renderActividades();
   await guardarPlanoAvancePoligonos();
   await guardarAnotacionesTexto();
+  await guardarCotasPlano();
   showToast("↪️ Rehecho");
 }
 let planoActualId = null;
@@ -23645,7 +23653,9 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   }catch(e){ /* no debería pasar si el índice está bien, pero por las dudas no rompemos nada */ }
   if(modoPlanoMaestro){
     // Un Plano Maestro no tiene capas de avance, calibración ni cuadro de medidas propios -- solo
-    // pines. Se salta toda esa carga y va directo a traer los pines.
+    // pines. Se salta toda esa carga y va directo a traer los pines. Las Cotas sí están disponibles
+    // en los dos modos (Maestro y avance), así que su carga no se salta acá.
+    cotasPlano = await cargarCotasPlano(obra, id);
     await cargarPinesMaestro();
     plantillasChecklistPin = await cargarPlantillasChecklistPin(obra);
     document.getElementById("card-snapshots").style.display = "none";
@@ -23663,6 +23673,7 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   lineasAvance = await cargarLineasAvance(obra, id);
   lineasReferencia = await cargarLineasReferencia(obra, id);
   formasPlano = await cargarFormasPlano(obra, id);
+  cotasPlano = await cargarCotasPlano(obra, id);
   try{
     const rTxt = await window.storage.get(`plano_avance_textos_${obra}_${id}`, true);
     anotacionesTexto = rTxt && rTxt.value ? JSON.parse(rTxt.value) : [];
@@ -30275,6 +30286,23 @@ function manejarTapCopiarContorno(e){
 // el plano no está calibrado, informa en píxeles y lo aclara en vez de inventar una unidad.
 let modoCinta = false;
 let puntosCinta = [];
+// Las cotas, a diferencia de antes, quedan puestas en el plano (como una Línea/Flecha/Círculo):
+// se persisten por plano en su propia clave de Firestore y se dibujan siempre, no solo mientras
+// se está midiendo. "puntosCinta" sigue siendo el recorrido EN CURSO (todavía sin aceptar);
+// "cotasPlano" son las ya aceptadas.
+let cotasPlano = [];
+async function cargarCotasPlano(obra, planoId){
+  try{
+    const r = await window.storage.get(`plano_avance_cotas_${obra}_${planoId}`, true);
+    return r && r.value ? JSON.parse(r.value) : [];
+  }catch(e){ return []; }
+}
+async function guardarCotasPlano(){
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return;
+  try{ await window.storage.set(`plano_avance_cotas_${obra}_${planoActualId}`, JSON.stringify(cotasPlano), true); }
+  catch(e){ showToast("No se pudo guardar la cota (revisá conexión)"); }
+}
 function iniciarCintaMetrica(){
   if(dibujando){ showToast("Terminá o cancelá lo que estás dibujando antes."); return; }
   modoCinta = true;
@@ -30283,6 +30311,7 @@ function iniciarCintaMetrica(){
   ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas"].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display="none"; });
   document.getElementById("cad-riel").style.display = "none";
   document.getElementById("cad-bottom-actions").style.display = "flex";
+  document.getElementById("btn-cerrar-lbl").textContent = "Aceptar";
   document.getElementById("btn-cerrar").disabled = true;
   const est = document.getElementById("estado-dibujo");
   est.style.display = "block";
@@ -30294,8 +30323,24 @@ function confirmarPuntoCinta(x,y){
     if(snap){ x=snap[0]; y=snap[1]; }
   }
   puntosCinta.push([x,y]);
+  document.getElementById("btn-cerrar").disabled = puntosCinta.length<2;
   actualizarTextoCinta();
   redibujar();
+}
+// Acepta la cota en curso: la pasa de "puntosCinta" (en memoria, se perdía al salir) a
+// "cotasPlano" (persistida), que es justo lo que hacía que "no se quede la cota visible" -- el
+// botón "✓ Cerrar" de la barra compartida nunca tenía una acción para Cotas, quedaba deshabilitado
+// todo el tiempo. También pasa por el historial para que "↩️ Deshacer" la pueda sacar.
+function terminarCinta(){
+  if(puntosCinta.length<2){ showToast("Marcá al menos 2 puntos antes de aceptar."); return; }
+  guardarEnHistorial();
+  let total = 0;
+  for(let i=1;i<puntosCinta.length;i++) total += Math.hypot(puntosCinta[i][0]-puntosCinta[i-1][0], puntosCinta[i][1]-puntosCinta[i-1][1]);
+  cotasPlano.push({id: uid(), puntos:[...puntosCinta], totalPx: total});
+  guardarCotasPlano();
+  const medida = formatearMedida(total);
+  salirDeCinta();
+  showToast(`✓ Cota guardada: ${medida}`);
 }
 function formatearMedida(px){
   if(metrosPorPixelPlano) return (px*metrosPorPixelPlano).toFixed(2)+" m";
@@ -30321,27 +30366,31 @@ function salirDeCinta(){
   dibujando = false;
   document.getElementById("estado-dibujo").style.display = "none";
   document.getElementById("cad-bottom-actions").style.display = "none";
+  document.getElementById("btn-cerrar-lbl").textContent = "Cerrar";
   document.getElementById("cad-riel").style.display = "flex";
   redibujar();
 }
-function dibujarCintaMetrica(ctx, canvas){
-  if(!modoCinta || puntosCinta.length===0) return;
+// Dibuja una cota (una polilínea con la medida de cada tramo etiquetada) -- la usan tanto la
+// previsualización en curso (dibujarCintaMetrica, mientras se está tocando) como las ya aceptadas
+// y persistidas (dibujarCotasPlano, siempre visibles).
+function trazarCota(ctx, canvas, puntos, previewHasta){
+  if(puntos.length===0) return;
   const grosor = Math.max(2, canvas.width/480);
   ctx.save();
   ctx.strokeStyle = "#F59E0B";
   ctx.lineWidth = grosor;
   ctx.setLineDash([grosor*3, grosor*2]);
   ctx.beginPath();
-  puntosCinta.forEach(([x,y],i)=> i===0?ctx.moveTo(x,y):ctx.lineTo(x,y));
-  if(colocandoPunto) ctx.lineTo(colocandoPunto.x, colocandoPunto.y);
+  puntos.forEach(([x,y],i)=> i===0?ctx.moveTo(x,y):ctx.lineTo(x,y));
+  if(previewHasta) ctx.lineTo(previewHasta.x, previewHasta.y);
   ctx.stroke();
   ctx.setLineDash([]);
   // Etiqueta con el largo sobre cada tramo ya confirmado
   const fontSize = Math.max(9, canvas.width/95);
   ctx.font = `bold ${fontSize}px sans-serif`;
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  for(let i=1;i<puntosCinta.length;i++){
-    const [xa,ya] = puntosCinta[i-1], [xb,yb] = puntosCinta[i];
+  for(let i=1;i<puntos.length;i++){
+    const [xa,ya] = puntos[i-1], [xb,yb] = puntos[i];
     const texto = formatearMedida(Math.hypot(xb-xa, yb-ya));
     const mx = (xa+xb)/2, my = (ya+yb)/2;
     const ancho = ctx.measureText(texto).width;
@@ -30352,12 +30401,61 @@ function dibujarCintaMetrica(ctx, canvas){
     ctx.fillStyle = "#92400E";
     ctx.fillText(texto, mx, my);
   }
-  puntosCinta.forEach(([x,y])=>{
+  puntos.forEach(([x,y])=>{
     ctx.beginPath(); ctx.arc(x,y,grosor*1.6,0,7);
     ctx.fillStyle="#fff"; ctx.fill();
     ctx.strokeStyle="#F59E0B"; ctx.lineWidth=grosor*0.8; ctx.stroke();
   });
   ctx.restore();
+}
+function dibujarCintaMetrica(ctx, canvas){
+  if(!modoCinta || puntosCinta.length===0) return;
+  trazarCota(ctx, canvas, puntosCinta, colocandoPunto || null);
+}
+function dibujarCotasPlano(ctx, canvas){
+  cotasPlano.forEach(c=> trazarCota(ctx, canvas, c.puntos, null));
+}
+function abrirGestionCotas(){
+  const cont = document.getElementById("foto-avance-cuerpo");
+  cont.innerHTML = `
+    <h2 style="margin-top:0;color:#fff;">📐 Cotas</h2>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Medidas puestas a mano sobre el plano -- son solo anotaciones, no suman área ni pertenecen a ninguna actividad. Se pueden borrar en cualquier momento.</p>
+    <div id="lista-cotas-plano"></div>
+    <button onclick="borrarTodasLasCotas()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1.5px solid #DC5B4A;background:transparent;color:#FF8A80;font-weight:700;font-size:12.5px;">🗑️ Borrar todas</button>
+    <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:8px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cerrar</button>`;
+  document.getElementById("foto-avance-overlay").style.display = "flex";
+  _fotoAvanceAbiertoTs = Date.now();
+  habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
+  renderListaCotas();
+}
+function renderListaCotas(){
+  const cont = document.getElementById("lista-cotas-plano");
+  if(!cont) return;
+  if(cotasPlano.length===0){
+    cont.innerHTML = `<p style="color:#9fb0b8;font-size:11px;font-style:italic;">No hay ninguna todavía.</p>`;
+    return;
+  }
+  cont.innerHTML = cotasPlano.map((c,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;background:#111820;border-radius:9px;padding:9px 12px;margin-bottom:6px;">
+      <span style="color:#F59E0B;font-weight:800;">📐</span>
+      <span style="flex:1;color:#e7eef1;font-size:12px;">${esc(formatearMedida(c.totalPx))}${c.puntos.length>2?` (${c.puntos.length-1} tramos)`:""}</span>
+      <button onclick="borrarCota(${i})" style="border:none;background:transparent;color:#9fb0b8;font-size:14px;cursor:pointer;">🗑</button>
+    </div>`).join("");
+}
+function borrarCota(i){
+  guardarEnHistorial();
+  cotasPlano.splice(i,1);
+  guardarCotasPlano();
+  renderListaCotas();
+  redibujar();
+}
+function borrarTodasLasCotas(){
+  guardarEnHistorial();
+  cotasPlano = [];
+  guardarCotasPlano();
+  cerrarFotoAvanceOverlay();
+  redibujar();
+  showToast("✓ Cotas borradas");
 }
 // ================= MATRIZ (ARRAY) =================
 // Replica una pieza en una grilla de filas x columnas, con el espaciado que se elija. En obra
@@ -30524,6 +30622,7 @@ function comandosDisponibles(){
     {n:"Plantillas de checklist", d:"Editar las categorías por tipo de ambiente", i:"⚙️", solo:"maestro", f:()=>abrirGestionPlantillasChecklist()},
     // --- Los dos ---
     {n:"Cotas", d:"Medir distancias sobre el plano (cinta métrica)", i:"📐", solo:null, f:()=>iniciarCintaMetrica()},
+    {n:"Gestionar cotas", d:"Ver y borrar las cotas ya puestas", i:"🗑️", solo:null, f:()=>abrirGestionCotas()},
     {n:"Seleccionar con recuadro", d:"Elegir varios de una vez", i:"🔲", solo:null, f:()=>iniciarSeleccionRectangulo()},
     {n:"Seleccionar forma libre", d:"Elegir varios rodeándolos", i:"➰", solo:null, f:()=>iniciarSeleccionLibre()},
     {n:"Cuadrícula", d:"Mostrar u ocultar la grilla", i:"▦", solo:null, f:()=>toggleGridPlano()},
@@ -31267,6 +31366,10 @@ function deshacerPunto(){
   if(modoLineal){
     lineaEnCurso.pop();
     document.getElementById("btn-cerrar").disabled = lineaEnCurso.length<2;
+  }else if(modoCinta){
+    puntosCinta.pop();
+    document.getElementById("btn-cerrar").disabled = puntosCinta.length<2;
+    actualizarTextoCinta();
   }else{
     puntosActuales.pop();
     document.getElementById("btn-cerrar").disabled = puntosActuales.length<3;
@@ -34557,6 +34660,7 @@ function redibujar(){
     // por eso "no se veía nada" aunque estuviera activado.
     if(gridPlanoActivo) dibujarGridPlano(ctx, canvas);
     if(modoSeleccionRectangulo || modoSeleccionLibre) dibujarPreviaSeleccion(ctx, canvas);
+    dibujarCotasPlano(ctx, canvas);
     dibujarCintaMetrica(ctx, canvas);
     dibujarCruzLupa(ctx, canvas);
     const hintMaestro = document.getElementById("cad-hint-idle");
@@ -34737,6 +34841,7 @@ function redibujar(){
   // Polígono en construcción
   dibujarLineasReferencia(ctx, canvas);
   dibujarFormasPlano(ctx, canvas);
+  dibujarCotasPlano(ctx, canvas);
   dibujarCruzLupa(ctx, canvas);
   dibujarCintaMetrica(ctx, canvas);
   if((modoSeleccionRectangulo || modoSeleccionLibre)){
