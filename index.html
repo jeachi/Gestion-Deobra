@@ -3934,6 +3934,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="cad-flyout" id="drawer-revisar" style="display:none;">
         <div class="cad-flyout-titulo">Seleccionar</div>
         <div class="grid-tools">
+          <button class="tool-card" onclick="iniciarSeleccionElementoPorElemento()" title="Tocá de a uno los elementos que querés elegir (piezas, etiquetas o líneas) -- tocar de nuevo saca la elección"><span class="ico"><i class="ph-bold ph-cursor-click"></i></span><span class="lbl">Elemento x elemento</span></button>
           <button class="tool-card" onclick="iniciarSeleccionRectangulo()" title="Elegí varias piezas a la vez marcando un recuadro alrededor"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
           <button class="tool-card" onclick="iniciarSeleccionLibre()" title="Elegí varias piezas a la vez dibujando una forma libre alrededor"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
           <button class="tool-card" onclick="verificarInterferenciasPlano()" title="Busca piezas que se superponen entre sí, para revisarlas una por una"><span class="ico"><i class="ph-bold ph-warning"></i></span><span class="lbl">Interferencias</span></button>
@@ -3990,6 +3991,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <div class="cad-flyout" id="drawer-revisarMaestro" style="display:none;">
         <div class="cad-flyout-titulo">Seleccionar</div>
         <div class="grid-tools">
+          <button class="tool-card" onclick="iniciarSeleccionElementoPorElemento()" title="Tocá de a uno los pines que querés elegir -- tocar de nuevo saca la elección"><span class="ico"><i class="ph-bold ph-cursor-click"></i></span><span class="lbl">Elemento x elemento</span></button>
           <button class="tool-card" onclick="iniciarSeleccionRectangulo()" title="Elegí varios pines a la vez marcando un recuadro alrededor"><span class="ico"><i class="ph-bold ph-selection"></i></span><span class="lbl">Recuadro</span></button>
           <button class="tool-card" onclick="iniciarSeleccionLibre()" title="Elegí varios pines a la vez dibujando una forma libre alrededor"><span class="ico"><i class="ph-bold ph-lasso"></i></span><span class="lbl">Forma libre</span></button>
         </div>
@@ -4022,9 +4024,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       </div>
       <div id="barra-seleccion-area" style="display:none;position:absolute;left:8px;right:8px;bottom:34px;z-index:37;background:rgba(15,22,27,.95);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 10px;align-items:center;gap:9px;backdrop-filter:blur(6px);">
         <span id="barra-seleccion-area-txt" style="flex:1;color:#e7eef1;font-size:11.5px;font-weight:700;"></span>
-        <button type="button" id="btn-alinear-seleccion" onclick="abrirAlinearPinesSeleccionados()" style="display:none;border:none;background:rgba(255,255,255,.14);color:#e7eef1;border-radius:8px;padding:7px 10px;font-weight:800;font-size:11.5px;cursor:pointer;" title="Alinear estos pines en la misma fila o columna">📐 Alinear</button>
+        <button type="button" id="btn-alinear-seleccion" onclick="abrirAlinearPinesSeleccionados()" style="display:none;border:none;background:rgba(255,255,255,.14);color:#e7eef1;border-radius:8px;padding:7px 10px;font-weight:800;font-size:11.5px;cursor:pointer;" title="Alinear en la misma fila o columna (solo lo que tiene un único punto: pines o etiquetas)">📐 Alinear</button>
+        <button type="button" id="btn-copiar-seleccion" onclick="iniciarCopiarSeleccionArea()" style="border:none;background:rgba(255,255,255,.14);color:#e7eef1;border-radius:8px;padding:7px 10px;font-weight:800;font-size:11.5px;cursor:pointer;" title="Copiar lo elegido -- tocás el punto destino y las copias aparecen ahí">📋 Copiar</button>
+        <button type="button" id="btn-mover-seleccion" onclick="iniciarMoverDesdeSeleccionArea()" style="border:none;background:rgba(255,255,255,.14);color:#e7eef1;border-radius:8px;padding:7px 10px;font-weight:800;font-size:11.5px;cursor:pointer;" title="Mover lo elegido -- arrastrá en el plano">✋ Mover</button>
         <button type="button" onclick="eliminarSeleccionArea(this)" style="border:none;background:#DC5B4A;color:#fff;border-radius:8px;padding:7px 12px;font-weight:800;font-size:11.5px;cursor:pointer;">🗑️ Eliminar (tocá 2 veces)</button>
-        <button type="button" onclick="cancelarSeleccionArea()" style="border:none;background:rgba(255,255,255,.14);color:#e7eef1;border-radius:8px;padding:7px 10px;font-weight:800;font-size:11.5px;cursor:pointer;">✕</button>
+        <button type="button" onclick="cancelarSeleccionArea()" style="border:none;background:rgba(255,255,255,.14);color:#e7eef1;border-radius:8px;padding:7px 10px;font-weight:800;font-size:11.5px;cursor:pointer;" title="Deshacer la selección">✕</button>
       </div>
 
       <div id="barra-paso-a-paso" style="display:none;">
@@ -23633,6 +23637,10 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   modoRejillaColumnas = false;
   modoRejillaFilas = false;
   rejillaEnCurso = null;
+  modoSeleccionElementoPorElemento = false;
+  modoCopiarSeleccionArea = false;
+  etiquetasSeleccionArea = new Set();
+  formasSeleccionArea = new Set();
   modoAnclaTextoPlano = false;
   modoMoverEtiquetaIdx = null;
   modoMoverTapSeleccionando = false;
@@ -23987,6 +23995,10 @@ function volverASelectorPlanos(){
   modoRejillaColumnas = false;
   modoRejillaFilas = false;
   rejillaEnCurso = null;
+  modoSeleccionElementoPorElemento = false;
+  modoCopiarSeleccionArea = false;
+  etiquetasSeleccionArea = new Set();
+  formasSeleccionArea = new Set();
   modoAnclaTextoPlano = false;
   modoMoverEtiquetaIdx = null;
   modoMoverTapSeleccionando = false;
@@ -26153,6 +26165,7 @@ function snapAGrid(x, y){
 function iniciarArrastrePin(e, pinId){
   if(moviendoGrupoActivo){ iniciarColocarPunto(e); return; } // arrastrando el grupo del botón "Mover" -- el toque cae sobre un pin, pero el gesto es para todo el grupo
   if(modoMoverTapSeleccionando){ e.preventDefault(); e.stopPropagation(); alternarPinParaMover(pinId); return; }
+  if(modoSeleccionElementoPorElemento){ e.preventDefault(); e.stopPropagation(); alternarPinParaSeleccionArea(pinId); return; }
   if(modoSeleccionRectangulo || modoSeleccionLibre){ iniciarColocarPunto(e); return; }
   if(e.touches && e.touches.length>=2){ iniciarPinch(e); return; } // pellizco con 2 dedos que arrancó justo sobre el pin -- es zoom, no mover el pin
   e.preventDefault();
@@ -28878,6 +28891,8 @@ function actualizarModoFlotante(){
   else if(typeof modoColocarReferencia!=="undefined" && modoColocarReferencia){ ico="📏"; txt="Tocá un punto para poner los ejes ahí"; }
   else if(typeof modoRejillaColumnas!=="undefined" && modoRejillaColumnas){ ico="🔲"; txt=`Tocá un punto para la columna ${rejillaEnCurso.columnas.length+1}`; }
   else if(typeof modoRejillaFilas!=="undefined" && modoRejillaFilas){ ico="🔲"; txt=`Tocá un punto para la fila ${letraSecuencial(rejillaEnCurso.filas.length)}`; }
+  else if(typeof modoSeleccionElementoPorElemento!=="undefined" && modoSeleccionElementoPorElemento){ ico="👆"; txt="Elegí elementos tocándolos -- tocá ✕ para salir"; }
+  else if(typeof modoCopiarSeleccionArea!=="undefined" && modoCopiarSeleccionArea){ ico="📋"; txt="Tocá el punto destino para las copias"; }
   else if(modoAutoContorno){ ico="🪄"; txt="Auto contorno activo"; }
   else if(modoSeguirPared){ ico="🧱"; txt="Seguir pared activo"; }
   else if(modoBorrarPunto){ ico="🧹"; txt="Borrar punto activo"; }
@@ -28896,6 +28911,8 @@ function salirDeModosDibujoActivos(){
   else if(typeof modoCopiarPiezaDirecto!=="undefined" && modoCopiarPiezaDirecto) toggleModoCopiarPiezaDirecto();
   else if(typeof modoColocarReferencia!=="undefined" && modoColocarReferencia) salirDeColocarReferencia();
   else if(typeof modoRejillaColumnas!=="undefined" && (modoRejillaColumnas || modoRejillaFilas)){ modoRejillaColumnas = false; modoRejillaFilas = false; actualizarModoFlotante(); }
+  else if(typeof modoSeleccionElementoPorElemento!=="undefined" && modoSeleccionElementoPorElemento){ modoSeleccionElementoPorElemento = false; cancelarSeleccionArea(); actualizarModoFlotante(); }
+  else if(typeof modoCopiarSeleccionArea!=="undefined" && modoCopiarSeleccionArea){ modoCopiarSeleccionArea = false; actualizarModoFlotante(); }
   else if(modoAutoContorno) toggleModoAutoContorno();
   else if(modoSeguirPared) toggleModoSeguirPared();
   else if(modoBorrarPunto) toggleModoBorrarPunto();
@@ -29405,6 +29422,8 @@ function iniciarColocarPunto(e){
   if(moviendoPiezaIdx!==null){ iniciarArrastrePiezaCompleta(e); return; }
   if(moviendoGrupoActivo){ iniciarArrastreGrupo(e); return; }
   if(modoMoverTapSeleccionando){ manejarTapParaElegirMover(e); return; }
+  if(modoSeleccionElementoPorElemento){ manejarTapElementoPorElemento(e); return; }
+  if(modoCopiarSeleccionArea){ iniciarColocacionConLupa(e, "pin", confirmarCopiarSeleccionArea); return; }
   if(modoContornoInterno){ iniciarColocacionConLupa(e, "libre", manejarTapContornoInterno); return; }
   if(!dibujando || modoMoverActivo){
     // En modo "Mover", mientras hay un área en construcción NO se procesa el doble-tap para
@@ -31759,7 +31778,20 @@ function dibujarFormasPlano(ctx, canvas){
     }
     ctx.restore();
   }
-  formasPlano.forEach(f=>trazarForma(f, false));
+  formasPlano.forEach(f=>{
+    if(formasSeleccionArea.has(f.id)){
+      ctx.save();
+      ctx.strokeStyle = "#0E9488"; ctx.lineWidth = grosor*2.6;
+      if(f.tipo==="circulo"){
+        const radio = Math.hypot(f.x2-f.x1, f.y2-f.y1);
+        ctx.beginPath(); ctx.arc(f.x1, f.y1, radio, 0, Math.PI*2); ctx.stroke();
+      }else{
+        ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    trazarForma(f, false);
+  });
   // Previsualización de la forma en curso: primer punto ya puesto, segundo sigue al dedo.
   if(modoFormaPlano && puntoFormaPlanoInicio && colocandoPunto){
     trazarForma({tipo:modoFormaPlano, x1:puntoFormaPlanoInicio.x, y1:puntoFormaPlanoInicio.y, x2:colocandoPunto.x, y2:colocandoPunto.y, color:"#3B82F6"}, true);
@@ -31809,6 +31841,12 @@ function borrarTodasLasFormasPlano(){
 let modoSeleccionRectangulo = false;
 let modoSeleccionLibre = false;
 let seleccionAreaResultado = []; // índices de poligonos, o ids de pines (según modoPlanoMaestro)
+// Pedido del usuario: poder elegir etiquetas y formas (líneas/flechas/círculos) además de
+// piezas/pines -- Recuadro y Forma libre se quedan igual que siempre (solo áreas/pines), estos
+// dos Sets son los que suma la herramienta nueva "Elemento x elemento" (tocar de a uno).
+let etiquetasSeleccionArea = new Set();
+let formasSeleccionArea = new Set();
+let modoSeleccionElementoPorElemento = false;
 function iniciarSeleccionRectangulo(){
   if(dibujando){ showToast("Terminá o cancelá el dibujo en curso antes."); return; }
   dibujando = true;
@@ -31850,6 +31888,8 @@ function iniciarSeleccionLibre(){
 // según modoPlanoMaestro, que es lo único que cambia entre los dos tipos de plano.
 function aplicarSeleccionEnForma(anilloForma){
   seleccionAreaResultado = [];
+  etiquetasSeleccionArea = new Set();
+  formasSeleccionArea = new Set();
   if(modoPlanoMaestro){
     pinesMaestro.forEach(p=>{ if(puntoDentroDePoligono(p.x, p.y, anilloForma)) seleccionAreaResultado.push(p.id); });
   }else{
@@ -31858,56 +31898,84 @@ function aplicarSeleccionEnForma(anilloForma){
       if(puntoDentroDePoligono(cx, cy, anilloForma)) seleccionAreaResultado.push(idx);
     });
   }
-  mostrarBarraSeleccionArea();
+  mostrarBarraSeleccionArea(true);
 }
-function mostrarBarraSeleccionArea(){
-  const n = seleccionAreaResultado.length;
+// Cuánto hay elegido en total (piezas/pines + etiquetas + formas) y cuánto de eso tiene un único
+// punto propio (pines en el Maestro, etiquetas en el avance) -- lo segundo es lo único que
+// "Alinear" puede usar (un área o una línea no tienen un solo punto para promediar).
+function totalSeleccionAreaMixta(){
+  return seleccionAreaResultado.length + etiquetasSeleccionArea.size + formasSeleccionArea.size;
+}
+function cantidadPuntualesSeleccionArea(){
+  return modoPlanoMaestro ? seleccionAreaResultado.length : etiquetasSeleccionArea.size;
+}
+function limpiarSeleccionAreaMixta(){
+  seleccionAreaResultado = [];
+  etiquetasSeleccionArea = new Set();
+  formasSeleccionArea = new Set();
+  detenerAnimacionSeleccion();
+}
+function mostrarBarraSeleccionArea(avisarSiVacioPorForma){
+  const n = totalSeleccionAreaMixta();
   const barra = document.getElementById("barra-seleccion-area");
   const texto = document.getElementById("barra-seleccion-area-txt");
   if(n===0){
-    showToast(`No había ningún ${modoPlanoMaestro?"pin":"pieza"} adentro de esa forma.`);
+    if(avisarSiVacioPorForma) showToast(`No había ningún ${modoPlanoMaestro?"pin":"pieza"} adentro de esa forma.`);
     if(barra) barra.style.display = "none";
     return;
   }
-  texto.textContent = `${n} ${modoPlanoMaestro ? (n===1?"pin":"pines") : (n===1?"pieza":"piezas")} seleccionado${n===1?"":"s"}`;
+  const partes = [];
+  if(seleccionAreaResultado.length>0){
+    const n1 = seleccionAreaResultado.length;
+    partes.push(modoPlanoMaestro ? `${n1} ${n1===1?"pin":"pines"}` : `${n1} ${n1===1?"pieza":"piezas"}`);
+  }
+  if(etiquetasSeleccionArea.size>0) partes.push(`${etiquetasSeleccionArea.size} etiqueta${etiquetasSeleccionArea.size===1?"":"s"}`);
+  if(formasSeleccionArea.size>0) partes.push(`${formasSeleccionArea.size} línea${formasSeleccionArea.size===1?"":"s"}`);
+  texto.textContent = partes.join(" + ") + ` elegido${n===1?"":"s"}`;
   barra.style.display = "flex";
-  // "Alinear" solo tiene sentido para pines (un área no se "alinea" a una fila/columna) y con 2 o
-  // más elegidos -- con uno solo no hay nada para alinear entre sí.
+  // "Alinear" solo tiene sentido para lo que tiene un único punto (pines/etiquetas) y con 2 o más
+  // elegidos de eso -- un área o una línea no se "alinean" a una fila/columna.
   const btnAlinear = document.getElementById("btn-alinear-seleccion");
-  if(btnAlinear) btnAlinear.style.display = (modoPlanoMaestro && n>=2) ? "" : "none";
+  if(btnAlinear) btnAlinear.style.display = (cantidadPuntualesSeleccionArea()>=2) ? "" : "none";
   if(!modoPlanoMaestro) asegurarAnimacionSeleccion();
   redibujar();
   if(modoPlanoMaestro) renderPinesMaestro();
 }
 function cancelarSeleccionArea(){
-  seleccionAreaResultado = [];
+  limpiarSeleccionAreaMixta();
   const barra = document.getElementById("barra-seleccion-area");
   if(barra) barra.style.display = "none";
-  detenerAnimacionSeleccion();
   redibujar();
   if(modoPlanoMaestro) renderPinesMaestro();
 }
 function eliminarSeleccionArea(btn){
-  const n = seleccionAreaResultado.length;
+  const n = totalSeleccionAreaMixta();
   confirmarDobleToque(btn, "¿Seguro?", ()=>{
     if(modoPlanoMaestro){
       pinesMaestro = pinesMaestro.filter(p=>!seleccionAreaResultado.includes(p.id));
       guardarPinesMaestro();
       renderPinesMaestro();
     }else{
-      guardarEnHistorial();
+      if(seleccionAreaResultado.length>0 || etiquetasSeleccionArea.size>0) guardarEnHistorial();
       // De mayor a menor -- si se borrara de menor a mayor, cada eliminación corre de lugar los
       // índices más altos que todavía faltan borrar y se terminaría borrando piezas equivocadas.
       [...seleccionAreaResultado].sort((a,b)=>b-a).forEach(idx=>poligonos.splice(idx,1));
+      if(etiquetasSeleccionArea.size>0){
+        [...etiquetasSeleccionArea].sort((a,b)=>b-a).forEach(idx=>anotacionesTexto.splice(idx,1));
+        guardarAnotacionesTexto();
+      }
+      if(formasSeleccionArea.size>0){
+        formasPlano = formasPlano.filter(f=>!formasSeleccionArea.has(f.id));
+        guardarFormasPlano();
+      }
       redibujar();
       renderSelectorActividades();
       renderActividades();
       renderPorcentajesFlotantes();
       guardarPlanoAvancePoligonos();
     }
-    seleccionAreaResultado = [];
+    limpiarSeleccionAreaMixta();
     document.getElementById("barra-seleccion-area").style.display = "none";
-    detenerAnimacionSeleccion();
     showToast(`✓ ${n} eliminado${n===1?"":"s"}`);
   });
 }
@@ -31918,11 +31986,14 @@ function eliminarSeleccionArea(btn){
 // que ya existía: elegís los pines primero (como para Eliminar) y acá elegís el sentido -- a todos
 // les queda la misma fila (Y) o columna (X), tomando el promedio de sus posiciones actuales.
 function abrirAlinearPinesSeleccionados(){
-  if(seleccionAreaResultado.length<2){ showToast("Elegí 2 o más pines para alinear."); return; }
+  const n = cantidadPuntualesSeleccionArea();
+  if(n<2){ showToast(`Elegí 2 o más ${modoPlanoMaestro?"pines":"etiquetas"} para alinear.`); return; }
+  const excluidos = modoPlanoMaestro ? 0 : (seleccionAreaResultado.length + formasSeleccionArea.size);
+  const avisoExcluidos = excluidos>0 ? ` (${excluidos} elegido${excluidos===1?"":"s"} más de la selección no tiene un solo punto -- no se toca.)` : "";
   const cont = document.getElementById("foto-avance-cuerpo");
   cont.innerHTML = `
-    <h2 style="margin-top:0;color:#fff;">📐 Alinear ${seleccionAreaResultado.length} pines</h2>
-    <p style="font-size:11px;color:#9fb0b8;margin-bottom:12px;">Los deja a todos en la misma fila o columna, tomando el promedio de sus posiciones actuales.</p>
+    <h2 style="margin-top:0;color:#fff;">📐 Alinear ${n} ${modoPlanoMaestro?"pines":"etiquetas"}</h2>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:12px;">Los deja a todos en la misma fila o columna, tomando el promedio de sus posiciones actuales.${esc(avisoExcluidos)}</p>
     <button onclick="confirmarAlinearPinesSeleccionados('horizontal')" style="width:100%;margin-bottom:8px;padding:12px;border-radius:10px;border:none;background:var(--verde);color:#fff;font-weight:800;">↔ Alinear horizontal (misma fila)</button>
     <button onclick="confirmarAlinearPinesSeleccionados('vertical')" style="width:100%;margin-bottom:8px;padding:12px;border-radius:10px;border:1.5px solid var(--verde);background:transparent;color:var(--verde);font-weight:800;">↕ Alinear vertical (misma columna)</button>
     <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cancelar</button>`;
@@ -31931,20 +32002,208 @@ function abrirAlinearPinesSeleccionados(){
   habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
 }
 async function confirmarAlinearPinesSeleccionados(sentido){
-  const pines = pinesMaestro.filter(p=>seleccionAreaResultado.includes(p.id));
-  if(pines.length<2) return;
-  if(sentido==="horizontal"){
-    const promedioY = Math.round(pines.reduce((s,p)=>s+p.y,0)/pines.length);
-    pines.forEach(p=>{ p.y = promedioY; });
+  if(modoPlanoMaestro){
+    const pines = pinesMaestro.filter(p=>seleccionAreaResultado.includes(p.id));
+    if(pines.length<2) return;
+    if(sentido==="horizontal"){
+      const promedioY = Math.round(pines.reduce((s,p)=>s+p.y,0)/pines.length);
+      pines.forEach(p=>{ p.y = promedioY; });
+    }else{
+      const promedioX = Math.round(pines.reduce((s,p)=>s+p.x,0)/pines.length);
+      pines.forEach(p=>{ p.x = promedioX; });
+    }
+    await guardarPinesMaestro();
+    cerrarFotoAvanceOverlay();
+    const cantidad = pines.length;
+    cancelarSeleccionArea();
+    showToast(`✓ ${cantidad} pines alineados`);
   }else{
-    const promedioX = Math.round(pines.reduce((s,p)=>s+p.x,0)/pines.length);
-    pines.forEach(p=>{ p.x = promedioX; });
+    const etiquetas = [...etiquetasSeleccionArea].map(idx=>anotacionesTexto[idx]).filter(Boolean);
+    if(etiquetas.length<2) return;
+    if(sentido==="horizontal"){
+      const promedioY = Math.round(etiquetas.reduce((s,a)=>s+a.y,0)/etiquetas.length);
+      etiquetas.forEach(a=>{ a.y = promedioY; });
+    }else{
+      const promedioX = Math.round(etiquetas.reduce((s,a)=>s+a.x,0)/etiquetas.length);
+      etiquetas.forEach(a=>{ a.x = promedioX; });
+    }
+    await guardarAnotacionesTexto();
+    cerrarFotoAvanceOverlay();
+    const cantidad = etiquetas.length;
+    cancelarSeleccionArea();
+    redibujar();
+    showToast(`✓ ${cantidad} etiquetas alineadas`);
   }
-  await guardarPinesMaestro();
-  cerrarFotoAvanceOverlay();
-  const cantidad = pines.length;
-  cancelarSeleccionArea();
-  showToast(`✓ ${cantidad} pines alineados`);
+}
+// ================= "Elemento x elemento": elegir tocando de a uno =================
+// Pedido del usuario: un botón de selección que permita ir tocando CUALQUIER tipo de elemento
+// (etiqueta, pin, área o línea) -- hasta ahora "Seleccionar" solo tenía Recuadro y Forma libre
+// (por forma, no por toque individual). Tocar de nuevo un elemento ya elegido lo saca de la
+// selección (el "deshacer si elijo algo por error" que pidió) -- no hace falta un botón aparte
+// para eso. Usa la MISMA selección y la MISMA barra de abajo que ya usan Recuadro/Forma libre.
+function iniciarSeleccionElementoPorElemento(){
+  if(dibujando){ showToast("Terminá o cancelá el dibujo en curso antes."); return; }
+  cerrarFlyoutsAbiertos();
+  modoSeleccionElementoPorElemento = true;
+  actualizarModoFlotante();
+  showToast(`👆 Tocá ${modoPlanoMaestro?"los pines":"las piezas, etiquetas o líneas"} que querés elegir -- tocar de nuevo saca la elección.`, 5500);
+}
+function alternarPinParaSeleccionArea(id){
+  const pos = seleccionAreaResultado.indexOf(id);
+  if(pos===-1) seleccionAreaResultado.push(id); else seleccionAreaResultado.splice(pos,1);
+  mostrarBarraSeleccionArea();
+}
+function alternarPiezaParaSeleccionArea(idx){
+  const pos = seleccionAreaResultado.indexOf(idx);
+  if(pos===-1) seleccionAreaResultado.push(idx); else seleccionAreaResultado.splice(pos,1);
+  mostrarBarraSeleccionArea();
+}
+function alternarEtiquetaParaSeleccionArea(idx){
+  if(etiquetasSeleccionArea.has(idx)) etiquetasSeleccionArea.delete(idx);
+  else etiquetasSeleccionArea.add(idx);
+  mostrarBarraSeleccionArea();
+}
+function alternarFormaParaSeleccionArea(id){
+  if(formasSeleccionArea.has(id)) formasSeleccionArea.delete(id);
+  else formasSeleccionArea.add(id);
+  mostrarBarraSeleccionArea();
+}
+// Toca el plano (fuera de un pin o una etiqueta, que tienen sus propios manejadores de toque)
+// mientras "Elemento x elemento" está activo -- primero prueba un área (mismo criterio que el
+// doble-tap: capas antes que áreas totales, de la más nueva a la más vieja), y si no encuentra
+// nada, prueba una forma (línea/flecha/círculo).
+function manejarTapElementoPorElemento(e){
+  if(modoPlanoMaestro) return; // los pines se eligen tocando el pin en sí -- ver alternarPinParaSeleccionArea()
+  const punto = e.touches ? e.touches[0] : e;
+  if(!punto) return;
+  const canvas = document.getElementById("canvas-plano");
+  const rect = canvas.getBoundingClientRect();
+  const escalaX = canvas.width/rect.width, escalaY = canvas.height/rect.height;
+  const x = (punto.clientX-rect.left)*escalaX, y = (punto.clientY-rect.top)*escalaY;
+  let idxEncontrado = -1;
+  for(let i=poligonos.length-1; i>=0; i--){
+    if(poligonos[i].capa && anillosDe(poligonos[i]).some(an=>puntoDentroDePoligono(x, y, an))){ idxEncontrado = i; break; }
+  }
+  if(idxEncontrado===-1){
+    for(let i=poligonos.length-1; i>=0; i--){
+      if(!poligonos[i].capa && anillosDe(poligonos[i]).some(an=>puntoDentroDePoligono(x, y, an))){ idxEncontrado = i; break; }
+    }
+  }
+  if(idxEncontrado!==-1){ alternarPiezaParaSeleccionArea(idxEncontrado); return; }
+  const forma = buscarFormaEnPunto(x, y);
+  if(forma){ alternarFormaParaSeleccionArea(forma.id); }
+}
+function buscarFormaEnPunto(x, y){
+  const tolerancia = Math.max(10, 14/zoomActual);
+  for(let i=formasPlano.length-1; i>=0; i--){
+    const f = formasPlano[i];
+    if(f.tipo==="circulo"){
+      const radio = Math.hypot(f.x2-f.x1, f.y2-f.y1);
+      const dist = Math.hypot(x-f.x1, y-f.y1);
+      if(Math.abs(dist-radio) < tolerancia) return f;
+    }else{
+      if(distanciaPuntoSegmento(x, y, f.x1, f.y1, f.x2, f.y2) < tolerancia) return f;
+    }
+  }
+  return null;
+}
+// "Copiar" sobre la selección mixta -- tocás un punto destino y todo lo elegido aparece ahí,
+// conservando las distancias relativas entre los elementos originales (no apilado en el mismo
+// lugar). El punto de referencia es el centroide de todos los puntos representativos elegidos.
+let modoCopiarSeleccionArea = false;
+function iniciarCopiarSeleccionArea(){
+  if(totalSeleccionAreaMixta()===0) return;
+  modoCopiarSeleccionArea = true;
+  document.getElementById("barra-seleccion-area").style.display = "none";
+  showToast("📋 Tocá el punto destino -- las copias aparecen ahí, manteniendo las distancias entre los elementos elegidos.", 5500);
+}
+function confirmarCopiarSeleccionArea(xDestino, yDestino){
+  modoCopiarSeleccionArea = false;
+  const puntos = [];
+  if(modoPlanoMaestro){
+    seleccionAreaResultado.forEach(id=>{ const p=pinesMaestro.find(pp=>pp.id===id); if(p) puntos.push([p.x,p.y]); });
+  }else{
+    seleccionAreaResultado.forEach(idx=>{ const p=poligonos[idx]; if(p) puntos.push(centroidePoligono(p.puntos)); });
+    etiquetasSeleccionArea.forEach(idx=>{ const a=anotacionesTexto[idx]; if(a) puntos.push([a.x,a.y]); });
+    formasSeleccionArea.forEach(id=>{ const f=formasPlano.find(ff=>ff.id===id); if(f) puntos.push([(f.x1+f.x2)/2,(f.y1+f.y2)/2]); });
+  }
+  if(puntos.length===0){ cancelarSeleccionArea(); return; }
+  const refX = puntos.reduce((s,p)=>s+p[0],0)/puntos.length;
+  const refY = puntos.reduce((s,p)=>s+p[1],0)/puntos.length;
+  const dx = xDestino-refX, dy = yDestino-refY;
+  let creadas = 0;
+  if(modoPlanoMaestro){
+    seleccionAreaResultado.forEach(id=>{
+      const p = pinesMaestro.find(pp=>pp.id===id);
+      if(!p) return;
+      pinesMaestro.push({...p, id: uid(), x: p.x+dx, y: p.y+dy, checklist: (p.checklist||[]).map(c=>({...c})), capasVinculadas: []});
+      creadas++;
+    });
+    guardarPinesMaestro();
+    renderPinesMaestro();
+  }else{
+    guardarEnHistorial();
+    seleccionAreaResultado.forEach(idx=>{
+      const original = poligonos[idx];
+      if(!original) return;
+      poligonos.push({
+        nombreCompleto: original.nombreCompleto, nombreBase: original.nombreBase, capa: original.capa,
+        color: original.color, patron: original.patron,
+        puntos: original.puntos.map(([x,y])=>[x+dx, y+dy]),
+        piezasExtra: (original.piezasExtra||[]).map(an=>an.map(([x,y])=>[x+dx, y+dy])),
+        area: original.area,
+      });
+      creadas++;
+    });
+    etiquetasSeleccionArea.forEach(idx=>{
+      const original = anotacionesTexto[idx];
+      if(!original) return;
+      anotacionesTexto.push({...original, x: original.x+dx, y: original.y+dy});
+      creadas++;
+    });
+    formasSeleccionArea.forEach(id=>{
+      const original = formasPlano.find(ff=>ff.id===id);
+      if(!original) return;
+      formasPlano.push({...original, id: uid(), x1: original.x1+dx, y1: original.y1+dy, x2: original.x2+dx, y2: original.y2+dy});
+      creadas++;
+    });
+    redibujar();
+    renderSelectorActividades();
+    renderActividades();
+    renderPorcentajesFlotantes();
+    guardarPlanoAvancePoligonos();
+    guardarAnotacionesTexto();
+    guardarFormasPlano();
+  }
+  limpiarSeleccionAreaMixta();
+  document.getElementById("barra-seleccion-area").style.display = "none";
+  showToast(`✓ ${creadas} copiado${creadas===1?"":"s"}`);
+}
+// "Mover" sobre la selección mixta -- le pasa lo elegido (piezas/pines + etiquetas + formas) al
+// mismo mecanismo de arrastre que ya usa el botón "Mover" del riel, solo que la selección ya
+// viene armada (no hace falta volver a tocar uno por uno).
+function iniciarMoverDesdeSeleccionArea(){
+  if(totalSeleccionAreaMixta()===0) return;
+  moviendoGrupoActivo = true;
+  moviendoGrupoOriginal = {
+    poligonos: !modoPlanoMaestro ? seleccionAreaResultado.map(idx=>({
+      idx,
+      puntos: poligonos[idx].puntos.map(p=>[...p]),
+      piezasExtra: (poligonos[idx].piezasExtra||[]).map(an=>an.map(p=>[...p])),
+    })) : [],
+    etiquetas: [...etiquetasSeleccionArea].map(idx=>({idx, x: anotacionesTexto[idx].x, y: anotacionesTexto[idx].y})),
+    pines: modoPlanoMaestro ? seleccionAreaResultado.map(id=>{
+      const p = pinesMaestro.find(pp=>pp.id===id);
+      return {id, x: p.x, y: p.y};
+    }) : [],
+    formas: [...formasSeleccionArea].map(id=>{
+      const f = formasPlano.find(ff=>ff.id===id);
+      return {id, x1: f.x1, y1: f.y1, x2: f.x2, y2: f.y2};
+    }),
+  };
+  document.getElementById("barra-seleccion-area").style.display = "none";
+  document.getElementById("cad-riel").style.display = "none";
+  actualizarBarraMoverElementos();
 }
 function iniciarDibujo(){
   const nombreParaMostrar = prepararInicioDibujo();
@@ -34136,7 +34395,7 @@ function activarArrastreAnotacion(btn, idx){
   const UMBRAL_MOV = 10;
   btn.addEventListener("pointerdown", (e)=>{
     if(moviendoGrupoActivo){ iniciarColocarPunto(e); return; } // arrastrando el grupo del botón "Mover" -- el toque cae sobre una etiqueta, pero el gesto es para todo el grupo
-    if(modoSeleccionMultiple || modoMoverTapSeleccionando || modoCopiarPiezaDirecto) return; // en estos modos un toque es una acción directa (marcar/desmarcar, elegir para mover, copiar) -- no se arma el temporizador de "mantener para mover"
+    if(modoSeleccionMultiple || modoMoverTapSeleccionando || modoSeleccionElementoPorElemento || modoCopiarPiezaDirecto) return; // en estos modos un toque es una acción directa (marcar/desmarcar, elegir para mover, copiar) -- no se arma el temporizador de "mantener para mover"
     inicioX = e.clientX; inicioY = e.clientY;
     moviendo = false;
     timer = setTimeout(()=>{
@@ -34159,6 +34418,7 @@ function activarArrastreAnotacion(btn, idx){
   btn.addEventListener("pointerup", async (e)=>{
     clearTimeout(timer);
     if(modoMoverTapSeleccionando){ alternarEtiquetaParaMover(idx); return; }
+    if(modoSeleccionElementoPorElemento){ alternarEtiquetaParaSeleccionArea(idx); return; }
     if(modoSeleccionMultiple){ alternarSeleccionEtiqueta(idx); return; }
     // "Copiar pieza" (antes solo buscaba un área bajo el dedo) -- si el toque cae sobre una
     // etiqueta en vez de un área, también se puede copiar. Antes esto no pasaba por acá (las
@@ -35091,6 +35351,10 @@ function moverArrastreGrupo(e){
     const p = pinesMaestro.find(pp=>pp.id===id);
     if(p){ p.x += dx; p.y += dy; }
   });
+  (moviendoGrupoOriginal.formas||[]).forEach(({id})=>{
+    const f = formasPlano.find(ff=>ff.id===id);
+    if(f){ f.x1 += dx; f.y1 += dy; f.x2 += dx; f.y2 += dy; }
+  });
   moviendoGrupoUltimoPunto = {x, y};
   redibujar();
   if(modoPlanoMaestro) renderPinesMaestro();
@@ -35107,6 +35371,8 @@ function cerrarModoMoverGrupo(){
   moviendoGrupoActivo = false;
   seleccionAreaResultado = [];
   etiquetasParaMoverSeleccionadas = new Set();
+  etiquetasSeleccionArea = new Set();
+  formasSeleccionArea = new Set();
   moviendoGrupoOriginal = null;
   detenerAnimacionSeleccion();
   const barra = document.getElementById("barra-mover-elementos");
@@ -35118,14 +35384,16 @@ async function confirmarMoverGrupo(){
   const nPiezas = moviendoGrupoOriginal.poligonos.length;
   const nEtiquetas = moviendoGrupoOriginal.etiquetas.length;
   const nPines = moviendoGrupoOriginal.pines.length;
+  const nFormas = (moviendoGrupoOriginal.formas||[]).length;
   if(nPiezas>0 || nEtiquetas>0) guardarEnHistorial();
   cerrarModoMoverGrupo();
   redibujar();
   renderPorcentajesFlotantes();
   if(nPiezas>0) await guardarPlanoAvancePoligonos();
   if(nEtiquetas>0) await guardarAnotacionesTexto();
+  if(nFormas>0) await guardarFormasPlano();
   if(nPines>0){ await guardarPinesMaestro(); renderPinesMaestro(); }
-  const total = nPiezas+nEtiquetas+nPines;
+  const total = nPiezas+nEtiquetas+nPines+nFormas;
   showToast(`✓ ${total} elemento${total===1?"":"s"} movido${total===1?"":"s"}`);
 }
 function cancelarMoverGrupo(){
@@ -35144,6 +35412,10 @@ function cancelarMoverGrupo(){
     moviendoGrupoOriginal.pines.forEach(({id, x, y})=>{
       const p = pinesMaestro.find(pp=>pp.id===id);
       if(p){ p.x = x; p.y = y; }
+    });
+    (moviendoGrupoOriginal.formas||[]).forEach(({id, x1, y1, x2, y2})=>{
+      const f = formasPlano.find(ff=>ff.id===id);
+      if(f){ f.x1=x1; f.y1=y1; f.x2=x2; f.y2=y2; }
     });
   }
   cerrarModoMoverGrupo();
@@ -35601,6 +35873,9 @@ function redibujar(){
       ctx.strokeRect(cajaX-4, cajaY-4, cajaW+8, cajaH+8);
     }else if((modoMoverTapSeleccionando || moviendoGrupoActivo) && etiquetasParaMoverSeleccionadas.has(idxAnot)){
       ctx.strokeStyle = "#3B82F6"; ctx.lineWidth = Math.max(3, grosor*1.4);
+      ctx.strokeRect(cajaX-4, cajaY-4, cajaW+8, cajaH+8);
+    }else if(etiquetasSeleccionArea.has(idxAnot)){
+      ctx.strokeStyle = "#0E9488"; ctx.lineWidth = Math.max(3, grosor*1.4);
       ctx.strokeRect(cajaX-4, cajaY-4, cajaW+8, cajaH+8);
     }
     ctx.fillStyle = "rgba(255,255,255,.92)";
