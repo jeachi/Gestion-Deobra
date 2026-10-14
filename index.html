@@ -2350,7 +2350,12 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .plano-card-nuevo.maestro{border-color:#C9A227;color:#8a6d10;background:#FFFBEB;}
 .plano-card.es-maestro{border:1.5px solid #C9A227;}
 .badge-maestro{position:absolute;top:6px;left:6px;background:#C9A227;color:#fff;font-size:8.5px;font-weight:800;padding:2px 7px;border-radius:20px;z-index:2;}
-.pin-maestro-tocable{position:absolute;width:30px;height:30px;margin-left:-15px;margin-top:-30px;cursor:pointer;touch-action:manipulation;}
+/* touch-action:none (no "manipulation") -- con "manipulation" el navegador podía tomar el gesto
+   como scroll/pan nativo del plano apenas se apoyaba el dedo, antes de que el JS de arrastre
+   (iniciarArrastrePin) llegara a tomar control: el pin quedaba "pegado" sin moverse mientras el
+   plano entero se desplazaba por abajo del dedo. Mismo criterio que .badge-anotacion-tocable
+   (las etiquetas), que ya usa "none" y sí arrastra bien. */
+.pin-maestro-tocable{position:absolute;width:30px;height:30px;margin-left:-15px;margin-top:-30px;cursor:pointer;touch-action:none;}
 .pin-maestro-svg{width:100%;height:100%;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35));}
 /* % real de avance de las capas vinculadas a este pin -- aparte del color del semáforo (que solo
    refleja el checklist), para no confundir "sin pendientes marcados" con "ya está hecho de verdad". */
@@ -3996,6 +4001,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       </div>
       <div id="barra-seleccion-area" style="display:none;position:absolute;left:8px;right:8px;bottom:34px;z-index:37;background:rgba(15,22,27,.95);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:9px 10px;align-items:center;gap:9px;backdrop-filter:blur(6px);">
         <span id="barra-seleccion-area-txt" style="flex:1;color:#e7eef1;font-size:11.5px;font-weight:700;"></span>
+        <button type="button" id="btn-alinear-seleccion" onclick="abrirAlinearPinesSeleccionados()" style="display:none;border:none;background:rgba(255,255,255,.14);color:#e7eef1;border-radius:8px;padding:7px 10px;font-weight:800;font-size:11.5px;cursor:pointer;" title="Alinear estos pines en la misma fila o columna">📐 Alinear</button>
         <button type="button" onclick="eliminarSeleccionArea(this)" style="border:none;background:#DC5B4A;color:#fff;border-radius:8px;padding:7px 12px;font-weight:800;font-size:11.5px;cursor:pointer;">🗑️ Eliminar (tocá 2 veces)</button>
         <button type="button" onclick="cancelarSeleccionArea()" style="border:none;background:rgba(255,255,255,.14);color:#e7eef1;border-radius:8px;padding:7px 10px;font-weight:800;font-size:11.5px;cursor:pointer;">✕</button>
       </div>
@@ -4306,9 +4312,9 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   <div style="background:var(--papel);border-radius:18px 18px 0 0;max-width:460px;width:100%;max-height:60vh;overflow-y:auto;">
     <div style="display:flex;align-items:center;gap:8px;padding:14px 14px 10px;border-bottom:1px solid var(--borde);position:sticky;top:0;background:var(--papel);">
       <input type="text" id="pin-maestro-nombre" placeholder="Nombre de la zona (ej: Cocina)" style="flex:1;border:1.5px solid var(--borde);border-radius:9px;padding:9px 10px;font-size:14px;font-weight:800;" onchange="guardarNombrePinMaestro()">
-      <button type="button" onclick="iniciarCopiarPin()" title="Copiar este pin (con sus pendientes y vínculos) a otra zona" style="border:none;background:var(--fondo);width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;">📋</button>
-      <button type="button" onclick="centrarPinEnZona()" title="Centrar este pin en el área total del contratista que caiga en este punto" style="border:none;background:var(--fondo);width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer;">🎯</button>
-      <button type="button" id="btn-eliminar-pin-maestro" onclick="eliminarPinMaestro(this)" title="Eliminar este pin (tocá 2 veces)" style="border:none;background:var(--fondo);color:var(--texto-alerta);width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer;">🗑️</button>
+      <button type="button" class="btn-pin-accion" onclick="iniciarCopiarPin()" title="Copiar este pin (con sus pendientes y vínculos) a otra zona" style="border:none;background:var(--fondo);width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;">📋</button>
+      <button type="button" class="btn-pin-accion" onclick="centrarPinEnZona()" title="Centrar este pin en el área total del contratista que caiga en este punto" style="border:none;background:var(--fondo);width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer;">🎯</button>
+      <button type="button" class="btn-pin-accion" id="btn-eliminar-pin-maestro" onclick="eliminarPinMaestro(this)" title="Eliminar este pin (tocá 2 veces)" style="border:none;background:var(--fondo);color:var(--texto-alerta);width:30px;height:30px;border-radius:50%;font-size:14px;cursor:pointer;">🗑️</button>
       <button type="button" onclick="cerrarPanelPinMaestro()" style="border:none;background:var(--fondo);width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;">✕</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--fondo);border-bottom:1px solid var(--borde);">
@@ -27723,9 +27729,12 @@ function activarTooltipRiel(btn, nombre){
 // plano (.tool-card con title) de una sola vez -- un único listener delegado en vez de engancharlo
 // botón por botón, así también cubre a los que se arman de nuevo dinámicamente (ej: Capas). El
 // toque normal (más corto) sigue ejecutando la acción del botón como siempre.
+// También cubre .btn-pin-accion (📋 copiar / 🎯 centrar / 🗑️ eliminar del panel del pin, Plano
+// Maestro) -- antes solo tenían un title (invisible en touch, sin mouse para el hover), así que no
+// había ninguna forma de saber qué hacía cada uno sin tocarlo "a ciegas" primero.
 let _timerTooltipToolCard = null;
 document.addEventListener("pointerdown", (e)=>{
-  const btn = e.target.closest(".tool-card[title]");
+  const btn = e.target.closest(".tool-card[title], .btn-pin-accion[title]");
   if(!btn) return;
   const texto = btn.getAttribute("title");
   _timerTooltipToolCard = setTimeout(()=>{
@@ -31441,6 +31450,10 @@ function mostrarBarraSeleccionArea(){
   }
   texto.textContent = `${n} ${modoPlanoMaestro ? (n===1?"pin":"pines") : (n===1?"pieza":"piezas")} seleccionado${n===1?"":"s"}`;
   barra.style.display = "flex";
+  // "Alinear" solo tiene sentido para pines (un área no se "alinea" a una fila/columna) y con 2 o
+  // más elegidos -- con uno solo no hay nada para alinear entre sí.
+  const btnAlinear = document.getElementById("btn-alinear-seleccion");
+  if(btnAlinear) btnAlinear.style.display = (modoPlanoMaestro && n>=2) ? "" : "none";
   if(!modoPlanoMaestro) asegurarAnimacionSeleccion();
   redibujar();
   if(modoPlanoMaestro) renderPinesMaestro();
@@ -31476,6 +31489,41 @@ function eliminarSeleccionArea(btn){
     detenerAnimacionSeleccion();
     showToast(`✓ ${n} eliminado${n===1?"":"s"}`);
   });
+}
+// Pedido del usuario: alinear de una varios pines ya seleccionados (con Recuadro o Forma libre),
+// en vez de arrastrarlos uno por uno esperando que el imán de buscarAlineacionPines() los vaya
+// pegando de a dos. En vez de la idea original (dibujar un eje temporal y después elegir qué
+// pines se le pegan), que agrega todo un modo de dibujo nuevo, se resuelve con la MISMA selección
+// que ya existía: elegís los pines primero (como para Eliminar) y acá elegís el sentido -- a todos
+// les queda la misma fila (Y) o columna (X), tomando el promedio de sus posiciones actuales.
+function abrirAlinearPinesSeleccionados(){
+  if(seleccionAreaResultado.length<2){ showToast("Elegí 2 o más pines para alinear."); return; }
+  const cont = document.getElementById("foto-avance-cuerpo");
+  cont.innerHTML = `
+    <h2 style="margin-top:0;color:#fff;">📐 Alinear ${seleccionAreaResultado.length} pines</h2>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:12px;">Los deja a todos en la misma fila o columna, tomando el promedio de sus posiciones actuales.</p>
+    <button onclick="confirmarAlinearPinesSeleccionados('horizontal')" style="width:100%;margin-bottom:8px;padding:12px;border-radius:10px;border:none;background:var(--verde);color:#fff;font-weight:800;">↔ Alinear horizontal (misma fila)</button>
+    <button onclick="confirmarAlinearPinesSeleccionados('vertical')" style="width:100%;margin-bottom:8px;padding:12px;border-radius:10px;border:1.5px solid var(--verde);background:transparent;color:var(--verde);font-weight:800;">↕ Alinear vertical (misma columna)</button>
+    <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cancelar</button>`;
+  document.getElementById("foto-avance-overlay").style.display = "flex";
+  _fotoAvanceAbiertoTs = Date.now();
+  habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
+}
+async function confirmarAlinearPinesSeleccionados(sentido){
+  const pines = pinesMaestro.filter(p=>seleccionAreaResultado.includes(p.id));
+  if(pines.length<2) return;
+  if(sentido==="horizontal"){
+    const promedioY = Math.round(pines.reduce((s,p)=>s+p.y,0)/pines.length);
+    pines.forEach(p=>{ p.y = promedioY; });
+  }else{
+    const promedioX = Math.round(pines.reduce((s,p)=>s+p.x,0)/pines.length);
+    pines.forEach(p=>{ p.x = promedioX; });
+  }
+  await guardarPinesMaestro();
+  cerrarFotoAvanceOverlay();
+  const cantidad = pines.length;
+  cancelarSeleccionArea();
+  showToast(`✓ ${cantidad} pines alineados`);
 }
 function iniciarDibujo(){
   const nombreParaMostrar = prepararInicioDibujo();
