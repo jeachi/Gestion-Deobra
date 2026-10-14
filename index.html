@@ -6606,6 +6606,26 @@ function hoyISO(){ const d=new Date(); return d.getFullYear()+"-"+pad2(d.getMont
 // el día anterior según la zona horaria local -- forzando medianoche LOCAL se evita ese corrimiento.
 function fechaAR(iso){ return iso ? new Date(iso+"T00:00:00").toLocaleDateString("es-AR") : ""; }
 
+/* ---------------- Calculadora de Materiales — cálculo puro de Mampostería ----------------
+   Rendimiento (piezas/m²) depende de la cara del ladrillo/bloque, no del espesor -- por eso
+   es un campo editable que entra como parámetro, no una tabla fija por tipo. */
+function calcularMamposteria(state){
+  const USO_TIPICO = {
+    hormigon: "Muros portantes, cercos y medianeras.",
+    ladrillo: state.formato === "6x12x24-plano"
+      ? "De plano: muros portantes y revestimientos — pared doble (≈25cm)."
+      : "De canto: tabiques y parapetos — pared simple (≈12cm).",
+    hueco: "Tabiques divisorios NO portantes (interiores).",
+    portante: "Muros portantes de carga en obra nueva.",
+  };
+  const area = Math.max(0, (state.largo||0) * (state.alto||0));
+  const piezas = Math.ceil(area * (state.rendimiento||0) * (1 + (state.desperdicio||0)/100));
+  const bolsasCemento = Math.max(0, Math.ceil(piezas/180));
+  const m3Arena = Math.round((piezas/300)*100)/100;
+  const bolsasCal = Math.max(0, Math.ceil(piezas/220));
+  return { area, piezas, bolsasCemento, m3Arena, bolsasCal, usoTipico: USO_TIPICO[state.tipo] || "" };
+}
+
 async function onCambioDia(){
   const val = document.getElementById("sel-dia").value;
   if(!val) return;

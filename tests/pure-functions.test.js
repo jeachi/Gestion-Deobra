@@ -23,6 +23,8 @@ const {
   { nombre: "normalizarBusqueda" },
 ]);
 
+const { calcularMamposteria } = cargarDesdeApp([{ nombre: "calcularMamposteria" }]);
+
 test("pad2 rellena con cero a la izquierda", () => {
   assert.equal(pad2(1), "01");
   assert.equal(pad2(9), "09");
@@ -90,4 +92,44 @@ test("normalizarBusqueda saca tildes y pasa a minúscula, para que 'Martin' encu
   assert.equal(normalizarBusqueda("Peón"), "peon");
   assert.equal(normalizarBusqueda(""), "");
   assert.equal(normalizarBusqueda(null), "");
+});
+
+test("calcularMamposteria: hormigón 20x20x40, muro de 8x2.5m, sin desperdicio", () => {
+  const r = calcularMamposteria({ tipo:"hormigon", formato:"20x20x40", largo:8, alto:2.5, rendimiento:12.5, desperdicio:0 });
+  assert.equal(r.area, 20);
+  assert.equal(r.piezas, 250); // 20 * 12.5
+  assert.equal(r.usoTipico, "Muros portantes, cercos y medianeras.");
+});
+
+test("calcularMamposteria: aplica el % de desperdicio redondeando hacia arriba", () => {
+  const r = calcularMamposteria({ tipo:"hormigon", formato:"20x20x40", largo:8, alto:2.5, rendimiento:12.5, desperdicio:5 });
+  assert.equal(r.piezas, 263); // ceil(250 * 1.05) = ceil(262.5)
+});
+
+test("calcularMamposteria: ladrillo común 'de plano' usa el texto de pared doble", () => {
+  const r = calcularMamposteria({ tipo:"ladrillo", formato:"6x12x24-plano", largo:5, alto:2.5, rendimiento:144, desperdicio:0 });
+  assert.match(r.usoTipico, /pared doble/);
+});
+
+test("calcularMamposteria: ladrillo común 'de canto' (cualquier otro formato) usa el texto de pared simple", () => {
+  const r = calcularMamposteria({ tipo:"ladrillo", formato:"6x12x24", largo:5, alto:2.5, rendimiento:72, desperdicio:0 });
+  assert.match(r.usoTipico, /pared simple/);
+});
+
+test("calcularMamposteria: hueco y portante devuelven sus textos de uso típico propios", () => {
+  assert.match(calcularMamposteria({ tipo:"hueco", formato:"hueco18", largo:1, alto:1, rendimiento:16, desperdicio:0 }).usoTipico, /NO portantes/);
+  assert.match(calcularMamposteria({ tipo:"portante", formato:"portante18", largo:1, alto:1, rendimiento:16, desperdicio:0 }).usoTipico, /carga/);
+});
+
+test("calcularMamposteria: largo o alto en 0 da área y piezas en 0, no NaN ni excepción", () => {
+  const r = calcularMamposteria({ tipo:"hormigon", formato:"20x20x40", largo:0, alto:2.5, rendimiento:12.5, desperdicio:5 });
+  assert.equal(r.area, 0);
+  assert.equal(r.piezas, 0);
+});
+
+test("calcularMamposteria: cemento, arena y cal son proporcionales a piezas (referencias fijas 180/300/220)", () => {
+  const r = calcularMamposteria({ tipo:"hormigon", formato:"20x20x40", largo:8, alto:2.5, rendimiento:12.5, desperdicio:0 }); // 250 piezas
+  assert.equal(r.bolsasCemento, 2);  // ceil(250/180)
+  assert.equal(r.m3Arena, 0.83);     // round(250/300, 2)
+  assert.equal(r.bolsasCal, 2);      // ceil(250/220)
 });
