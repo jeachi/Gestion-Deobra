@@ -3899,11 +3899,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
       </div>
 
-      <!-- ---- Cajón Medir y alinear (antes eran 4 íconos sueltos en el riel) ---- -->
+      <!-- ---- Cajón Alinear y calibrar (antes "Medir y alinear" -- la Cinta métrica/Cotas se
+           mudó al cajón Anotaciones, junto con Texto/Etiquetas, estilo AutoCAD) ---- -->
       <div class="cad-flyout" id="drawer-medir" style="display:none;">
-        <div class="cad-flyout-titulo">Medir y alinear</div>
+        <div class="cad-flyout-titulo">Alinear y calibrar</div>
         <div class="grid-tools">
-          <button class="tool-card" onclick="iniciarCintaMetrica()" title="Medí una distancia tocando dos puntos del plano"><span class="ico"><i class="ph-bold ph-ruler"></i></span><span class="lbl">Cinta métrica</span></button>
           <button class="tool-card" id="btn-colocar-referencia" onclick="iniciarOEditarReferencia()" title="Poné líneas de referencia para alinear cortes -- se pueden borrar después"><span class="ico"><i class="ph-bold ph-crosshair-simple"></i></span><span class="lbl">Ejes</span></button>
           <button class="tool-card" onclick="iniciarCalibracionEscala()" title="Calibrá la escala real del plano para que se muestren m² aproximados"><span class="ico"><i class="ph-bold ph-arrows-horizontal"></i></span><span class="lbl">Escala</span></button>
         </div>
@@ -3925,13 +3925,15 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
       </div>
 
-      <!-- ---- Cajón Etiquetas -- agrupa todo lo que tiene que ver con etiquetas/anotaciones: crear
-           (Texto, antes en "Más"), el cuadro de medidas (antes en "Medir") y la selección en lote
-           (antes en "Seleccionar") -- antes estaban repartidas en 3 cajones distintos sin relación
-           entre sí a simple vista. ---- -->
+      <!-- ---- Cajón Anotaciones (antes "Etiquetas") -- agrupa, estilo AutoCAD, todo lo que anota
+           el plano sin ser una pieza de obra: Cotas (antes "Cinta métrica", vivía en "Medir y
+           alinear"), Texto (antes en "Más"), el cuadro de medidas (antes en "Medir") y la
+           selección en lote (antes en "Seleccionar") -- antes estaban repartidas en 3 cajones
+           distintos sin relación entre sí a simple vista. ---- -->
       <div class="cad-flyout" id="drawer-etiquetas" style="display:none;">
-        <div class="cad-flyout-titulo">Etiquetas</div>
+        <div class="cad-flyout-titulo">Anotaciones</div>
         <div class="grid-tools">
+          <button class="tool-card destacado" onclick="iniciarCintaMetrica()" title="Coloca una cota: medí una distancia tocando dos puntos del plano"><span class="ico"><i class="ph-bold ph-ruler"></i></span><span class="lbl">Cotas</span></button>
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarColocarTextoPlano();" title="Coloca un cuadro de texto nuevo: una medida o una nota libre"><span class="ico"><i class="ph-bold ph-text-t"></i></span><span class="lbl">Texto</span></button>
           <button class="tool-card" onclick="abrirTablaMedidas()" title="Ve el resumen de todas las medidas cargadas en este plano"><span class="ico"><i class="ph-bold ph-table"></i></span><span class="lbl">Medidas</span></button>
           <button class="tool-card" onclick="iniciarModoSeleccionMultiple()" title="Elegí varias etiquetas tocándolas, para cambiarles la categoría o el estado juntas"><span class="ico"><i class="ph-bold ph-list-checks"></i></span><span class="lbl">Seleccionar</span></button>
@@ -26405,7 +26407,7 @@ document.addEventListener("keydown", function(e){
 // persona que usa la app en su propio equipo termina con su propio orden según lo que más usa.
 const HERRAMIENTAS_RIEL = [
   {id:"comandos", ico:'<span style="font-size:17px;">⌘</span>', lbl:"COMANDOS", accion:"abrirPaletaComandos()", titulo:"Buscar y ejecutar cualquier comando escribiendo"},
-  {id:"cinta", ico:'<i class="ph-bold ph-ruler"></i>', lbl:"MEDIR", accion:"iniciarCintaMetrica()", titulo:"Cinta métrica: medir distancias sobre el plano"},
+  {id:"cinta", ico:'<i class="ph-bold ph-ruler"></i>', lbl:"COTAS", accion:"iniciarCintaMetrica()", titulo:"Cotas: medir distancias sobre el plano"},
   {id:"copiarpieza", ico:'<i class="ph-bold ph-copy"></i>', lbl:"COPIAR", accion:"toggleModoCopiarPiezaDirecto()", titulo:"Copiar una pieza ya hecha: tocá el botón y después tocá la pieza -- sin depender del doble-tap", boton:"btn-copiar-pieza-directo"},
   {id:"referencia", ico:'<i class="ph-bold ph-ruler"></i>', lbl:"EJES", accion:"iniciarOEditarReferencia()", titulo:"Poner líneas de referencia (ejes) para alinear cortes -- se pueden borrar después", boton:"btn-colocar-referencia"},
   {id:"vista", ico:'<i class="ph-bold ph-magnifying-glass"></i>', lbl:"VISTA", accion:"toggleDrawerHerramientas('vista')", titulo:"Vista: acercar, alejar, ajustar, mover, girar", boton:"btn-drawer-vista"},
@@ -26464,16 +26466,16 @@ function renderRielAdaptativo(){
   // no una lista adaptativa que se reordena sola -- con 18 herramientas sueltas, reordenarlas por
   // uso ya no alcanzaba: igual había que salir a buscarlas. Comandos/Vista/Capas/Dibujar quedan
   // siempre a mano; "Medir y alinear" y "Selección y revisión" son los 2 cajones nuevos que antes
-  // eran 9 íconos sueltos current (Cinta métrica, Ejes, Escala, Medidas, Recuadro, Forma libre,
+  // eran 9 íconos sueltos current (Cotas, Ejes, Escala, Medidas, Recuadro, Forma libre,
   // Interferencias, Seleccionar etiquetas). Ningún ícono se repite dentro de esta lista.
   let html = `
     <button class="cad-riel-btn" data-nombre-corto="COMANDOS" onclick="abrirPaletaComandos()" title="Buscar y ejecutar cualquier comando escribiendo"><span class="ico">⌘</span></button>
     <button class="cad-riel-btn" id="btn-drawer-vista" data-nombre-corto="VISTA" onclick="toggleDrawerHerramientas('vista')" title="Vista: acercar, alejar, ajustar, mover"><span class="ico"><i class="ph-bold ph-magnifying-glass"></i></span></button>
     <button class="cad-riel-btn" id="btn-drawer-capas" data-nombre-corto="CAPAS" onclick="toggleDrawerHerramientas('capas')" title="Capas: mostrar u ocultar actividades"><span class="ico"><i class="ph-bold ph-stack"></i></span></button>
     <button class="cad-riel-btn" id="btn-drawer-dibujar" data-nombre-corto="DIBUJAR" onclick="toggleDrawerHerramientas('dibujar')" title="Dibujar: marcar un área nueva"><span class="ico"><i class="ph-bold ph-pencil-simple"></i></span></button>
-    <button class="cad-riel-btn" id="btn-drawer-medir" data-nombre-corto="MEDIR" onclick="toggleDrawerHerramientas('medir')" title="Medir y alinear: cinta métrica, ejes, escala"><span class="ico"><i class="ph-bold ph-ruler"></i></span></button>
+    <button class="cad-riel-btn" id="btn-drawer-medir" data-nombre-corto="ALINEAR" onclick="toggleDrawerHerramientas('medir')" title="Alinear y calibrar: ejes, escala"><span class="ico"><i class="ph-bold ph-ruler"></i></span></button>
     <button class="cad-riel-btn" id="btn-drawer-revisar" data-nombre-corto="SELECCIONAR" onclick="toggleDrawerHerramientas('revisar')" title="Seleccionar: piezas (recuadro, forma libre, interferencias) o etiquetas"><span class="ico"><i class="ph-bold ph-check-square"></i></span></button>
-    <button class="cad-riel-btn" id="btn-drawer-etiquetas" data-nombre-corto="ETIQUETAS" onclick="toggleDrawerHerramientas('etiquetas')" title="Etiquetas: colocar texto, cuadro de medidas, seleccionar en lote"><span class="ico"><i class="ph-bold ph-tag"></i></span></button>
+    <button class="cad-riel-btn" id="btn-drawer-etiquetas" data-nombre-corto="ANOTAC." onclick="toggleDrawerHerramientas('etiquetas')" title="Anotaciones: cotas, texto, tabla de medidas, seleccionar en lote"><span class="ico"><i class="ph-bold ph-tag"></i></span></button>
     <div class="cad-riel-sep"></div>
     <button class="cad-riel-btn" id="btn-mover-elementos" data-nombre-corto="MOVER" onclick="iniciarMoverElementos()" title="Mover: elegí una o varias piezas/etiquetas y desplazalas juntas"><span class="ico"><i class="ph-bold ph-arrows-out-cardinal"></i></span></button>
     <button class="cad-riel-btn" data-nombre-corto="DESHACER" onclick="deshacerGeneral()" title="Deshace la última acción (cerrar área, editar, eliminar, duplicar, ajustar %, mover o borrar un cuadro de texto)"><span class="ico"><i class="ph-bold ph-arrow-u-up-left"></i></span></button>
@@ -29404,7 +29406,7 @@ function mostrarTodasLasCapas(){
 // ================= PALETA DE COMANDOS =================
 // La línea de comandos de AutoCAD, adaptada a pantalla táctil: en vez de acordarse en qué cajón
 // vive cada herramienta, se escribe lo que se quiere hacer y se ejecuta. Filtra sin acentos y por
-// palabras sueltas, así "recort" encuentra "Recortar" y "med" encuentra "Cinta métrica". Cada
+// palabras sueltas, así "recort" encuentra "Recortar" y "cot" encuentra "Cotas". Cada
 // comando declara en qué tipo de plano tiene sentido, para no ofrecer en el Maestro cosas que
 // solo aplican al de avance y viceversa.
 function comandosDisponibles(){
@@ -29435,7 +29437,7 @@ function comandosDisponibles(){
     {n:"Informe de zonas", d:"Ver el checklist de todas las zonas", i:"📋", solo:"maestro", f:()=>abrirInformeMaestro()},
     {n:"Plantillas de checklist", d:"Editar las categorías por tipo de ambiente", i:"⚙️", solo:"maestro", f:()=>abrirGestionPlantillasChecklist()},
     // --- Los dos ---
-    {n:"Cinta métrica", d:"Medir distancias sobre el plano", i:"📐", solo:null, f:()=>iniciarCintaMetrica()},
+    {n:"Cotas", d:"Medir distancias sobre el plano (cinta métrica)", i:"📐", solo:null, f:()=>iniciarCintaMetrica()},
     {n:"Seleccionar con recuadro", d:"Elegir varios de una vez", i:"🔲", solo:null, f:()=>iniciarSeleccionRectangulo()},
     {n:"Seleccionar forma libre", d:"Elegir varios rodeándolos", i:"➰", solo:null, f:()=>iniciarSeleccionLibre()},
     {n:"Cuadrícula", d:"Mostrar u ocultar la grilla", i:"▦", solo:null, f:()=>toggleGridPlano()},
