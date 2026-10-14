@@ -6806,6 +6806,55 @@ function calcularMembranaRollos(state){
   return { area, rollosAncho, rollosLargo, totalRollos, imprimacionLitros };
 }
 
+/* ---------------- Calculadora de Materiales — cálculo puro de Contrapiso / Hormigón ----------------
+   state = {ancho, largo, espesor (m)} -- dosificación de referencia ~1:3:3 (mismos ratios que la
+   capa de compresión de Losa de viguetas, por m³: 7 bolsas de cemento, 0.5 m³ arena, 0.5 m³ piedra) */
+function calcularContrapiso(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const espesor = state.espesor || 0.05;
+  const volumen = Math.round(area * espesor * 100) / 100;
+  const cemento = Math.max(0, Math.ceil(volumen * 7));
+  const arena = Math.round(volumen * 0.5 * 100) / 100;
+  const piedra = Math.round(volumen * 0.5 * 100) / 100;
+  return { area, volumen, cemento, arena, piedra };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Piso cerámico ----------------
+   state = {ancho, largo, m2PorCaja, desperdicio (%), m2PorBolsaPegamento, rendimientoPastina (kg/m²)} */
+function calcularPisoCeramico(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const m2PorCaja = state.m2PorCaja || 1.44;
+  const cajas = Math.ceil(area / m2PorCaja * (1 + (state.desperdicio||0)/100));
+  const m2PorBolsaPegamento = state.m2PorBolsaPegamento || 4;
+  const bolsasPegamento = Math.ceil(area / m2PorBolsaPegamento);
+  const rendimientoPastina = state.rendimientoPastina || 0.4;
+  const pastinaKg = Math.round(area * rendimientoPastina * 100) / 100;
+  return { area, cajas, bolsasPegamento, pastinaKg };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Revoque ----------------
+   state = {ancho, alto, tipo: "grueso"|"fino", espesor (m, opcional -- si no, usa el típico del tipo)} */
+function calcularRevoque(state){
+  const area = Math.max(0, (state.ancho||0) * (state.alto||0));
+  const esFino = state.tipo === "fino";
+  const espesor = state.espesor || (esFino ? 0.003 : 0.015);
+  const volumen = Math.round(area * espesor * 100) / 100;
+  const cemento = Math.max(0, Math.ceil(volumen * (esFino ? 2 : 4)));
+  const cal = Math.max(0, Math.ceil(volumen * (esFino ? 6 : 4)));
+  const arena = Math.round(volumen * (esFino ? 0.6 : 0.8) * 100) / 100;
+  return { area, volumen, cemento, cal, arena };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Aislación térmica ----------------
+   state = {ancho, largo, solape (%), m2PorRollo} */
+function calcularAislacionTermica(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const m2Necesarios = Math.round(area * (1 + (state.solape||0)/100) * 100) / 100;
+  const m2PorRollo = state.m2PorRollo || 12;
+  const rollos = Math.ceil(m2Necesarios / m2PorRollo);
+  return { area, m2Necesarios, rollos };
+}
+
 async function onCambioDia(){
   const val = document.getElementById("sel-dia").value;
   if(!val) return;
@@ -15664,10 +15713,10 @@ const RUBROS_CALC = [
   { id:"pintura", icono:"🎨", titulo:"Pintura", desc:"Litros según rendimiento y manos", disponible:true, abrir:"abrirCalcPintura" },
   { id:"membranaliquida", icono:"💧", titulo:"Membrana líquida", desc:"Kg según espesor y manos", disponible:true, abrir:"abrirCalcMembranaLiquida" },
   { id:"membranarollos", icono:"🧻", titulo:"Membrana en rollos", desc:"Según ancho útil y largo", disponible:true, abrir:"abrirCalcMembranaRollos" },
-  { id:"contrapiso", icono:"🧮", titulo:"Contrapiso / Hormigón", desc:"Dosificación de referencia por m³", disponible:false },
-  { id:"piso", icono:"🀄", titulo:"Piso cerámico", desc:"Cajas, pegamento y pastina", disponible:false },
-  { id:"revoque", icono:"🏗️", titulo:"Revoque", desc:"Grueso y fino, cemento, cal y arena", disponible:false },
-  { id:"aislacion", icono:"❄️", titulo:"Aislación térmica", desc:"Lana de vidrio o poliestireno", disponible:false },
+  { id:"contrapiso", icono:"🧮", titulo:"Contrapiso / Hormigón", desc:"Dosificación de referencia por m³", disponible:true, abrir:"abrirCalcContrapiso" },
+  { id:"piso", icono:"🀄", titulo:"Piso cerámico", desc:"Cajas, pegamento y pastina", disponible:true, abrir:"abrirCalcPiso" },
+  { id:"revoque", icono:"🏗️", titulo:"Revoque", desc:"Grueso y fino, cemento, cal y arena", disponible:true, abrir:"abrirCalcRevoque" },
+  { id:"aislacion", icono:"❄️", titulo:"Aislación térmica", desc:"Lana de vidrio o poliestireno", disponible:true, abrir:"abrirCalcAislacion" },
   { id:"losa", icono:"🧊", titulo:"Losa de viguetas y ladrillos", desc:"Cerámico o telgopor — viguetas, ladrillos y malla", disponible:true, abrir:"abrirCalcLosa" },
 ];
 function renderGridCalcMateriales(){
@@ -16416,6 +16465,259 @@ async function calcMembRollosAgregarAComputo(){
     obra: calcMembRollosState.obra,
     parametros: { ancho:calcMembRollosState.ancho, largo:calcMembRollosState.largo },
     resultado,
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Contrapiso / Hormigón ---------------- */
+let calcContrapisoState = null;
+function abrirCalcContrapiso(){
+  calcContrapisoState = {
+    ancho:null, largo:null, espesor:0.08,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcContrapiso());
+  const sel = document.getElementById("calc-contrapiso-obra");
+  if(sel) poblarSelectObras(sel, calcContrapisoState.obra);
+}
+function htmlResultadoCalcContrapiso(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.volumen} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">m³</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>🧰 Cemento</span><strong>${r.cemento} bolsas</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🏖️ Arena</span><strong>${r.arena} m³</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🪨 Piedra</span><strong>${r.piedra} m³</strong></div>
+  `;
+}
+function htmlFormCalcContrapiso(){
+  const s = calcContrapisoState;
+  const r = calcularContrapiso(s);
+  return `
+    <h2 style="margin-top:0;">🧮 Contrapiso / Hormigón</h2>
+    <div class="field"><label>Obra</label><select id="calc-contrapiso-obra" onchange="calcContrapisoState.obra=this.value"></select></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho (m)</label><input type="number" id="calc-contrapiso-ancho" value="${s.ancho??""}" oninput="calcContrapisoCampo('ancho',this.value)"></div>
+      <div class="field"><label>Largo (m)</label><input type="number" id="calc-contrapiso-largo" value="${s.largo??""}" oninput="calcContrapisoCampo('largo',this.value)"></div>
+    </div>
+    <div class="field"><label>Espesor (m)</label><input type="number" step="0.01" id="calc-contrapiso-espesor" value="${s.espesor}" oninput="calcContrapisoCampo('espesor',this.value)"></div>
+    <p class="helper">💡 Dosificación de referencia ~1:3:3 — ajustala según el hormigón que uses.</p>
+    <div class="card" id="calc-contrapiso-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcContrapiso(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcContrapisoAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcContrapisoCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcContrapisoState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-contrapiso-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcContrapiso(calcularContrapiso(calcContrapisoState));
+}
+async function calcContrapisoAgregarAComputo(){
+  if(!calcContrapisoState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcContrapisoState.ancho || !calcContrapisoState.largo){ showToast("Cargá el ancho y el largo"); return; }
+  const r = calcularContrapiso(calcContrapisoState);
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Contrapiso / Hormigón",
+    modo: `Espesor ${calcContrapisoState.espesor}m`,
+    obra: calcContrapisoState.obra,
+    parametros: { ancho:calcContrapisoState.ancho, largo:calcContrapisoState.largo, espesor:calcContrapisoState.espesor },
+    resultado: { "Volumen": `${r.volumen} m³`, "Cemento": `${r.cemento} bolsas`, "Arena": `${r.arena} m³`, "Piedra": `${r.piedra} m³` },
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Piso cerámico ---------------- */
+let calcPisoState = null;
+function abrirCalcPiso(){
+  calcPisoState = {
+    ancho:null, largo:null, m2PorCaja:1.44, desperdicio:10, m2PorBolsaPegamento:4, rendimientoPastina:0.4,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcPiso());
+  const sel = document.getElementById("calc-piso-obra");
+  if(sel) poblarSelectObras(sel, calcPisoState.obra);
+}
+function htmlResultadoCalcPiso(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.cajas} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">cajas</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>🧰 Pegamento</span><strong>${r.bolsasPegamento} bolsas</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🧴 Pastina</span><strong>${r.pastinaKg} kg</strong></div>
+  `;
+}
+function htmlFormCalcPiso(){
+  const s = calcPisoState;
+  const r = calcularPisoCeramico(s);
+  return `
+    <h2 style="margin-top:0;">🀄 Piso cerámico</h2>
+    <div class="field"><label>Obra</label><select id="calc-piso-obra" onchange="calcPisoState.obra=this.value"></select></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho (m)</label><input type="number" id="calc-piso-ancho" value="${s.ancho??""}" oninput="calcPisoCampo('ancho',this.value)"></div>
+      <div class="field"><label>Largo (m)</label><input type="number" id="calc-piso-largo" value="${s.largo??""}" oninput="calcPisoCampo('largo',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>m² por caja</label><input type="number" step="0.01" id="calc-piso-m2caja" value="${s.m2PorCaja}" oninput="calcPisoCampo('m2PorCaja',this.value)"></div>
+      <div class="field"><label>Desperdicio (%)</label><input type="number" id="calc-piso-desp" value="${s.desperdicio}" oninput="calcPisoCampo('desperdicio',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>m² por bolsa de pegamento</label><input type="number" id="calc-piso-m2pegamento" value="${s.m2PorBolsaPegamento}" oninput="calcPisoCampo('m2PorBolsaPegamento',this.value)"></div>
+      <div class="field"><label>Pastina (kg/m²)</label><input type="number" step="0.01" id="calc-piso-pastina" value="${s.rendimientoPastina}" oninput="calcPisoCampo('rendimientoPastina',this.value)"></div>
+    </div>
+    <div class="card" id="calc-piso-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcPiso(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcPisoAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcPisoCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcPisoState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-piso-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcPiso(calcularPisoCeramico(calcPisoState));
+}
+async function calcPisoAgregarAComputo(){
+  if(!calcPisoState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcPisoState.ancho || !calcPisoState.largo){ showToast("Cargá el ancho y el largo"); return; }
+  const r = calcularPisoCeramico(calcPisoState);
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Piso cerámico",
+    modo: `${r.area.toFixed(1)} m²`,
+    obra: calcPisoState.obra,
+    parametros: { ancho:calcPisoState.ancho, largo:calcPisoState.largo },
+    resultado: { "Cajas": `${r.cajas} u`, "Pegamento": `${r.bolsasPegamento} bolsas`, "Pastina": `${r.pastinaKg} kg` },
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Revoque ---------------- */
+const CALC_REVOQUE_TIPOS = [
+  { id:"grueso", nombre:"Grueso" },
+  { id:"fino", nombre:"Fino" },
+];
+let calcRevoqueState = null;
+function abrirCalcRevoque(){
+  calcRevoqueState = {
+    tipo:"grueso", ancho:null, alto:null,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcRevoque());
+  const sel = document.getElementById("calc-revoque-obra");
+  if(sel) poblarSelectObras(sel, calcRevoqueState.obra);
+}
+function htmlResultadoCalcRevoque(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.volumen} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">m³</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>🧰 Cemento</span><strong>${r.cemento} bolsas</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🪣 Cal</span><strong>${r.cal} bolsas</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🏖️ Arena</span><strong>${r.arena} m³</strong></div>
+  `;
+}
+function htmlFormCalcRevoque(){
+  const s = calcRevoqueState;
+  const r = calcularRevoque(s);
+  const tiposHtml = CALC_REVOQUE_TIPOS.map(t=>`<div class="chip-opt${s.tipo===t.id?" sel":""}" onclick="calcRevoqueElegirTipo('${t.id}')">${esc(t.nombre)}</div>`).join("");
+  return `
+    <h2 style="margin-top:0;">🏗️ Revoque</h2>
+    <div class="field"><label>Obra</label><select id="calc-revoque-obra" onchange="calcRevoqueState.obra=this.value"></select></div>
+    <div class="field"><label>Tipo</label><div class="chip-row">${tiposHtml}</div></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho (m)</label><input type="number" id="calc-revoque-ancho" value="${s.ancho??""}" oninput="calcRevoqueCampo('ancho',this.value)"></div>
+      <div class="field"><label>Alto (m)</label><input type="number" id="calc-revoque-alto" value="${s.alto??""}" oninput="calcRevoqueCampo('alto',this.value)"></div>
+    </div>
+    <p class="helper">💡 Espesor de referencia: grueso ~1.5cm, fino ~0.3cm — dosificación ~1:1:6, con más cal en el fino.</p>
+    <div class="card" id="calc-revoque-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcRevoque(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcRevoqueAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcRevoqueElegirTipo(tipo){
+  calcRevoqueState.tipo = tipo;
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcRevoque();
+  const sel = document.getElementById("calc-revoque-obra");
+  if(sel) poblarSelectObras(sel, calcRevoqueState.obra);
+}
+function calcRevoqueCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcRevoqueState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-revoque-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcRevoque(calcularRevoque(calcRevoqueState));
+}
+async function calcRevoqueAgregarAComputo(){
+  if(!calcRevoqueState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcRevoqueState.ancho || !calcRevoqueState.alto){ showToast("Cargá el ancho y el alto"); return; }
+  const r = calcularRevoque(calcRevoqueState);
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Revoque",
+    modo: CALC_REVOQUE_TIPOS.find(t=>t.id===calcRevoqueState.tipo).nombre,
+    obra: calcRevoqueState.obra,
+    parametros: { ancho:calcRevoqueState.ancho, alto:calcRevoqueState.alto },
+    resultado: { "Volumen": `${r.volumen} m³`, "Cemento": `${r.cemento} bolsas`, "Cal": `${r.cal} bolsas`, "Arena": `${r.arena} m³` },
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Aislación térmica ---------------- */
+let calcAislacionState = null;
+function abrirCalcAislacion(){
+  calcAislacionState = {
+    ancho:null, largo:null, solape:10, m2PorRollo:12,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcAislacion());
+  const sel = document.getElementById("calc-aislacion-obra");
+  if(sel) poblarSelectObras(sel, calcAislacionState.obra);
+}
+function htmlResultadoCalcAislacion(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.rollos} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">rollos / placas</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>📐 m² necesarios</span><strong>${r.m2Necesarios} m²</strong></div>
+  `;
+}
+function htmlFormCalcAislacion(){
+  const s = calcAislacionState;
+  const r = calcularAislacionTermica(s);
+  return `
+    <h2 style="margin-top:0;">❄️ Aislación térmica</h2>
+    <div class="field"><label>Obra</label><select id="calc-aislacion-obra" onchange="calcAislacionState.obra=this.value"></select></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho (m)</label><input type="number" id="calc-aislacion-ancho" value="${s.ancho??""}" oninput="calcAislacionCampo('ancho',this.value)"></div>
+      <div class="field"><label>Largo (m)</label><input type="number" id="calc-aislacion-largo" value="${s.largo??""}" oninput="calcAislacionCampo('largo',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Solape (%)</label><input type="number" id="calc-aislacion-solape" value="${s.solape}" oninput="calcAislacionCampo('solape',this.value)"></div>
+      <div class="field"><label>m² por rollo/placa</label><input type="number" id="calc-aislacion-m2rollo" value="${s.m2PorRollo}" oninput="calcAislacionCampo('m2PorRollo',this.value)"></div>
+    </div>
+    <p class="helper">💡 Sirve tanto para lana de vidrio en rollos como para placas de poliestireno — ajustá el m² por unidad según el formato.</p>
+    <div class="card" id="calc-aislacion-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcAislacion(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcAislacionAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcAislacionCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcAislacionState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-aislacion-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcAislacion(calcularAislacionTermica(calcAislacionState));
+}
+async function calcAislacionAgregarAComputo(){
+  if(!calcAislacionState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcAislacionState.ancho || !calcAislacionState.largo){ showToast("Cargá el ancho y el largo"); return; }
+  const r = calcularAislacionTermica(calcAislacionState);
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Aislación térmica",
+    modo: `${r.m2Necesarios} m²`,
+    obra: calcAislacionState.obra,
+    parametros: { ancho:calcAislacionState.ancho, largo:calcAislacionState.largo },
+    resultado: { "Rollos / placas": `${r.rollos} u` },
     fecha: hoyISO(),
   };
   const ok = await agregarItemComputoCalc(item);

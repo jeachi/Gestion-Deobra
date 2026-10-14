@@ -32,6 +32,10 @@ const { calcularLosaViguetas } = cargarDesdeApp([{ nombre: "calcularLosaViguetas
 const { convertirAEnvases, calcularPintura } = cargarDesdeApp([{ nombre: "convertirAEnvases" }, { nombre: "calcularPintura" }]);
 const { calcularMembranaLiquida } = cargarDesdeApp([{ nombre: "convertirAEnvases" }, { nombre: "calcularMembranaLiquida" }]);
 const { calcularMembranaRollos } = cargarDesdeApp([{ nombre: "calcularMembranaRollos" }]);
+const { calcularContrapiso } = cargarDesdeApp([{ nombre: "calcularContrapiso" }]);
+const { calcularPisoCeramico } = cargarDesdeApp([{ nombre: "calcularPisoCeramico" }]);
+const { calcularRevoque } = cargarDesdeApp([{ nombre: "calcularRevoque" }]);
+const { calcularAislacionTermica } = cargarDesdeApp([{ nombre: "calcularAislacionTermica" }]);
 
 test("pad2 rellena con cero a la izquierda", () => {
   assert.equal(pad2(1), "01");
@@ -269,4 +273,38 @@ test("calcularMembranaRollos: 5x12m, rollo 1m util x 10m, 10% de solape, con imp
   assert.equal(r.rollosLargo, 2); // ceil(12/10)
   assert.equal(r.totalRollos, 12);
   assert.equal(r.imprimacionLitros, 13.33); // (5*12)/4.5
+});
+
+test("calcularContrapiso: 5x4m, espesor 8cm", () => {
+  const r = calcularContrapiso({ ancho:5, largo:4, espesor:0.08 });
+  assert.equal(r.area, 20);
+  assert.equal(r.volumen, 1.6);
+  assert.equal(r.cemento, 12); // ceil(1.6*7)
+  assert.equal(r.arena, 0.8);
+  assert.equal(r.piedra, 0.8);
+});
+
+test("calcularPisoCeramico: 5x4m, caja 1.44m2, 10% desperdicio", () => {
+  const r = calcularPisoCeramico({ ancho:5, largo:4, m2PorCaja:1.44, desperdicio:10, m2PorBolsaPegamento:4, rendimientoPastina:0.4 });
+  assert.equal(r.area, 20);
+  assert.equal(r.cajas, 16); // ceil(20/1.44*1.1)
+  assert.equal(r.bolsasPegamento, 5); // ceil(20/4)
+  assert.equal(r.pastinaKg, 8); // 20*0.4
+});
+
+test("calcularRevoque: grueso 5x2.5m usa mas cemento, fino usa mas cal", () => {
+  const grueso = calcularRevoque({ ancho:5, alto:2.5, tipo:"grueso" });
+  assert.equal(grueso.volumen, 0.19); // round(12.5*0.015, 2)
+  assert.equal(grueso.cemento, 1);
+  assert.equal(grueso.cal, 1);
+  const fino = calcularRevoque({ ancho:5, alto:2.5, tipo:"fino" });
+  assert.ok(fino.volumen < grueso.volumen); // espesor mucho menor
+  assert.ok(fino.cal >= fino.cemento); // el fino lleva relativamente mas cal
+});
+
+test("calcularAislacionTermica: 5x4m, 10% de solape, rollo de 12m2", () => {
+  const r = calcularAislacionTermica({ ancho:5, largo:4, solape:10, m2PorRollo:12 });
+  assert.equal(r.area, 20);
+  assert.equal(r.m2Necesarios, 22); // 20*1.1
+  assert.equal(r.rollos, 2); // ceil(22/12)
 });
