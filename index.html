@@ -15518,6 +15518,130 @@ function prepararVistaCalcMateriales(){
   actualizarBadgeComputoCalc();
 }
 
+/* ---------------- Calculadora de Materiales — formulario de Mampostería ----------------
+   Vive dentro del modal genérico (abrirPromptGenerico/cerrarPromptGenerico), el mismo que usan
+   decenas de pantallas de la app -- ya viene con el gesto de deslizar para cerrar y con el
+   botón "atrás" del celular enganchado (ver el listener de popstate). */
+const CALC_MAMP_TIPOS = [
+  { id:"hormigon", nombre:"Bloque de hormigón", formatos:[
+    { id:"20x20x40", nombre:"20x20x40", rendimiento:12.5 },
+    { id:"20x20x20", nombre:"20x20x20", rendimiento:25 },
+    { id:"12x20x40", nombre:"12x20x40", rendimiento:12.5 },
+  ]},
+  { id:"ladrillo", nombre:"Ladrillo común", formatos:[
+    { id:"6x12x24", nombre:"6x12x24 (de canto)", rendimiento:72 },
+    { id:"6x12x24-plano", nombre:"6x12x24 (de plano)", rendimiento:144 },
+  ]},
+  { id:"hueco", nombre:"Ladrillo hueco", formatos:[
+    { id:"hueco8", nombre:"Hueco 8 (8x18x33)", rendimiento:16 },
+    { id:"hueco12", nombre:"Hueco 12 (12x18x33)", rendimiento:16 },
+    { id:"hueco18", nombre:"Hueco 18 (18x18x33)", rendimiento:16 },
+    { id:"hueco20", nombre:"Hueco 20 / D.M. 20", rendimiento:16 },
+  ]},
+  { id:"portante", nombre:"Ladrillo portante", formatos:[
+    { id:"portante12", nombre:"Portante 12 (12x19x33)", rendimiento:16 },
+    { id:"portante18", nombre:"Portante 18 (18x19x33)", rendimiento:16 },
+    { id:"portante20", nombre:"Portante 20 (20x19x33)", rendimiento:16 },
+  ]},
+];
+let calcMampState = null;
+function abrirCalcMamposteria(){
+  calcMampState = {
+    tipo:"hormigon", formato:"20x20x40", rendimiento:12.5,
+    largo:null, alto:null, desperdicio:5,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcMamposteria());
+  const sel = document.getElementById("calc-mamp-obra");
+  if(sel) poblarSelectObras(sel, calcMampState.obra);
+}
+function htmlResultadoCalcMamposteria(r, formatoNombre){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.piezas} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">piezas de ${esc(formatoNombre)}</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>🧰 Cemento</span><strong>${r.bolsasCemento} bolsas</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🏖️ Arena</span><strong>${r.m3Arena} m³</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🪣 Cal</span><strong>${r.bolsasCal} bolsas</strong></div>
+  `;
+}
+function htmlFormCalcMamposteria(){
+  const s = calcMampState;
+  const tiposHtml = CALC_MAMP_TIPOS.map(t=>{
+    const activo = t.id===s.tipo;
+    return `<div class="chip-opt${activo?" sel":""}" onclick="calcMampElegirTipo('${t.id}')">${esc(t.nombre)}</div>`;
+  }).join("");
+  const tipoActual = CALC_MAMP_TIPOS.find(t=>t.id===s.tipo);
+  const formatosHtml = tipoActual.formatos.map(f=>{
+    const activo = f.id===s.formato;
+    return `<div class="chip-opt${activo?" sel":""}" onclick="calcMampElegirFormato('${f.id}')">${esc(f.nombre)}</div>`;
+  }).join("");
+  const formatoActual = tipoActual.formatos.find(f=>f.id===s.formato) || tipoActual.formatos[0];
+  const r = calcularMamposteria(s);
+  return `
+    <h2 style="margin-top:0;">🧱 Mampostería</h2>
+    <div class="field"><label>Obra</label><select id="calc-mamp-obra" onchange="calcMampState.obra=this.value"></select></div>
+    <div class="field"><label>Tipo de mampuesto</label><div class="chip-row">${tiposHtml}</div></div>
+    <p class="helper" style="margin:-4px 0 10px;">🏗️ Uso típico: ${esc(r.usoTipico)}</p>
+    <div class="field"><label>Formato</label><div class="chip-row">${formatosHtml}</div></div>
+    <div class="row-flex">
+      <div class="field"><label>Largo del muro (m)</label><input type="number" id="calc-mamp-largo" value="${s.largo??""}" oninput="calcMampCampo('largo',this.value)"></div>
+      <div class="field"><label>Alto del muro (m)</label><input type="number" id="calc-mamp-alto" value="${s.alto??""}" oninput="calcMampCampo('alto',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Rendimiento (piezas/m²)</label><input type="number" id="calc-mamp-rend" value="${s.rendimiento}" oninput="calcMampCampo('rendimiento',this.value)"></div>
+      <div class="field"><label>Desperdicio (%)</label><input type="number" id="calc-mamp-desp" value="${s.desperdicio}" oninput="calcMampCampo('desperdicio',this.value)"></div>
+    </div>
+    <p class="helper">💡 El rendimiento es un valor de referencia — ajustalo si tu proveedor rinde distinto.</p>
+    <div class="card" id="calc-mamp-resultado" style="border:1.5px solid var(--verde);">${htmlResultadoCalcMamposteria(r, formatoActual.nombre)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcMampAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcMampElegirTipo(tipoId){
+  const tipo = CALC_MAMP_TIPOS.find(t=>t.id===tipoId);
+  const primerFormato = tipo.formatos[0];
+  calcMampState.tipo = tipoId;
+  calcMampState.formato = primerFormato.id;
+  calcMampState.rendimiento = primerFormato.rendimiento;
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcMamposteria();
+  const sel = document.getElementById("calc-mamp-obra");
+  if(sel) poblarSelectObras(sel, calcMampState.obra);
+}
+function calcMampElegirFormato(formatoId){
+  const tipo = CALC_MAMP_TIPOS.find(t=>t.id===calcMampState.tipo);
+  const formato = tipo.formatos.find(f=>f.id===formatoId);
+  calcMampState.formato = formatoId;
+  calcMampState.rendimiento = formato.rendimiento;
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcMamposteria();
+  const sel = document.getElementById("calc-mamp-obra");
+  if(sel) poblarSelectObras(sel, calcMampState.obra);
+}
+function calcMampCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcMampState[nombre] = isNaN(n) ? 0 : n;
+  const tipo = CALC_MAMP_TIPOS.find(t=>t.id===calcMampState.tipo);
+  const formato = tipo.formatos.find(f=>f.id===calcMampState.formato);
+  const resultado = document.getElementById("calc-mamp-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcMamposteria(calcularMamposteria(calcMampState), formato.nombre);
+}
+async function calcMampAgregarAComputo(){
+  if(!calcMampState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcMampState.largo || !calcMampState.alto){ showToast("Cargá largo y alto del muro"); return; }
+  const tipo = CALC_MAMP_TIPOS.find(t=>t.id===calcMampState.tipo);
+  const formato = tipo.formatos.find(f=>f.id===calcMampState.formato);
+  const r = calcularMamposteria(calcMampState);
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Mampostería",
+    modo: `${tipo.nombre} — ${formato.nombre}`,
+    obra: calcMampState.obra,
+    parametros: { largo:calcMampState.largo, alto:calcMampState.alto, rendimiento:calcMampState.rendimiento, desperdicio:calcMampState.desperdicio },
+    resultado: { "Piezas": `${r.piezas} u`, "Cemento": `${r.bolsasCemento} bolsas`, "Arena": `${r.m3Arena} m³`, "Cal": `${r.bolsasCal} bolsas` },
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
 // Regla de escalado: nunca baja sola, solo sube según cuántos días faltan para la fecha.
 function diasHastaRecordatorio(r){
   if(!r.fecha) return null;
