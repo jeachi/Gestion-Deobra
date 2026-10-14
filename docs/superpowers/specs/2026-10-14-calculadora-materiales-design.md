@@ -24,8 +24,9 @@ Tras dos rondas de ida y vuelta, el usuario aprobó explícitamente:
 Cada rubro es una "tarjeta" en la grilla de inicio del módulo. Algunos
 tienen más de un "modo" (ej. Mampostería elige entre 3 tipos de unidad).
 
-1. **Mampostería** — modos: Bloque de hormigón / Ladrillo común / Bloque
-   hueco o portante cerámico.
+1. **Mampostería** — modos: Bloque de hormigón / Ladrillo común /
+   Ladrillo hueco (8, 12, 18 y 20/D.M.20) / Ladrillo portante (12, 18 y
+   20).
 2. **Pared de Durlock** (tabique de placas de yeso sobre estructura
    metálica vertical).
 3. **Cielorraso** — modos: Junta tomada (placas de yeso suspendidas) /
@@ -84,43 +85,83 @@ Todos los rendimientos son valores de referencia estándar de la industria
 argentina; se muestran como default pero el campo queda editable, porque
 varían según marca/proveedor.
 
-**1. Mampostería**
+**1. Mampostería** — 4 tipos (antes "hueco" y "portante" estaban mezclados
+en uno solo; se separan porque son familias de producto distintas, cada
+una con su propia gama de anchos)
 - Área neta = (largo × alto) − aberturas (opcional).
 - Piezas = ceil(área neta × piezas/m² del formato elegido × (1 + %
-  desperdicio)).
-- Formatos con su rendimiento default (piezas/m²):
-  - Bloque de hormigón 20x20x40 → 12.5 · 20x20x20 → 25 · 12x20x40 → 12.5
-  - Ladrillo común 6x12x24 (de canto, pared 12cm) → ~72
-  - Bloque hueco cerámico 8x18x33 → ~16 · 12x18x33 → ~16 · 18x18x33 → ~16
-  - Bloque portante cerámico 12x18x33 → ~16 · 18x19x33 → ~16
-- Mezcla de asiento: cemento (bolsas) y cal/arena estimados por cada 100
-  piezas (default editable, ej. ~1 bolsa de cemento por cada 150-200
-  piezas de bloque).
+  desperdicio)). El rendimiento piezas/m² depende de la CARA del ladrillo
+  (alto × largo), no de su espesor/ancho -- por eso, dentro de "Ladrillo
+  hueco" y "Ladrillo portante", todos los anchos comparten casi el mismo
+  rendimiento; lo que cambia con el ancho es el volumen de mezcla, no la
+  cantidad de piezas.
+- Tipos y formatos con su rendimiento default (piezas/m²):
+  - **Bloque de hormigón**: 20x20x40 → 12.5 · 20x20x20 → 25 · 12x20x40 →
+    12.5
+  - **Ladrillo común**: 6x12x24 de canto (pared 12cm) → ~72 · 6x12x24 de
+    plano (pared 25cm) → ~144
+  - **Ladrillo hueco** (no portante, cara 18x33cm aprox. en todos los
+    anchos): Hueco 8 (8x18x33) → ~16 · Hueco 12 (12x18x33) → ~16 ·
+    Hueco 18 (18x18x33) → ~16 · Hueco 20 / D.M. 20 (20x18x33) → ~16
+  - **Ladrillo portante** (cerámico armado, cara ~19x33cm): Portante 12
+    (12x19x33) → ~16 · Portante 18 (18x19x33) → ~16 · Portante 20
+    (20x19x33) → ~16
+- Mezcla de asiento: cemento (bolsas) y arena, estimados por cada 100
+  piezas -- default editable, y el volumen escala con el ESPESOR/ancho
+  elegido dentro de "hueco"/"portante" (más ancho = más mezcla, aunque
+  la cantidad de piezas sea la misma).
 - Salida: "N piezas de <formato>" + "N bolsas de cemento" + "N m³/bolsas
   de arena".
 
-**2. Pared de Durlock**
+**2. Pared de Durlock** — perfilería desglosada en sus 2 piezas reales
+(antes "perfiles" era un solo número; se separan porque son dos
+productos distintos que se compran por separado)
 - Área neta = largo × alto − aberturas.
 - Placas = ceil(área neta × caras (1 o 2) / 2.88 m² por placa × (1 + %
   desperdicio)).
-- Perfiles (montante + solera): metros lineales ≈ perímetro + (ancho ×
-  cantidad de montantes según modulación 40 o 60cm).
+- **Solera** (riel horizontal, arriba y abajo del tabique): metros
+  lineales = 2 × largo del tabique.
+- **Montante** (parante vertical, dentro de las soleras): cantidad =
+  ceil(largo / modulación (0.40 o 0.60m, editable)) + 1; cada uno mide
+  "alto" metros → metros lineales totales = cantidad × alto.
 - Tornillos: cantidad por m² (default ~25-30 TN/m² por placa).
 - Lana de vidrio (si "con aislación" = sí): m² = área neta.
-- Salida: "N placas", "N metros de perfil", "N tornillos (caja de
-  250/500)", "N m² de lana" (si aplica).
+- Salida: "N placas" + "N metros de solera" + "N montantes (= N metros)"
+  + "N tornillos (caja de 250/500)" + "N m² de lana" (si aplica).
 
-**3. Cielorraso**
-- *Junta tomada*: igual cálculo de placas que pared de Durlock (área /
-  2.88), + perfiles de suspensión (metros lineales ≈ función del área /
-  espaciamiento típico 1.20m) + tornillos + cinta/masilla (metros de
-  cinta ≈ función del área).
-- *Modular 60x60*: paneles = ceil(área / 0.36 m² × (1 + % desperdicio));
-  perfil T principal y secundario (metros lineales por m² según
-  modulación 60x60, default ~1.67 m/m² cada uno); perfil perimetral
-  (metros = perímetro); varillas de suspensión (cantidad ≈ área / 1.2m²).
-- Salida: según modo, "N placas/paneles" + "N metros de perfilería" +
-  accesorios.
+**3. Cielorraso** — perfilería desglosada por tipo real de perfil
+(distinta de la pared: un cielorraso NO usa solera/montante, que son
+piezas de tabique vertical; usa perfilería de suspensión propia)
+- *Junta tomada* (placas de yeso suspendidas, sistema continuo):
+  - Placas = área / 2.88 (igual que pared).
+  - **Perfil perimetral** (moldura angular fijada a la pared, en todo el
+    borde del cielorraso): metros = perímetro del ambiente.
+  - **Perfil primario / maestra** (corre de pared a pared, es de donde
+    cuelgan las varillas): metros ≈ (ancho del ambiente / 1.20m,
+    redondeado arriba) × largo del ambiente -- espaciamiento editable.
+  - **Perfil secundario / transversal** (perpendicular al primario, es
+    donde se atornillan las placas, cada 0.40-0.60m): metros ≈ (largo
+    del ambiente / espaciamiento, redondeado arriba) × ancho del
+    ambiente -- espaciamiento editable.
+  - **Varillas de suspensión + nonio** (cuelgan el primario de la
+    losa/techo de arriba): cantidad ≈ área / 1.2 m² (un punto de
+    suspensión cada ~1.2 m², editable).
+  - Tornillos TN (~25-30/m²) + cinta de juntas (metros ≈ área × 0.35
+    m/m², editable) + masilla (kg ≈ área × 0.3 kg/m², editable).
+- *Modular 60x60* (paneles de fibra mineral sobre perfilería T vista):
+  - Paneles = ceil(área / 0.36 m² × (1 + % desperdicio)).
+  - **Perfil T principal** (corre cada 1.20m, sostiene los T
+    secundarios): metros ≈ área / 1.20 m², editable.
+  - **Perfil T secundario / transversal** (cruza al principal cada
+    0.60m, cierra la grilla de 60x60): metros ≈ área / 0.60 m²,
+    editable.
+  - **Perfil perimetral** (moldura en L en todo el borde, apoya el
+    panel contra la pared): metros = perímetro.
+  - **Varillas de suspensión**: cantidad ≈ área / 1.2 m², editable.
+- Salida: según modo, "N placas/paneles" + una línea POR CADA tipo de
+  perfil (perimetral, primario/maestra, secundario/transversal) en
+  metros + "N varillas de suspensión" + accesorios (tornillos/cinta/
+  masilla, solo en junta tomada).
 
 **4. Techo**
 - Ancho útil por formato de chapa (ej. acanalada ~0.91m, trapezoidal
