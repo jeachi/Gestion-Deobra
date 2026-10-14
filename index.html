@@ -6754,6 +6754,58 @@ function calcularLosaViguetas(state){
   return { area, separacion: info.separacion, viguetasCant, viguetasMetros, ladrillos, malla, volumenCompresion, cemento, arena, piedra };
 }
 
+/* ---------------- Calculadora de Materiales — conversión genérica a envases comerciales ----------------
+   Reparte una cantidad (litros, kg, lo que sea) en envases de tamaños fijos, de mayor a menor,
+   redondeando siempre hacia arriba en el envase más chico que falte (nunca compra de menos).
+   tamanos: array de tamaños DESCENDENTE, ej [20,10,4,1]. */
+function convertirAEnvases(cantidad, tamanos){
+  let restante = Math.max(0, cantidad);
+  const envases = {};
+  tamanos.forEach((t, i)=>{
+    const esUltimo = i===tamanos.length-1;
+    const cant = esUltimo ? Math.ceil(restante/t) : Math.floor(restante/t);
+    envases[t] = cant;
+    restante = Math.round((restante - cant*t)*100)/100;
+  });
+  return envases;
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Pintura ----------------
+   state = {ancho, largo, manos, rendimiento (m²/L por mano), conFijador} */
+function calcularPintura(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const rendimiento = state.rendimiento || 10;
+  const litros = Math.round((area * (state.manos||1) / rendimiento) * 100) / 100;
+  const latas = convertirAEnvases(litros, [20,10,4,1]);
+  const fijadorLitros = state.conFijador ? Math.round((area/7)*100)/100 : 0;
+  return { area, litros, latas, fijadorLitros };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Membrana líquida ----------------
+   state = {ancho, largo, manos, kgPorM2PorMano, conImprimacion} */
+function calcularMembranaLiquida(state){
+  const area = Math.max(0, (state.ancho||0) * (state.largo||0));
+  const kgPorM2 = state.kgPorM2PorMano || 1.35;
+  const kg = Math.round(area * kgPorM2 * (state.manos||1) * 100) / 100;
+  const baldes = convertirAEnvases(kg, [25,20,10,5]);
+  const imprimacionLitros = state.conImprimacion ? Math.round((area/4.5)*100)/100 : 0;
+  return { area, kg, baldes, imprimacionLitros };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Membrana en rollos ----------------
+   state = {ancho, largo, anchoUtilRollo, largoRollo, solape (%), conImprimacion} */
+function calcularMembranaRollos(state){
+  const ancho = state.ancho||0, largo = state.largo||0;
+  const area = Math.max(0, ancho*largo);
+  const anchoUtilRollo = state.anchoUtilRollo || 1;
+  const largoRollo = state.largoRollo || 10;
+  const rollosAncho = anchoUtilRollo>0 ? Math.ceil(ancho/anchoUtilRollo * (1 + (state.solape||0)/100)) : 0;
+  const rollosLargo = largoRollo>0 ? Math.ceil(largo/largoRollo) : 0;
+  const totalRollos = rollosAncho * rollosLargo;
+  const imprimacionLitros = state.conImprimacion ? Math.round((area/4.5)*100)/100 : 0;
+  return { area, rollosAncho, rollosLargo, totalRollos, imprimacionLitros };
+}
+
 async function onCambioDia(){
   const val = document.getElementById("sel-dia").value;
   if(!val) return;
@@ -15609,9 +15661,9 @@ const RUBROS_CALC = [
   { id:"cielorraso", icono:"🏠", titulo:"Cielorraso", desc:"Junta tomada, modular 60x60 o suspendido 60x120", disponible:true, abrir:"abrirCalcCielorraso" },
   { id:"techo", icono:"🌧️", titulo:"Techo", desc:"Chapas y tornillos autoperforantes", disponible:true, abrir:"abrirCalcTecho" },
   { id:"malla", icono:"🕸️", titulo:"Malla electrosoldada", desc:"Por formato y tamaño de panel", disponible:true, abrir:"abrirCalcMalla" },
-  { id:"pintura", icono:"🎨", titulo:"Pintura", desc:"Litros según rendimiento y manos", disponible:false },
-  { id:"membranaliquida", icono:"💧", titulo:"Membrana líquida", desc:"Kg según espesor y manos", disponible:false },
-  { id:"membranarollos", icono:"🧻", titulo:"Membrana en rollos", desc:"Según ancho útil y largo", disponible:false },
+  { id:"pintura", icono:"🎨", titulo:"Pintura", desc:"Litros según rendimiento y manos", disponible:true, abrir:"abrirCalcPintura" },
+  { id:"membranaliquida", icono:"💧", titulo:"Membrana líquida", desc:"Kg según espesor y manos", disponible:true, abrir:"abrirCalcMembranaLiquida" },
+  { id:"membranarollos", icono:"🧻", titulo:"Membrana en rollos", desc:"Según ancho útil y largo", disponible:true, abrir:"abrirCalcMembranaRollos" },
   { id:"contrapiso", icono:"🧮", titulo:"Contrapiso / Hormigón", desc:"Dosificación de referencia por m³", disponible:false },
   { id:"piso", icono:"🀄", titulo:"Piso cerámico", desc:"Cajas, pegamento y pastina", disponible:false },
   { id:"revoque", icono:"🏗️", titulo:"Revoque", desc:"Grueso y fino, cemento, cal y arena", disponible:false },
@@ -16148,6 +16200,222 @@ async function calcLosaAgregarAComputo(){
     obra: calcLosaState.obra,
     parametros: { ancho:calcLosaState.ancho, largo:calcLosaState.largo, altura:calcLosaState.altura },
     resultado: { "Viguetas": `${r.viguetasCant} u (${r.viguetasMetros} m)`, "Ladrillos": `${r.ladrillos} u`, "Malla": `${r.malla} paneles`, "Cemento": `${r.cemento} bolsas`, "Arena": `${r.arena} m³`, "Piedra": `${r.piedra} m³` },
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+// Convierte un objeto de envases {tamaño: cantidad} en un texto legible, omitiendo los tamaños
+// en 0 -- ej: {25:3,20:0,10:0,5:2} -> "3 de 25kg + 2 de 5kg".
+function textoEnvases(envases, unidad){
+  return Object.entries(envases).filter(([,n])=>n>0).map(([tam,n])=>`${n} de ${tam}${unidad}`).join(" + ") || "0";
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Pintura ---------------- */
+let calcPinturaState = null;
+function abrirCalcPintura(){
+  calcPinturaState = {
+    ancho:null, largo:null, manos:2, rendimiento:10, conFijador:false,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcPintura());
+  const sel = document.getElementById("calc-pintura-obra");
+  if(sel) poblarSelectObras(sel, calcPinturaState.obra);
+}
+function htmlResultadoCalcPintura(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.litros} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">litros</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>🪣 En latas</span><strong>${textoEnvases(r.latas,"L")}</strong></div>
+    ${r.fijadorLitros>0?`<div class="row-flex" style="justify-content:space-between;"><span>🧪 Fijador / sellador</span><strong>${r.fijadorLitros} L</strong></div>`:""}
+  `;
+}
+function htmlFormCalcPintura(){
+  const s = calcPinturaState;
+  const r = calcularPintura(s);
+  return `
+    <h2 style="margin-top:0;">🎨 Pintura</h2>
+    <div class="field"><label>Obra</label><select id="calc-pintura-obra" onchange="calcPinturaState.obra=this.value"></select></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho (m)</label><input type="number" id="calc-pintura-ancho" value="${s.ancho??""}" oninput="calcPinturaCampo('ancho',this.value)"></div>
+      <div class="field"><label>Largo / alto (m)</label><input type="number" id="calc-pintura-largo" value="${s.largo??""}" oninput="calcPinturaCampo('largo',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Manos</label><input type="number" id="calc-pintura-manos" value="${s.manos}" oninput="calcPinturaCampo('manos',this.value)"></div>
+      <div class="field"><label>Rendimiento (m²/L por mano)</label><input type="number" id="calc-pintura-rend" value="${s.rendimiento}" oninput="calcPinturaCampo('rendimiento',this.value)"></div>
+    </div>
+    <div class="chip-row"><div class="chip-opt${s.conFijador?" sel":""}" onclick="calcPinturaToggleFijador()">🧪 Con fijador/sellador previo</div></div>
+    <p class="helper">💡 El rendimiento varía según superficie (interior ~10-12, exterior ~8-10, esmalte ~8-10 m²/L) — ajustalo según tu pintura.</p>
+    <div class="card" id="calc-pintura-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcPintura(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcPinturaAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcPinturaToggleFijador(){ calcPinturaState.conFijador = !calcPinturaState.conFijador; calcPinturaRender(); }
+function calcPinturaRender(){
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcPintura();
+  const sel = document.getElementById("calc-pintura-obra");
+  if(sel) poblarSelectObras(sel, calcPinturaState.obra);
+}
+function calcPinturaCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcPinturaState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-pintura-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcPintura(calcularPintura(calcPinturaState));
+}
+async function calcPinturaAgregarAComputo(){
+  if(!calcPinturaState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcPinturaState.ancho || !calcPinturaState.largo){ showToast("Cargá el ancho y el largo/alto"); return; }
+  const r = calcularPintura(calcPinturaState);
+  const resultado = { "Litros": `${r.litros} L`, "Latas": textoEnvases(r.latas,"L") };
+  if(r.fijadorLitros>0) resultado["Fijador"] = `${r.fijadorLitros} L`;
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Pintura",
+    modo: `${calcPinturaState.manos} manos`,
+    obra: calcPinturaState.obra,
+    parametros: { ancho:calcPinturaState.ancho, largo:calcPinturaState.largo, manos:calcPinturaState.manos, rendimiento:calcPinturaState.rendimiento },
+    resultado,
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Membrana líquida ---------------- */
+let calcMembLiqState = null;
+function abrirCalcMembranaLiquida(){
+  calcMembLiqState = {
+    ancho:null, largo:null, manos:2, kgPorM2PorMano:1.35, conImprimacion:true,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcMembranaLiquida());
+  const sel = document.getElementById("calc-membliq-obra");
+  if(sel) poblarSelectObras(sel, calcMembLiqState.obra);
+}
+function htmlResultadoCalcMembranaLiquida(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.kg} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">kg</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>🪣 En baldes</span><strong>${textoEnvases(r.baldes,"kg")}</strong></div>
+    ${r.imprimacionLitros>0?`<div class="row-flex" style="justify-content:space-between;"><span>🧪 Imprimación asfáltica</span><strong>${r.imprimacionLitros} L</strong></div>`:""}
+  `;
+}
+function htmlFormCalcMembranaLiquida(){
+  const s = calcMembLiqState;
+  const r = calcularMembranaLiquida(s);
+  return `
+    <h2 style="margin-top:0;">💧 Membrana líquida</h2>
+    <div class="field"><label>Obra</label><select id="calc-membliq-obra" onchange="calcMembLiqState.obra=this.value"></select></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho (m)</label><input type="number" id="calc-membliq-ancho" value="${s.ancho??""}" oninput="calcMembLiqCampo('ancho',this.value)"></div>
+      <div class="field"><label>Largo (m)</label><input type="number" id="calc-membliq-largo" value="${s.largo??""}" oninput="calcMembLiqCampo('largo',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Manos</label><input type="number" id="calc-membliq-manos" value="${s.manos}" oninput="calcMembLiqCampo('manos',this.value)"></div>
+      <div class="field"><label>Kg/m² por mano</label><input type="number" step="0.01" id="calc-membliq-kgm2" value="${s.kgPorM2PorMano}" oninput="calcMembLiqCampo('kgPorM2PorMano',this.value)"></div>
+    </div>
+    <div class="chip-row"><div class="chip-opt${s.conImprimacion?" sel":""}" onclick="calcMembLiqToggleImprimacion()">🧪 Con imprimación asfáltica previa</div></div>
+    <div class="card" id="calc-membliq-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcMembranaLiquida(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcMembLiqAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcMembLiqToggleImprimacion(){ calcMembLiqState.conImprimacion = !calcMembLiqState.conImprimacion; calcMembLiqRender(); }
+function calcMembLiqRender(){
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcMembranaLiquida();
+  const sel = document.getElementById("calc-membliq-obra");
+  if(sel) poblarSelectObras(sel, calcMembLiqState.obra);
+}
+function calcMembLiqCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcMembLiqState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-membliq-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcMembranaLiquida(calcularMembranaLiquida(calcMembLiqState));
+}
+async function calcMembLiqAgregarAComputo(){
+  if(!calcMembLiqState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcMembLiqState.ancho || !calcMembLiqState.largo){ showToast("Cargá el ancho y el largo"); return; }
+  const r = calcularMembranaLiquida(calcMembLiqState);
+  const resultado = { "Kg": `${r.kg} kg`, "Baldes": textoEnvases(r.baldes,"kg") };
+  if(r.imprimacionLitros>0) resultado["Imprimación asfáltica"] = `${r.imprimacionLitros} L`;
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Membrana líquida",
+    modo: `${calcMembLiqState.manos} manos`,
+    obra: calcMembLiqState.obra,
+    parametros: { ancho:calcMembLiqState.ancho, largo:calcMembLiqState.largo, manos:calcMembLiqState.manos },
+    resultado,
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Membrana en rollos ---------------- */
+let calcMembRollosState = null;
+function abrirCalcMembranaRollos(){
+  calcMembRollosState = {
+    ancho:null, largo:null, anchoUtilRollo:1, largoRollo:10, solape:10, conImprimacion:true,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcMembranaRollos());
+  const sel = document.getElementById("calc-membrollos-obra");
+  if(sel) poblarSelectObras(sel, calcMembRollosState.obra);
+}
+function htmlResultadoCalcMembranaRollos(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.totalRollos} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">rollos</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>↔️ Por ancho</span><strong>${r.rollosAncho} u</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>↕️ Por largo</span><strong>${r.rollosLargo} u</strong></div>
+    ${r.imprimacionLitros>0?`<div class="row-flex" style="justify-content:space-between;"><span>🧪 Imprimación asfáltica</span><strong>${r.imprimacionLitros} L</strong></div>`:""}
+  `;
+}
+function htmlFormCalcMembranaRollos(){
+  const s = calcMembRollosState;
+  const r = calcularMembranaRollos(s);
+  return `
+    <h2 style="margin-top:0;">🧻 Membrana en rollos</h2>
+    <div class="field"><label>Obra</label><select id="calc-membrollos-obra" onchange="calcMembRollosState.obra=this.value"></select></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho a cubrir (m)</label><input type="number" id="calc-membrollos-ancho" value="${s.ancho??""}" oninput="calcMembRollosCampo('ancho',this.value)"></div>
+      <div class="field"><label>Largo a cubrir (m)</label><input type="number" id="calc-membrollos-largo" value="${s.largo??""}" oninput="calcMembRollosCampo('largo',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho útil del rollo (m)</label><input type="number" step="0.1" id="calc-membrollos-anchoutil" value="${s.anchoUtilRollo}" oninput="calcMembRollosCampo('anchoUtilRollo',this.value)"></div>
+      <div class="field"><label>Largo del rollo (m)</label><input type="number" id="calc-membrollos-largorollo" value="${s.largoRollo}" oninput="calcMembRollosCampo('largoRollo',this.value)"></div>
+    </div>
+    <div class="field"><label>Solape (%)</label><input type="number" id="calc-membrollos-solape" value="${s.solape}" oninput="calcMembRollosCampo('solape',this.value)"></div>
+    <div class="chip-row"><div class="chip-opt${s.conImprimacion?" sel":""}" onclick="calcMembRollosToggleImprimacion()">🧪 Con imprimación asfáltica previa</div></div>
+    <div class="card" id="calc-membrollos-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcMembranaRollos(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcMembRollosAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcMembRollosToggleImprimacion(){ calcMembRollosState.conImprimacion = !calcMembRollosState.conImprimacion; calcMembRollosRender(); }
+function calcMembRollosRender(){
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcMembranaRollos();
+  const sel = document.getElementById("calc-membrollos-obra");
+  if(sel) poblarSelectObras(sel, calcMembRollosState.obra);
+}
+function calcMembRollosCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcMembRollosState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-membrollos-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcMembranaRollos(calcularMembranaRollos(calcMembRollosState));
+}
+async function calcMembRollosAgregarAComputo(){
+  if(!calcMembRollosState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcMembRollosState.ancho || !calcMembRollosState.largo){ showToast("Cargá el ancho y el largo"); return; }
+  const r = calcularMembranaRollos(calcMembRollosState);
+  const resultado = { "Rollos": `${r.totalRollos} u` };
+  if(r.imprimacionLitros>0) resultado["Imprimación asfáltica"] = `${r.imprimacionLitros} L`;
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Membrana en rollos",
+    modo: `Rollo ${calcMembRollosState.anchoUtilRollo}x${calcMembRollosState.largoRollo}m`,
+    obra: calcMembRollosState.obra,
+    parametros: { ancho:calcMembRollosState.ancho, largo:calcMembRollosState.largo },
+    resultado,
     fecha: hoyISO(),
   };
   const ok = await agregarItemComputoCalc(item);
