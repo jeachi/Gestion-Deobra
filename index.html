@@ -2506,6 +2506,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <button class="tab-btn" data-view="herramientas" data-ico="🧰" data-nombre="Herramientas" data-desc="Inventario, préstamos y reparaciones"><span class="ico">🧰</span><span class="etq">Herram.</span></button>
       <button class="tab-btn" data-view="observaciones" data-ico="📌" data-nombre="Pendientes" data-desc="Observaciones y recordatorios de la obra"><span class="ico">📌</span><span class="etq">Pendient.</span></button>
       <button class="tab-btn" data-view="trabajadores" data-ico="⚙" data-nombre="Configuración" data-desc="Usuarios, catálogos y respaldo"><span class="ico">⚙</span><span class="etq">Config.</span></button>
+      <button class="tab-btn" data-view="calcmateriales" data-ico="🧮" data-nombre="Calculadora de Materiales" data-desc="Cantidades de materiales por rubro, con reporte PDF"><span class="ico">🧮</span><span class="etq">Calc.</span></button>
     </nav>
     <div class="carrusel-dots" id="carrusel-dots"></div>
   </div>
@@ -4524,6 +4525,17 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <button class="btn btn-outline" onclick="generarReporteHerramientasPDF()">📄 Generar reporte PDF</button>
       </div>
       <div id="lista-herramientas"></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-calcmateriales">
+    <div class="card">
+      <div class="row-flex" style="justify-content:space-between;align-items:center;">
+        <h2 style="margin:0;">🧮 Calculadora de Materiales</h2>
+        <button type="button" class="btn btn-outline btn-sm" onclick="abrirMiComputoCalc()">📋 Mi cómputo <span id="calc-computo-badge" style="display:none;"></span></button>
+      </div>
+      <p class="helper">Elegí un rubro y calculá cantidades en presentación comercial real de Argentina — sin precios.</p>
+      <div class="dash-grid bento" id="calc-grid"></div>
     </div>
   </section>
 
@@ -6605,6 +6617,26 @@ function hoyISO(){ const d=new Date(); return d.getFullYear()+"-"+pad2(d.getMont
 // El "T00:00:00" es a propósito: sin hora, el navegador interpreta la fecha en UTC y puede mostrar
 // el día anterior según la zona horaria local -- forzando medianoche LOCAL se evita ese corrimiento.
 function fechaAR(iso){ return iso ? new Date(iso+"T00:00:00").toLocaleDateString("es-AR") : ""; }
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Mampostería ----------------
+   Rendimiento (piezas/m²) depende de la cara del ladrillo/bloque, no del espesor -- por eso
+   es un campo editable que entra como parámetro, no una tabla fija por tipo. */
+function calcularMamposteria(state){
+  const USO_TIPICO = {
+    hormigon: "Muros portantes, cercos y medianeras.",
+    ladrillo: state.formato === "6x12x24-plano"
+      ? "De plano: muros portantes y revestimientos — pared doble (≈25cm)."
+      : "De canto: tabiques y parapetos — pared simple (≈12cm).",
+    hueco: "Tabiques divisorios NO portantes (interiores).",
+    portante: "Muros portantes de carga en obra nueva.",
+  };
+  const area = Math.max(0, (state.largo||0) * (state.alto||0));
+  const piezas = Math.ceil(area * (state.rendimiento||0) * (1 + (state.desperdicio||0)/100));
+  const bolsasCemento = Math.max(0, Math.ceil(piezas/180));
+  const m3Arena = Math.round((piezas/300)*100)/100;
+  const bolsasCal = Math.max(0, Math.ceil(piezas/220));
+  return { area, piezas, bolsasCemento, m3Arena, bolsasCal, usoTipico: USO_TIPICO[state.tipo] || "" };
+}
 
 async function onCambioDia(){
   const val = document.getElementById("sel-dia").value;
@@ -13956,6 +13988,7 @@ function irA(view){
   if(view==="clima") prepararVistaClima();
   if(view==="remitos") prepararVistaRemitos();
   if(view==="herramientas") prepararVistaHerramientas();
+  if(view==="calcmateriales") prepararVistaCalcMateriales();
   if(view==="observaciones") cambiarVistaPendientes(pendientesSubvistaActual);
   // Deja un registro en el historial del navegador por cada cambio de módulo -- así el botón/gesto
   // "atrás" del celular tiene a dónde volver DENTRO de la app en vez de cerrarla directamente
@@ -15413,6 +15446,258 @@ async function guardarRecordatoriosIndex(){
   if(errorCargaRecordatorios){ showToast("⚠ No se guardó — no se pudo leer bien antes (revisá conexión y volvé a entrar)."); return false; }
   return guardarClave("recordatorios_index", JSON.stringify(recordatorios));
 }
+
+/* ---------------- Calculadora de Materiales — "Mi cómputo" ----------------
+   Mismo patrón de guardado que Recordatorios/Observaciones: un solo índice global, cada ítem
+   tiene su propio campo .obra (no una clave por obra). */
+let calcMaterialesItems = [];
+let errorCargaCalcMateriales = false;
+async function cargarCalcMateriales(){
+  try{
+    const r = await window.storage.get("calc_materiales_index", true);
+    calcMaterialesItems = r && r.value ? JSON.parse(r.value) : [];
+    errorCargaCalcMateriales = false;
+  }catch(e){
+    if(String(e.message||"").includes("Clave no encontrada")){ calcMaterialesItems = []; errorCargaCalcMateriales = false; }
+    else{ errorCargaCalcMateriales = true; }
+  }
+}
+async function guardarCalcMaterialesIndex(){
+  if(errorCargaCalcMateriales){ showToast("⚠ No se guardó — no se pudo leer bien antes (revisá conexión y volvé a entrar)."); return false; }
+  return guardarClave("calc_materiales_index", JSON.stringify(calcMaterialesItems));
+}
+function actualizarBadgeComputoCalc(){
+  const badge = document.getElementById("calc-computo-badge");
+  if(!badge) return;
+  if(calcMaterialesItems.length>0){ badge.style.display="inline-block"; badge.textContent = calcMaterialesItems.length; }
+  else badge.style.display = "none";
+}
+async function agregarItemComputoCalc(item){
+  calcMaterialesItems.push(item);
+  const ok = await guardarCalcMaterialesIndex();
+  actualizarBadgeComputoCalc();
+  return ok;
+}
+async function quitarItemComputoCalc(id){
+  calcMaterialesItems = calcMaterialesItems.filter(it=>it.id!==id);
+  await guardarCalcMaterialesIndex();
+  actualizarBadgeComputoCalc();
+}
+
+// Grilla de inicio del módulo -- 13 rubros en total (ver spec), pero en esta entrega solo
+// Mampostería está activa; el resto queda visible como "Próximamente" para mostrar la forma
+// final del módulo desde ya, sin prometer algo que todavía no calcula nada.
+const RUBROS_CALC = [
+  { id:"mamposteria", icono:"🧱", titulo:"Mampostería", desc:"Bloque de hormigón, ladrillo común, hueco o portante", disponible:true, abrir:"abrirCalcMamposteria" },
+  { id:"durlock", icono:"🏚️", titulo:"Pared de Durlock", desc:"Solera, montante, placas y tornillos", disponible:false },
+  { id:"cielorraso", icono:"🏠", titulo:"Cielorraso", desc:"Junta tomada, modular 60x60 o suspendido 60x120", disponible:false },
+  { id:"techo", icono:"🌧️", titulo:"Techo", desc:"Chapas y tornillos autoperforantes", disponible:false },
+  { id:"malla", icono:"🕸️", titulo:"Malla electrosoldada", desc:"Por formato y tamaño de panel", disponible:false },
+  { id:"pintura", icono:"🎨", titulo:"Pintura", desc:"Litros según rendimiento y manos", disponible:false },
+  { id:"membranaliquida", icono:"💧", titulo:"Membrana líquida", desc:"Kg según espesor y manos", disponible:false },
+  { id:"membranarollos", icono:"🧻", titulo:"Membrana en rollos", desc:"Según ancho útil y largo", disponible:false },
+  { id:"contrapiso", icono:"🧮", titulo:"Contrapiso / Hormigón", desc:"Dosificación de referencia por m³", disponible:false },
+  { id:"piso", icono:"🀄", titulo:"Piso cerámico", desc:"Cajas, pegamento y pastina", disponible:false },
+  { id:"revoque", icono:"🏗️", titulo:"Revoque", desc:"Grueso y fino, cemento, cal y arena", disponible:false },
+  { id:"aislacion", icono:"❄️", titulo:"Aislación térmica", desc:"Lana de vidrio o poliestireno", disponible:false },
+  { id:"losa", icono:"🧊", titulo:"Losa de viguetas y ladrillos", desc:"Cerámico o telgopor — viguetas, ladrillos y malla", disponible:false },
+];
+function renderGridCalcMateriales(){
+  const grid = document.getElementById("calc-grid");
+  if(!grid) return;
+  grid.innerHTML = RUBROS_CALC.map(r=>`
+    <div class="dash-card" style="${r.disponible?"":"opacity:.45;"}" onclick="${r.disponible?`${r.abrir}()`:`showToast('Próximamente')`}">
+      <div class="dash-card-icon">${r.icono}</div>
+      <div class="dash-card-title">${esc(r.titulo)}</div>
+      <div class="dash-card-desc">${esc(r.desc)}</div>
+    </div>
+  `).join("");
+}
+function prepararVistaCalcMateriales(){
+  renderGridCalcMateriales();
+  actualizarBadgeComputoCalc();
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Mampostería ----------------
+   Vive dentro del modal genérico (abrirPromptGenerico/cerrarPromptGenerico), el mismo que usan
+   decenas de pantallas de la app -- ya viene con el gesto de deslizar para cerrar y con el
+   botón "atrás" del celular enganchado (ver el listener de popstate). */
+const CALC_MAMP_TIPOS = [
+  { id:"hormigon", nombre:"Bloque de hormigón", formatos:[
+    { id:"20x20x40", nombre:"20x20x40", rendimiento:12.5 },
+    { id:"20x20x20", nombre:"20x20x20", rendimiento:25 },
+    { id:"12x20x40", nombre:"12x20x40", rendimiento:12.5 },
+  ]},
+  { id:"ladrillo", nombre:"Ladrillo común", formatos:[
+    { id:"6x12x24", nombre:"6x12x24 (de canto)", rendimiento:72 },
+    { id:"6x12x24-plano", nombre:"6x12x24 (de plano)", rendimiento:144 },
+  ]},
+  { id:"hueco", nombre:"Ladrillo hueco", formatos:[
+    { id:"hueco8", nombre:"Hueco 8 (8x18x33)", rendimiento:16 },
+    { id:"hueco12", nombre:"Hueco 12 (12x18x33)", rendimiento:16 },
+    { id:"hueco18", nombre:"Hueco 18 (18x18x33)", rendimiento:16 },
+    { id:"hueco20", nombre:"Hueco 20 / D.M. 20", rendimiento:16 },
+  ]},
+  { id:"portante", nombre:"Ladrillo portante", formatos:[
+    { id:"portante12", nombre:"Portante 12 (12x19x33)", rendimiento:16 },
+    { id:"portante18", nombre:"Portante 18 (18x19x33)", rendimiento:16 },
+    { id:"portante20", nombre:"Portante 20 (20x19x33)", rendimiento:16 },
+  ]},
+];
+let calcMampState = null;
+function abrirCalcMamposteria(){
+  calcMampState = {
+    tipo:"hormigon", formato:"20x20x40", rendimiento:12.5,
+    largo:null, alto:null, desperdicio:5,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcMamposteria());
+  const sel = document.getElementById("calc-mamp-obra");
+  if(sel) poblarSelectObras(sel, calcMampState.obra);
+}
+function htmlResultadoCalcMamposteria(r, formatoNombre){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.piezas} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">piezas de ${esc(formatoNombre)}</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>🧰 Cemento</span><strong>${r.bolsasCemento} bolsas</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🏖️ Arena</span><strong>${r.m3Arena} m³</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🪣 Cal</span><strong>${r.bolsasCal} bolsas</strong></div>
+  `;
+}
+function htmlFormCalcMamposteria(){
+  const s = calcMampState;
+  const tiposHtml = CALC_MAMP_TIPOS.map(t=>{
+    const activo = t.id===s.tipo;
+    return `<div class="chip-opt${activo?" sel":""}" onclick="calcMampElegirTipo('${t.id}')">${esc(t.nombre)}</div>`;
+  }).join("");
+  const tipoActual = CALC_MAMP_TIPOS.find(t=>t.id===s.tipo);
+  const formatosHtml = tipoActual.formatos.map(f=>{
+    const activo = f.id===s.formato;
+    return `<div class="chip-opt${activo?" sel":""}" onclick="calcMampElegirFormato('${f.id}')">${esc(f.nombre)}</div>`;
+  }).join("");
+  const formatoActual = tipoActual.formatos.find(f=>f.id===s.formato) || tipoActual.formatos[0];
+  const r = calcularMamposteria(s);
+  return `
+    <h2 style="margin-top:0;">🧱 Mampostería</h2>
+    <div class="field"><label>Obra</label><select id="calc-mamp-obra" onchange="calcMampState.obra=this.value"></select></div>
+    <div class="field"><label>Tipo de mampuesto</label><div class="chip-row">${tiposHtml}</div></div>
+    <p class="helper" style="margin:-4px 0 10px;">🏗️ Uso típico: ${esc(r.usoTipico)}</p>
+    <div class="field"><label>Formato</label><div class="chip-row">${formatosHtml}</div></div>
+    <div class="row-flex">
+      <div class="field"><label>Largo del muro (m)</label><input type="number" id="calc-mamp-largo" value="${s.largo??""}" oninput="calcMampCampo('largo',this.value)"></div>
+      <div class="field"><label>Alto del muro (m)</label><input type="number" id="calc-mamp-alto" value="${s.alto??""}" oninput="calcMampCampo('alto',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Rendimiento (piezas/m²)</label><input type="number" id="calc-mamp-rend" value="${s.rendimiento}" oninput="calcMampCampo('rendimiento',this.value)"></div>
+      <div class="field"><label>Desperdicio (%)</label><input type="number" id="calc-mamp-desp" value="${s.desperdicio}" oninput="calcMampCampo('desperdicio',this.value)"></div>
+    </div>
+    <p class="helper">💡 El rendimiento es un valor de referencia — ajustalo si tu proveedor rinde distinto.</p>
+    <div class="card" id="calc-mamp-resultado" style="border:1.5px solid var(--verde);">${htmlResultadoCalcMamposteria(r, formatoActual.nombre)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcMampAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcMampElegirTipo(tipoId){
+  const tipo = CALC_MAMP_TIPOS.find(t=>t.id===tipoId);
+  const primerFormato = tipo.formatos[0];
+  calcMampState.tipo = tipoId;
+  calcMampState.formato = primerFormato.id;
+  calcMampState.rendimiento = primerFormato.rendimiento;
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcMamposteria();
+  const sel = document.getElementById("calc-mamp-obra");
+  if(sel) poblarSelectObras(sel, calcMampState.obra);
+}
+function calcMampElegirFormato(formatoId){
+  const tipo = CALC_MAMP_TIPOS.find(t=>t.id===calcMampState.tipo);
+  const formato = tipo.formatos.find(f=>f.id===formatoId);
+  calcMampState.formato = formatoId;
+  calcMampState.rendimiento = formato.rendimiento;
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcMamposteria();
+  const sel = document.getElementById("calc-mamp-obra");
+  if(sel) poblarSelectObras(sel, calcMampState.obra);
+}
+function calcMampCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcMampState[nombre] = isNaN(n) ? 0 : n;
+  const tipo = CALC_MAMP_TIPOS.find(t=>t.id===calcMampState.tipo);
+  const formato = tipo.formatos.find(f=>f.id===calcMampState.formato);
+  const resultado = document.getElementById("calc-mamp-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcMamposteria(calcularMamposteria(calcMampState), formato.nombre);
+}
+async function calcMampAgregarAComputo(){
+  if(!calcMampState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcMampState.largo || !calcMampState.alto){ showToast("Cargá largo y alto del muro"); return; }
+  const tipo = CALC_MAMP_TIPOS.find(t=>t.id===calcMampState.tipo);
+  const formato = tipo.formatos.find(f=>f.id===calcMampState.formato);
+  const r = calcularMamposteria(calcMampState);
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Mampostería",
+    modo: `${tipo.nombre} — ${formato.nombre}`,
+    obra: calcMampState.obra,
+    parametros: { largo:calcMampState.largo, alto:calcMampState.alto, rendimiento:calcMampState.rendimiento, desperdicio:calcMampState.desperdicio },
+    resultado: { "Piezas": `${r.piezas} u`, "Cemento": `${r.bolsasCemento} bolsas`, "Arena": `${r.m3Arena} m³`, "Cal": `${r.bolsasCal} bolsas` },
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — pantalla "Mi cómputo" ---------------- */
+function abrirMiComputoCalc(){
+  abrirPromptGenerico(htmlMiComputoCalc());
+}
+function htmlMiComputoCalc(){
+  if(calcMaterialesItems.length===0){
+    return `<h2 style="margin-top:0;">📋 Mi cómputo</h2><p class="helper">Todavía no agregaste ningún rubro. Entrá a un rubro de la calculadora y tocá "Agregar al cómputo".</p>`;
+  }
+  const filas = calcMaterialesItems.map(it=>`
+    <div class="card" style="margin-bottom:8px;">
+      <div class="row-flex" style="justify-content:space-between;align-items:flex-start;">
+        <div>
+          <div style="font-weight:800;">${esc(it.rubro)}</div>
+          <div class="helper" style="margin:2px 0;">${esc(it.modo)} · ${esc(it.obra)}</div>
+          <div style="font-size:12px;color:var(--tinta-suave);">${Object.entries(it.resultado).map(([k,v])=>`${esc(k)}: <strong>${esc(v)}</strong>`).join(" · ")}</div>
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="quitarItemComputoCalcUI('${it.id}')">🗑</button>
+      </div>
+    </div>
+  `).join("");
+  return `
+    <h2 style="margin-top:0;">📋 Mi cómputo (${calcMaterialesItems.length})</h2>
+    ${filas}
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:6px;" onclick="generarReporteCalcMaterialesPDF()">🧾 Generar reporte PDF</button>
+  `;
+}
+async function quitarItemComputoCalcUI(id){
+  await quitarItemComputoCalc(id);
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlMiComputoCalc();
+}
+
+/* ---------------- Calculadora de Materiales — reporte PDF ----------------
+   Reutiliza el mismo motor que el resto de la app (mostrarModalPDF + construirEncabezadoReportePDF,
+   el mismo que usa generarReporteHerramientasPDF) -- nada de PDF nuevo. */
+function generarReporteCalcMaterialesPDF(){
+  if(calcMaterialesItems.length===0){ showToast("No hay ítems en Mi cómputo."); return; }
+  const filas = calcMaterialesItems.map(it=>`
+    <tr>
+      <td>${esc(it.rubro)}</td>
+      <td>${esc(it.modo)}</td>
+      <td>${esc(it.obra)}</td>
+      <td>${Object.entries(it.resultado).map(([k,v])=>`${esc(k)}: ${esc(v)}`).join("<br>")}</td>
+    </tr>
+  `).join("");
+  const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;min-height:990px;box-sizing:border-box;">
+    ${construirEncabezadoReportePDF("MATERIALES NECESARIOS")}
+    <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")}</div>
+    <table class="trab" width="700" cellspacing="0" cellpadding="0" style="font-size:11.5px;margin-top:14px;">
+      <thead><tr><th>Rubro</th><th>Detalle</th><th>Obra</th><th>Materiales</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <p style="font-family:Arial;font-size:10px;color:#6B7A82;margin-top:14px;">Cantidades de referencia — no incluye precios. Ajustá los rendimientos según tu proveedor real.</p>
+  </div>`;
+  mostrarModalPDF(html, "portrait", `Materiales_Necesarios_${nombreArchivoSeguro(hoyISO())}.pdf`);
+}
+
 // Regla de escalado: nunca baja sola, solo sube según cuántos días faltan para la fecha.
 function diasHastaRecordatorio(r){
   if(!r.fecha) return null;
@@ -20253,6 +20538,7 @@ async function iniciarAppData(){
     cargarEquivalencias(),
     cargarMontoBaseCaja(),
     cargarRecordatorios(),
+    cargarCalcMateriales(),
     cargarClimaCiudadRef(),
     cargarAliasMateriales(),
     cargarConfigAsistente(),
