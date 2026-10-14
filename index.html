@@ -15607,8 +15607,8 @@ const RUBROS_CALC = [
   { id:"mamposteria", icono:"🧱", titulo:"Mampostería", desc:"Bloque de hormigón, ladrillo común, hueco o portante", disponible:true, abrir:"abrirCalcMamposteria" },
   { id:"durlock", icono:"🏚️", titulo:"Pared de Durlock", desc:"Solera, montante, placas y tornillos", disponible:true, abrir:"abrirCalcDurlock" },
   { id:"cielorraso", icono:"🏠", titulo:"Cielorraso", desc:"Junta tomada, modular 60x60 o suspendido 60x120", disponible:true, abrir:"abrirCalcCielorraso" },
-  { id:"techo", icono:"🌧️", titulo:"Techo", desc:"Chapas y tornillos autoperforantes", disponible:false },
-  { id:"malla", icono:"🕸️", titulo:"Malla electrosoldada", desc:"Por formato y tamaño de panel", disponible:false },
+  { id:"techo", icono:"🌧️", titulo:"Techo", desc:"Chapas y tornillos autoperforantes", disponible:true, abrir:"abrirCalcTecho" },
+  { id:"malla", icono:"🕸️", titulo:"Malla electrosoldada", desc:"Por formato y tamaño de panel", disponible:true, abrir:"abrirCalcMalla" },
   { id:"pintura", icono:"🎨", titulo:"Pintura", desc:"Litros según rendimiento y manos", disponible:false },
   { id:"membranaliquida", icono:"💧", titulo:"Membrana líquida", desc:"Kg según espesor y manos", disponible:false },
   { id:"membranarollos", icono:"🧻", titulo:"Membrana en rollos", desc:"Según ancho útil y largo", disponible:false },
@@ -15616,7 +15616,7 @@ const RUBROS_CALC = [
   { id:"piso", icono:"🀄", titulo:"Piso cerámico", desc:"Cajas, pegamento y pastina", disponible:false },
   { id:"revoque", icono:"🏗️", titulo:"Revoque", desc:"Grueso y fino, cemento, cal y arena", disponible:false },
   { id:"aislacion", icono:"❄️", titulo:"Aislación térmica", desc:"Lana de vidrio o poliestireno", disponible:false },
-  { id:"losa", icono:"🧊", titulo:"Losa de viguetas y ladrillos", desc:"Cerámico o telgopor — viguetas, ladrillos y malla", disponible:false },
+  { id:"losa", icono:"🧊", titulo:"Losa de viguetas y ladrillos", desc:"Cerámico o telgopor — viguetas, ladrillos y malla", disponible:true, abrir:"abrirCalcLosa" },
 ];
 function renderGridCalcMateriales(){
   const grid = document.getElementById("calc-grid");
@@ -15927,6 +15927,227 @@ async function calcCieloAgregarAComputo(){
     obra: calcCieloState.obra,
     parametros: { ancho:calcCieloState.ancho, largo:calcCieloState.largo },
     resultado,
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Techo ---------------- */
+const CALC_TECHO_FORMATOS = [
+  { id:"acanalada", nombre:"Acanalada", anchoUtil:0.91 },
+  { id:"trapezoidal", nombre:"Trapezoidal", anchoUtil:1.05 },
+  { id:"sinusoidal", nombre:"Sinusoidal", anchoUtil:0.91 },
+];
+let calcTechoState = null;
+function abrirCalcTecho(){
+  calcTechoState = {
+    formato:"acanalada", anchoUtil:0.91, ancho:null, largoAgua:null, largoChapa:null,
+    solape:10, tornillosPorChapa:13, desperdicio:5,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcTecho());
+  const sel = document.getElementById("calc-techo-obra");
+  if(sel) poblarSelectObras(sel, calcTechoState.obra);
+}
+function htmlResultadoCalcTecho(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.totalChapas} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">chapas</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>↔️ Por hilera</span><strong>${r.chapasAncho} u</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>↕️ Hileras</span><strong>${r.hileras} u</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🔩 Tornillos autoperforantes</span><strong>${r.tornillos} u</strong></div>
+  `;
+}
+function htmlFormCalcTecho(){
+  const s = calcTechoState;
+  const r = calcularTecho(s);
+  const formatosHtml = CALC_TECHO_FORMATOS.map(f=>`<div class="chip-opt${s.formato===f.id?" sel":""}" onclick="calcTechoElegirFormato('${f.id}')">${esc(f.nombre)}</div>`).join("");
+  return `
+    <h2 style="margin-top:0;">🌧️ Techo</h2>
+    <div class="field"><label>Obra</label><select id="calc-techo-obra" onchange="calcTechoState.obra=this.value"></select></div>
+    <div class="field"><label>Tipo de chapa</label><div class="chip-row">${formatosHtml}</div></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho útil (m)</label><input type="number" step="0.01" id="calc-techo-anchoutil" value="${s.anchoUtil}" oninput="calcTechoCampo('anchoUtil',this.value)"></div>
+      <div class="field"><label>Ancho a cubrir (m)</label><input type="number" id="calc-techo-ancho" value="${s.ancho??""}" oninput="calcTechoCampo('ancho',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Largo de agua (m)</label><input type="number" id="calc-techo-largoagua" value="${s.largoAgua??""}" oninput="calcTechoCampo('largoAgua',this.value)"></div>
+      <div class="field"><label>Largo de la chapa (m)</label><input type="number" id="calc-techo-largochapa" value="${s.largoChapa??""}" oninput="calcTechoCampo('largoChapa',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Solape (%)</label><input type="number" id="calc-techo-solape" value="${s.solape}" oninput="calcTechoCampo('solape',this.value)"></div>
+      <div class="field"><label>Desperdicio (%)</label><input type="number" id="calc-techo-desp" value="${s.desperdicio}" oninput="calcTechoCampo('desperdicio',this.value)"></div>
+    </div>
+    <div class="field"><label>Tornillos por chapa</label><input type="number" id="calc-techo-tornillos" value="${s.tornillosPorChapa}" oninput="calcTechoCampo('tornillosPorChapa',this.value)"></div>
+    <p class="helper">💡 El ancho útil y los tornillos por chapa son de referencia — ajustalos según tu proveedor.</p>
+    <div class="card" id="calc-techo-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcTecho(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcTechoAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcTechoElegirFormato(formatoId){
+  const f = CALC_TECHO_FORMATOS.find(x=>x.id===formatoId);
+  calcTechoState.formato = formatoId;
+  calcTechoState.anchoUtil = f.anchoUtil;
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcTecho();
+  const sel = document.getElementById("calc-techo-obra");
+  if(sel) poblarSelectObras(sel, calcTechoState.obra);
+}
+function calcTechoCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcTechoState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-techo-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcTecho(calcularTecho(calcTechoState));
+}
+async function calcTechoAgregarAComputo(){
+  if(!calcTechoState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcTechoState.ancho || !calcTechoState.largoAgua || !calcTechoState.largoChapa){ showToast("Cargá ancho, largo de agua y largo de la chapa"); return; }
+  const r = calcularTecho(calcTechoState);
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Techo",
+    modo: CALC_TECHO_FORMATOS.find(f=>f.id===calcTechoState.formato).nombre,
+    obra: calcTechoState.obra,
+    parametros: { ancho:calcTechoState.ancho, largoAgua:calcTechoState.largoAgua, largoChapa:calcTechoState.largoChapa },
+    resultado: { "Chapas": `${r.totalChapas} u`, "Tornillos": `${r.tornillos} u` },
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Malla electrosoldada ---------------- */
+let calcMallaState = null;
+function abrirCalcMalla(){
+  calcMallaState = {
+    ancho:null, largo:null, solape:10, m2PorPanel:10.75,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcMalla());
+  const sel = document.getElementById("calc-malla-obra");
+  if(sel) poblarSelectObras(sel, calcMallaState.obra);
+}
+function htmlResultadoCalcMalla(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.paneles} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">paneles</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>📐 Área</span><strong>${r.area.toFixed(1)} m²</strong></div>
+  `;
+}
+function htmlFormCalcMalla(){
+  const s = calcMallaState;
+  const r = calcularMallaElectrosoldada(s);
+  return `
+    <h2 style="margin-top:0;">🕸️ Malla electrosoldada</h2>
+    <div class="field"><label>Obra</label><select id="calc-malla-obra" onchange="calcMallaState.obra=this.value"></select></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho (m)</label><input type="number" id="calc-malla-ancho" value="${s.ancho??""}" oninput="calcMallaCampo('ancho',this.value)"></div>
+      <div class="field"><label>Largo (m)</label><input type="number" id="calc-malla-largo" value="${s.largo??""}" oninput="calcMallaCampo('largo',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Solape (%)</label><input type="number" id="calc-malla-solape" value="${s.solape}" oninput="calcMallaCampo('solape',this.value)"></div>
+      <div class="field"><label>m² por panel</label><input type="number" step="0.01" id="calc-malla-m2panel" value="${s.m2PorPanel}" oninput="calcMallaCampo('m2PorPanel',this.value)"></div>
+    </div>
+    <p class="helper">💡 Panel estándar 2.15x5.00m = 10.75 m² — ajustalo si tu proveedor usa otro tamaño.</p>
+    <div class="card" id="calc-malla-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcMalla(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcMallaAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcMallaCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcMallaState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-malla-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcMalla(calcularMallaElectrosoldada(calcMallaState));
+}
+async function calcMallaAgregarAComputo(){
+  if(!calcMallaState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcMallaState.ancho || !calcMallaState.largo){ showToast("Cargá el ancho y el largo"); return; }
+  const r = calcularMallaElectrosoldada(calcMallaState);
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Malla electrosoldada",
+    modo: `${r.area.toFixed(1)} m²`,
+    obra: calcMallaState.obra,
+    parametros: { ancho:calcMallaState.ancho, largo:calcMallaState.largo },
+    resultado: { "Paneles": `${r.paneles} u` },
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Losa de viguetas y ladrillos ---------------- */
+const CALC_LOSA_MODOS = [
+  { id:"ceramico", nombre:"Ladrillo cerámico (tipo Retak)" },
+  { id:"telgopor", nombre:"Ladrillo de telgopor (EPS)" },
+];
+const CALC_LOSA_ALTURAS = ["12","13","16","19","23"];
+let calcLosaState = null;
+function abrirCalcLosa(){
+  calcLosaState = {
+    modo:"ceramico", altura:"16", ancho:null, largo:null,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcLosa());
+  const sel = document.getElementById("calc-losa-obra");
+  if(sel) poblarSelectObras(sel, calcLosaState.obra);
+}
+function htmlResultadoCalcLosa(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.viguetasCant} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">viguetas (${r.viguetasMetros} m)</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>🧱 Ladrillos de losa</span><strong>${r.ladrillos} u</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🕸️ Malla superior</span><strong>${r.malla} paneles</strong></div>
+    <div style="height:1px;background:var(--borde);margin:4px 0;"></div>
+    <div style="font-size:10.5px;font-weight:800;color:var(--tinta-suave);">CAPA DE COMPRESIÓN (~5cm)</div>
+    <div class="row-flex" style="justify-content:space-between;"><span>Cemento</span><strong>${r.cemento} bolsas</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>Arena</span><strong>${r.arena} m³</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>Piedra</span><strong>${r.piedra} m³</strong></div>
+  `;
+}
+function htmlFormCalcLosa(){
+  const s = calcLosaState;
+  const r = calcularLosaViguetas(s);
+  const modosHtml = CALC_LOSA_MODOS.map(m=>`<div class="chip-opt${s.modo===m.id?" sel":""}" onclick="calcLosaElegirModo('${m.id}')">${esc(m.nombre)}</div>`).join("");
+  const alturasHtml = CALC_LOSA_ALTURAS.map(h=>`<div class="chip-opt${s.altura===h?" sel":""}" onclick="calcLosaElegirAltura('${h}')">h=${h}cm</div>`).join("");
+  return `
+    <h2 style="margin-top:0;">🧊 Losa de viguetas y ladrillos</h2>
+    <div class="field"><label>Obra</label><select id="calc-losa-obra" onchange="calcLosaState.obra=this.value"></select></div>
+    <div class="field"><label>Tipo de ladrillo</label><div class="chip-row">${modosHtml}</div></div>
+    <div class="field"><label>Altura de losa</label><div class="chip-row">${alturasHtml}</div></div>
+    <p class="helper" style="margin:-4px 0 0;">💡 Separación de viguetas de referencia: ${r.separacion} cm (según cálculo estructural, editable a futuro).</p>
+    <div class="row-flex">
+      <div class="field"><label>Ancho (m, perpend. a viguetas)</label><input type="number" id="calc-losa-ancho" value="${s.ancho??""}" oninput="calcLosaCampo('ancho',this.value)"></div>
+      <div class="field"><label>Largo / luz (m)</label><input type="number" id="calc-losa-largo" value="${s.largo??""}" oninput="calcLosaCampo('largo',this.value)"></div>
+    </div>
+    <div class="card" id="calc-losa-resultado" style="border:1.5px solid var(--verde);margin-top:4px;">${htmlResultadoCalcLosa(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcLosaAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcLosaRender(){
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcLosa();
+  const sel = document.getElementById("calc-losa-obra");
+  if(sel) poblarSelectObras(sel, calcLosaState.obra);
+}
+function calcLosaElegirModo(modo){ calcLosaState.modo = modo; calcLosaRender(); }
+function calcLosaElegirAltura(altura){ calcLosaState.altura = altura; calcLosaRender(); }
+function calcLosaCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcLosaState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-losa-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcLosa(calcularLosaViguetas(calcLosaState));
+}
+async function calcLosaAgregarAComputo(){
+  if(!calcLosaState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcLosaState.ancho || !calcLosaState.largo){ showToast("Cargá el ancho y el largo/luz"); return; }
+  const r = calcularLosaViguetas(calcLosaState);
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Losa de viguetas y ladrillos",
+    modo: `${CALC_LOSA_MODOS.find(m=>m.id===calcLosaState.modo).nombre} — h=${calcLosaState.altura}cm`,
+    obra: calcLosaState.obra,
+    parametros: { ancho:calcLosaState.ancho, largo:calcLosaState.largo, altura:calcLosaState.altura },
+    resultado: { "Viguetas": `${r.viguetasCant} u (${r.viguetasMetros} m)`, "Ladrillos": `${r.ladrillos} u`, "Malla": `${r.malla} paneles`, "Cemento": `${r.cemento} bolsas`, "Arena": `${r.arena} m³`, "Piedra": `${r.piedra} m³` },
     fecha: hoyISO(),
   };
   const ok = await agregarItemComputoCalc(item);
