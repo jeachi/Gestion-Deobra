@@ -24,6 +24,8 @@ const {
 ]);
 
 const { calcularMamposteria } = cargarDesdeApp([{ nombre: "calcularMamposteria" }]);
+const { calcularParedDurlock } = cargarDesdeApp([{ nombre: "calcularParedDurlock" }]);
+const { calcularCielorraso } = cargarDesdeApp([{ nombre: "calcularCielorraso" }]);
 
 test("pad2 rellena con cero a la izquierda", () => {
   assert.equal(pad2(1), "01");
@@ -132,4 +134,62 @@ test("calcularMamposteria: cemento, arena y cal son proporcionales a piezas (ref
   assert.equal(r.bolsasCemento, 2);  // ceil(250/180)
   assert.equal(r.m3Arena, 0.83);     // round(250/300, 2)
   assert.equal(r.bolsasCal, 2);      // ceil(250/220)
+});
+
+test("calcularParedDurlock: 4x2.5m, 2 caras, modulacion 0.6, sin desperdicio", () => {
+  const r = calcularParedDurlock({ largo:4, alto:2.5, caras:2, modulacion:0.6, desperdicio:0 });
+  assert.equal(r.area, 10);
+  assert.equal(r.areaTotal, 20);
+  assert.equal(r.placas, 7);          // ceil(20/2.88)
+  assert.equal(r.soleraMetros, 8);    // 2*largo
+  assert.equal(r.montanteCantidad, 8); // ceil(4/0.6)+1
+  assert.equal(r.montanteMetros, 20);  // 8*2.5
+  assert.equal(r.tornillos, 540);      // ceil(20*27)
+  assert.equal(r.cintaJuntas, 7);      // round(20*0.35,1)
+  assert.equal(r.masilla, 6);          // round(20*0.3,1)
+});
+
+test("calcularParedDurlock: 1 sola cara da la mitad de areaTotal que 2 caras", () => {
+  const unaCara = calcularParedDurlock({ largo:4, alto:2.5, caras:1, modulacion:0.6, desperdicio:0 });
+  assert.equal(unaCara.areaTotal, 10);
+  assert.equal(unaCara.placas, 4); // ceil(10/2.88)
+});
+
+test("calcularParedDurlock: lana de vidrio solo si conAislacion es true", () => {
+  const sinAislacion = calcularParedDurlock({ largo:4, alto:2.5, caras:1, desperdicio:0 });
+  const conAislacion = calcularParedDurlock({ largo:4, alto:2.5, caras:1, desperdicio:0, conAislacion:true });
+  assert.equal(sinAislacion.lanaVidrio, 0);
+  assert.equal(conAislacion.lanaVidrio, 10);
+});
+
+test("calcularCielorraso: junta tomada 4x5m -- placas, perfiles reales y fijacion", () => {
+  const r = calcularCielorraso({ modo:"junta", ancho:4, largo:5 });
+  assert.equal(r.area, 20);
+  assert.equal(r.perimetro, 18);
+  assert.equal(r.placas, 7); // ceil(20/2.88)
+  assert.equal(r.perfiles.perimetral, 18);
+  assert.equal(r.perfiles.primario, 20);   // ceil(4/1.2)*5
+  assert.equal(r.perfiles.secundario, 40); // ceil(5/0.5)*4
+  assert.equal(r.perfiles.varillas, 17);   // ceil(20/1.2)
+  assert.equal(r.accesorios.tornillosTN, 540);
+  assert.equal(r.fijacion.tarugos, 52);    // ceil(18/0.35)
+  assert.equal(r.fijacion.alambreMetros, 17);
+  assert.equal(r.tieneTerminado, true);
+});
+
+test("calcularCielorraso: modular 60x60 no tiene terminado (tornillos TN/cinta/masilla)", () => {
+  const r = calcularCielorraso({ modo:"modular", ancho:4, largo:5 });
+  assert.equal(r.placas, 56); // ceil(20/0.36)
+  assert.equal(r.placasLabel, "paneles 60x60");
+  assert.equal(r.perfiles.secundario, 33); // round(20/0.6)
+  assert.equal(r.tieneTerminado, false);
+  assert.deepEqual(r.accesorios, {});
+});
+
+test("calcularCielorraso: suspendido 60x120 espacia el secundario cada 1.2m (mitad que modular)", () => {
+  const r = calcularCielorraso({ modo:"suspendido", ancho:4, largo:5 });
+  assert.equal(r.placas, 28); // ceil(20/0.72)
+  assert.equal(r.placasLabel, "paneles 60x120");
+  assert.equal(r.perfiles.secundario, 17); // round(20/1.2), no 33 como en modular
+  assert.equal(r.tieneTerminado, false);
 });

@@ -6647,6 +6647,66 @@ function calcularMamposteria(state){
   return { area, piezas, bolsasCemento, m3Arena, bolsasCal, usoTipico: USO_TIPICO[state.tipo] || "" };
 }
 
+/* ---------------- Calculadora de Materiales — cálculo puro de Pared de Durlock ----------------
+   state = {largo, alto, caras (1 o 2), modulacion (m entre montantes), desperdicio, conAislacion} */
+function calcularParedDurlock(state){
+  const area = Math.max(0, (state.largo||0) * (state.alto||0));
+  const caras = state.caras || 1;
+  const areaTotal = area * caras;
+  const placas = Math.ceil(areaTotal/2.88 * (1 + (state.desperdicio||0)/100));
+  const soleraMetros = Math.round(2 * (state.largo||0) * 100)/100;
+  const modulacion = state.modulacion || 0.6;
+  const montanteCantidad = (state.largo||0) > 0 ? Math.ceil((state.largo||0)/modulacion) + 1 : 0;
+  const montanteMetros = Math.round(montanteCantidad * (state.alto||0) * 100)/100;
+  const tornillos = Math.ceil(areaTotal * 27);
+  const cintaJuntas = Math.round(areaTotal * 0.35 * 10)/10;
+  const masilla = Math.round(areaTotal * 0.3 * 10)/10;
+  const lanaVidrio = state.conAislacion ? area : 0;
+  return { area, areaTotal, placas, soleraMetros, montanteCantidad, montanteMetros, tornillos, cintaJuntas, masilla, lanaVidrio };
+}
+
+/* ---------------- Calculadora de Materiales — cálculo puro de Cielorraso ----------------
+   state = {modo: "junta"|"modular"|"suspendido", ancho, largo} */
+function calcularCielorraso(state){
+  const ancho = state.ancho||0, largo = state.largo||0;
+  const area = Math.max(0, ancho*largo);
+  const perimetro = Math.round(2*(ancho+largo)*10)/10;
+  let placas, placasLabel, perfiles, varillas, accesorios, tieneTerminado;
+  if(state.modo==="junta"){
+    placas = Math.ceil(area/2.88);
+    placasLabel = "placas de yeso 1.20x2.40";
+    varillas = Math.ceil(area/1.2);
+    perfiles = {
+      perimetral: perimetro,
+      primario: Math.ceil(ancho/1.2)*largo,
+      secundario: Math.ceil(largo/0.5)*ancho,
+      varillas,
+    };
+    accesorios = { tornillosTN: Math.ceil(area*27), cintaJuntas: Math.round(area*0.35*10)/10, masilla: Math.round(area*0.3*10)/10 };
+    tieneTerminado = true;
+  }else if(state.modo==="modular"){
+    placas = Math.ceil(area/0.36);
+    placasLabel = "paneles 60x60";
+    varillas = Math.ceil(area/1.2);
+    perfiles = { perimetral: perimetro, principal: Math.round(area/1.2), secundario: Math.round(area/0.6), varillas };
+    accesorios = {};
+    tieneTerminado = false;
+  }else{
+    placas = Math.ceil(area/0.72);
+    placasLabel = "paneles 60x120";
+    varillas = Math.ceil(area/1.2);
+    perfiles = { perimetral: perimetro, principal: Math.round(area/1.2), secundario: Math.round(area/1.2), varillas };
+    accesorios = {};
+    tieneTerminado = false;
+  }
+  const fijacion = {
+    tarugos: Math.ceil(perimetro/0.35),
+    tornillosFijacion: Math.ceil(perimetro/0.35),
+    alambreMetros: varillas,
+  };
+  return { area, perimetro, placas, placasLabel, perfiles, fijacion, accesorios, tieneTerminado };
+}
+
 async function onCambioDia(){
   const val = document.getElementById("sel-dia").value;
   if(!val) return;
@@ -15498,8 +15558,8 @@ async function quitarItemComputoCalc(id){
 // final del módulo desde ya, sin prometer algo que todavía no calcula nada.
 const RUBROS_CALC = [
   { id:"mamposteria", icono:"🧱", titulo:"Mampostería", desc:"Bloque de hormigón, ladrillo común, hueco o portante", disponible:true, abrir:"abrirCalcMamposteria" },
-  { id:"durlock", icono:"🏚️", titulo:"Pared de Durlock", desc:"Solera, montante, placas y tornillos", disponible:false },
-  { id:"cielorraso", icono:"🏠", titulo:"Cielorraso", desc:"Junta tomada, modular 60x60 o suspendido 60x120", disponible:false },
+  { id:"durlock", icono:"🏚️", titulo:"Pared de Durlock", desc:"Solera, montante, placas y tornillos", disponible:true, abrir:"abrirCalcDurlock" },
+  { id:"cielorraso", icono:"🏠", titulo:"Cielorraso", desc:"Junta tomada, modular 60x60 o suspendido 60x120", disponible:true, abrir:"abrirCalcCielorraso" },
   { id:"techo", icono:"🌧️", titulo:"Techo", desc:"Chapas y tornillos autoperforantes", disponible:false },
   { id:"malla", icono:"🕸️", titulo:"Malla electrosoldada", desc:"Por formato y tamaño de panel", disponible:false },
   { id:"pintura", icono:"🎨", titulo:"Pintura", desc:"Litros según rendimiento y manos", disponible:false },
@@ -15645,6 +15705,181 @@ async function calcMampAgregarAComputo(){
     obra: calcMampState.obra,
     parametros: { largo:calcMampState.largo, alto:calcMampState.alto, rendimiento:calcMampState.rendimiento, desperdicio:calcMampState.desperdicio },
     resultado: { "Piezas": `${r.piezas} u`, "Cemento": `${r.bolsasCemento} bolsas`, "Arena": `${r.m3Arena} m³`, "Cal": `${r.bolsasCal} bolsas` },
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Pared de Durlock ---------------- */
+let calcDurlockState = null;
+function abrirCalcDurlock(){
+  calcDurlockState = {
+    largo:null, alto:null, caras:2, modulacion:0.6, desperdicio:5, conAislacion:false,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcDurlock());
+  const sel = document.getElementById("calc-durlock-obra");
+  if(sel) poblarSelectObras(sel, calcDurlockState.obra);
+}
+function htmlResultadoCalcDurlock(r){
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.placas} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">placas de yeso 1.20x2.40</span></div>
+    <div class="row-flex" style="justify-content:space-between;margin-top:6px;"><span>📏 Solera</span><strong>${r.soleraMetros} m</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>📏 Montante</span><strong>${r.montanteCantidad} u (${r.montanteMetros} m)</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🔩 Tornillos</span><strong>${r.tornillos} u</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🩹 Cinta de juntas</span><strong>${r.cintaJuntas} m</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🧴 Masilla</span><strong>${r.masilla} kg</strong></div>
+    ${r.lanaVidrio>0?`<div class="row-flex" style="justify-content:space-between;"><span>🧶 Lana de vidrio</span><strong>${r.lanaVidrio} m²</strong></div>`:""}
+  `;
+}
+function htmlFormCalcDurlock(){
+  const s = calcDurlockState;
+  const r = calcularParedDurlock(s);
+  const carasHtml = [1,2].map(c=>`<div class="chip-opt${s.caras===c?" sel":""}" onclick="calcDurlockElegirCaras(${c})">${c} cara${c===1?"":"s"}</div>`).join("");
+  return `
+    <h2 style="margin-top:0;">🏚️ Pared de Durlock</h2>
+    <div class="field"><label>Obra</label><select id="calc-durlock-obra" onchange="calcDurlockState.obra=this.value"></select></div>
+    <div class="field"><label>¿Placas de un lado o de los dos?</label><div class="chip-row">${carasHtml}</div></div>
+    <div class="row-flex">
+      <div class="field"><label>Largo del tabique (m)</label><input type="number" id="calc-durlock-largo" value="${s.largo??""}" oninput="calcDurlockCampo('largo',this.value)"></div>
+      <div class="field"><label>Alto del tabique (m)</label><input type="number" id="calc-durlock-alto" value="${s.alto??""}" oninput="calcDurlockCampo('alto',this.value)"></div>
+    </div>
+    <div class="row-flex">
+      <div class="field"><label>Modulación montantes (m)</label><input type="number" step="0.1" id="calc-durlock-modulacion" value="${s.modulacion}" oninput="calcDurlockCampo('modulacion',this.value)"></div>
+      <div class="field"><label>Desperdicio (%)</label><input type="number" id="calc-durlock-desp" value="${s.desperdicio}" oninput="calcDurlockCampo('desperdicio',this.value)"></div>
+    </div>
+    <div class="chip-row"><div class="chip-opt${s.conAislacion?" sel":""}" onclick="calcDurlockToggleAislacion()">🧶 Con lana de vidrio</div></div>
+    <div class="card" id="calc-durlock-resultado" style="border:1.5px solid var(--verde);margin-top:10px;">${htmlResultadoCalcDurlock(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcDurlockAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcDurlockRender(){
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcDurlock();
+  const sel = document.getElementById("calc-durlock-obra");
+  if(sel) poblarSelectObras(sel, calcDurlockState.obra);
+}
+function calcDurlockElegirCaras(c){ calcDurlockState.caras = c; calcDurlockRender(); }
+function calcDurlockToggleAislacion(){ calcDurlockState.conAislacion = !calcDurlockState.conAislacion; calcDurlockRender(); }
+function calcDurlockCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcDurlockState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-durlock-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcDurlock(calcularParedDurlock(calcDurlockState));
+}
+async function calcDurlockAgregarAComputo(){
+  if(!calcDurlockState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcDurlockState.largo || !calcDurlockState.alto){ showToast("Cargá largo y alto del tabique"); return; }
+  const r = calcularParedDurlock(calcDurlockState);
+  const resultado = { "Placas": `${r.placas} u`, "Solera": `${r.soleraMetros} m`, "Montante": `${r.montanteCantidad} u (${r.montanteMetros} m)`, "Tornillos": `${r.tornillos} u`, "Cinta de juntas": `${r.cintaJuntas} m`, "Masilla": `${r.masilla} kg` };
+  if(r.lanaVidrio>0) resultado["Lana de vidrio"] = `${r.lanaVidrio} m²`;
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Pared de Durlock",
+    modo: `${calcDurlockState.caras} cara${calcDurlockState.caras===1?"":"s"}`,
+    obra: calcDurlockState.obra,
+    parametros: { largo:calcDurlockState.largo, alto:calcDurlockState.alto, modulacion:calcDurlockState.modulacion, desperdicio:calcDurlockState.desperdicio },
+    resultado,
+    fecha: hoyISO(),
+  };
+  const ok = await agregarItemComputoCalc(item);
+  if(ok!==false){ showToast("✅ Agregado a Mi cómputo"); cerrarPromptGenerico(); }
+}
+
+/* ---------------- Calculadora de Materiales — formulario de Cielorraso ---------------- */
+const CALC_CIELORRASO_MODOS = [
+  { id:"junta", nombre:"Junta tomada" },
+  { id:"modular", nombre:"Modular 60x60" },
+  { id:"suspendido", nombre:"Suspendido 60x120" },
+];
+let calcCieloState = null;
+function abrirCalcCielorraso(){
+  calcCieloState = {
+    modo:"junta", ancho:null, largo:null,
+    obra: (obraPredeterminada && obrasActivas().includes(obraPredeterminada)) ? obraPredeterminada : "",
+  };
+  abrirPromptGenerico(htmlFormCalcCielorraso());
+  const sel = document.getElementById("calc-cielo-obra");
+  if(sel) poblarSelectObras(sel, calcCieloState.obra);
+}
+const CALC_CIELO_ETIQUETAS_PERFIL = {
+  perimetral: "Perfil perimetral", primario: "Perfil primario / maestra", secundario: "Perfil secundario / transversal",
+  principal: "Perfil T principal", varillas: "Varillas de suspensión",
+};
+function htmlResultadoCalcCielorraso(r){
+  const filasPerfiles = Object.entries(r.perfiles).map(([k,v])=>`
+    <div class="row-flex" style="justify-content:space-between;"><span>${CALC_CIELO_ETIQUETAS_PERFIL[k]||k}</span><strong>${v}${k==="varillas"?" u":" m"}</strong></div>
+  `).join("");
+  const filasFijacion = `
+    <div class="row-flex" style="justify-content:space-between;"><span>🔩 Tarugos</span><strong>${r.fijacion.tarugos} u</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🔩 Tornillos de fijación</span><strong>${r.fijacion.tornillosFijacion} u</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🧵 Alambre galvanizado</span><strong>${r.fijacion.alambreMetros} m</strong></div>
+  `;
+  const filasTerminado = r.tieneTerminado ? `
+    <div class="row-flex" style="justify-content:space-between;"><span>🔩 Tornillos TN</span><strong>${r.accesorios.tornillosTN} u</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🩹 Cinta de juntas</span><strong>${r.accesorios.cintaJuntas} m</strong></div>
+    <div class="row-flex" style="justify-content:space-between;"><span>🧴 Masilla</span><strong>${r.accesorios.masilla} kg</strong></div>
+  ` : "";
+  return `
+    <div style="font-weight:800;color:var(--verde-oscuro);margin-bottom:6px;">RESULTADO</div>
+    <div style="font-size:22px;font-weight:900;">${r.placas} <span style="font-size:13px;font-weight:600;color:var(--tinta-suave);">${r.placasLabel}</span></div>
+    ${filasPerfiles}
+    <div style="height:1px;background:var(--borde);margin:4px 0;"></div>
+    <div style="font-size:10.5px;font-weight:800;color:var(--tinta-suave);">FIJACIÓN</div>
+    ${filasFijacion}
+    ${filasTerminado ? `<div style="height:1px;background:var(--borde);margin:4px 0;"></div><div style="font-size:10.5px;font-weight:800;color:var(--tinta-suave);">TERMINADO</div>${filasTerminado}` : ""}
+  `;
+}
+function htmlFormCalcCielorraso(){
+  const s = calcCieloState;
+  const r = calcularCielorraso(s);
+  const modosHtml = CALC_CIELORRASO_MODOS.map(m=>`<div class="chip-opt${s.modo===m.id?" sel":""}" onclick="calcCieloElegirModo('${m.id}')">${esc(m.nombre)}</div>`).join("");
+  return `
+    <h2 style="margin-top:0;">🏠 Cielorraso</h2>
+    <div class="field"><label>Obra</label><select id="calc-cielo-obra" onchange="calcCieloState.obra=this.value"></select></div>
+    <div class="field"><label>Sistema</label><div class="chip-row">${modosHtml}</div></div>
+    <div class="row-flex">
+      <div class="field"><label>Ancho del ambiente (m)</label><input type="number" id="calc-cielo-ancho" value="${s.ancho??""}" oninput="calcCieloCampo('ancho',this.value)"></div>
+      <div class="field"><label>Largo del ambiente (m)</label><input type="number" id="calc-cielo-largo" value="${s.largo??""}" oninput="calcCieloCampo('largo',this.value)"></div>
+    </div>
+    <div class="card" id="calc-cielo-resultado" style="border:1.5px solid var(--verde);margin-top:10px;">${htmlResultadoCalcCielorraso(r)}</div>
+    <button type="button" class="btn btn-primary" style="width:100%;margin-top:10px;" onclick="calcCieloAgregarAComputo()">➕ Agregar al cómputo</button>
+  `;
+}
+function calcCieloElegirModo(modo){
+  calcCieloState.modo = modo;
+  document.getElementById("prompt-generico-cuerpo").innerHTML = htmlFormCalcCielorraso();
+  const sel = document.getElementById("calc-cielo-obra");
+  if(sel) poblarSelectObras(sel, calcCieloState.obra);
+}
+function calcCieloCampo(nombre, valor){
+  const n = parseFloat(valor);
+  calcCieloState[nombre] = isNaN(n) ? 0 : n;
+  const resultado = document.getElementById("calc-cielo-resultado");
+  if(resultado) resultado.innerHTML = htmlResultadoCalcCielorraso(calcularCielorraso(calcCieloState));
+}
+async function calcCieloAgregarAComputo(){
+  if(!calcCieloState.obra){ showToast("Elegí la obra"); return; }
+  if(!calcCieloState.ancho || !calcCieloState.largo){ showToast("Cargá el ancho y el largo del ambiente"); return; }
+  const r = calcularCielorraso(calcCieloState);
+  const resultado = { [r.placasLabel]: `${r.placas} u` };
+  Object.entries(r.perfiles).forEach(([k,v])=>{ resultado[CALC_CIELO_ETIQUETAS_PERFIL[k]||k] = `${v}${k==="varillas"?" u":" m"}`; });
+  resultado["Tarugos"] = `${r.fijacion.tarugos} u`;
+  resultado["Tornillos de fijación"] = `${r.fijacion.tornillosFijacion} u`;
+  resultado["Alambre galvanizado"] = `${r.fijacion.alambreMetros} m`;
+  if(r.tieneTerminado){
+    resultado["Tornillos TN"] = `${r.accesorios.tornillosTN} u`;
+    resultado["Cinta de juntas"] = `${r.accesorios.cintaJuntas} m`;
+    resultado["Masilla"] = `${r.accesorios.masilla} kg`;
+  }
+  const item = {
+    id: "cm"+Date.now()+Math.random().toString(36).slice(2,7),
+    rubro: "Cielorraso",
+    modo: CALC_CIELORRASO_MODOS.find(m=>m.id===calcCieloState.modo).nombre,
+    obra: calcCieloState.obra,
+    parametros: { ancho:calcCieloState.ancho, largo:calcCieloState.largo },
+    resultado,
     fecha: hoyISO(),
   };
   const ok = await agregarItemComputoCalc(item);
