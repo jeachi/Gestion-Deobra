@@ -2174,6 +2174,12 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .cad-riel-btn .lbl{display:block;font-size:7.5px;font-weight:800;letter-spacing:.1px;white-space:nowrap;color:#9fb0b8;}
 .cad-riel-btn.abierto .lbl{color:#fff;}
 .cad-riel-btn.abierto{background:var(--verde);color:#fff;}
+/* Mismo motivo que .cad-status-btn.btn-primary / .tool-card.btn-primary: sin este selector propio,
+   la regla genérica .btn-primary pierde el empate de especificidad contra .cad-riel-btn (ambas de
+   una sola clase, pero .cad-riel-btn está declarada más abajo) y "Copiar" (promovido al riel
+   principal) quedaría sin ningún resalte visual mientras el modo está activo. */
+.cad-riel-btn.btn-primary{background:var(--verde);color:#fff;}
+.cad-riel-btn.btn-primary .lbl{color:#fff;}
 /* Barra inferior tipo CAD/Revit: ortogonal, grid, referencias -- colapsada por defecto (solo se ve
    la "manija" de 28px) para no comerse espacio del plano; se desliza hacia arriba al tocarla. */
 .cad-status-bar{position:absolute;left:0;right:0;bottom:0;z-index:32;display:flex;flex-direction:column;transform:translateY(calc(100% - 28px));transition:transform .22s ease;}
@@ -3948,13 +3954,13 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         </div>
       </div>
 
-      <!-- ---- Cajón "Más" -- ahora con contenido fijo (Reporte, Foto, Copiar pieza) ---- -->
+      <!-- ---- Cajón "Más" -- ahora con contenido fijo (Reporte, Foto) -- "Copiar pieza" se
+           promovió al riel principal (siempre visible, ya no hace falta abrir este cajón) ---- -->
       <div class="cad-flyout" id="drawer-mas" style="display:none;">
         <div class="cad-flyout-titulo">Más herramientas</div>
         <div class="grid-tools">
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); generarReportePlanoAvancePDF();" title="Genera un PDF (o lo manda por WhatsApp) con el resumen de avance de este plano"><span class="ico"><i class="ph-bold ph-printer"></i></span><span class="lbl">Reporte</span></button>
           <button class="tool-card" onclick="cerrarFlyoutsAbiertos(); iniciarFotoAvance();" title="Sacá una foto y que la IA reconozca el avance para marcarlo sola"><span class="ico"><i class="ph-bold ph-camera"></i></span><span class="lbl">Foto</span></button>
-          <button class="tool-card" id="btn-copiar-pieza-directo" onclick="cerrarFlyoutsAbiertos(); toggleModoCopiarPiezaDirecto();" title="Tocá este botón y después tocá la pieza que querés copiar"><span class="ico"><i class="ph-bold ph-copy"></i></span><span class="lbl">Copiar pieza</span></button>
           <button class="tool-card" id="btn-modo-exterior" onclick="toggleModoAltoContraste();" title="Sube el contraste del relleno y agrega un borde oscuro grueso a cada pieza -- para leer el plano bajo sol directo"><span class="ico">☀️</span><span class="lbl">Exterior</span></button>
           <button class="tool-card" id="btn-guia-fantasma" onclick="toggleGuiaFantasma();" title="Muestra de fondo, en punteado, el contorno de la última semana cerrada -- para no re-trazar lo mismo ni dejar huecos mientras marcás el avance de hoy"><span class="ico">👻</span><span class="lbl">Guía semana ant.</span></button>
         </div>
@@ -4029,6 +4035,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <button onclick="abrirSeleccionarPorCategoria()" title="Seleccionar todas las de una categoría (ej: todas las Ventana)">🎯 Categoría</button>
         <button onclick="abrirCambioMasivoCategoria()" title="Cambiar la categoría de las seleccionadas">🏷️</button>
         <button onclick="abrirCambioMasivoEstado()" title="Cambiar el estado de las seleccionadas">🎨</button>
+        <button onclick="copiarSeleccionMultiple()" title="Copiar las seleccionadas (quedan corridas al costado, ya seleccionadas)">📋</button>
         <button id="btn-eliminar-masivo" onclick="eliminarSeleccionMultiple(this)" title="Eliminar las seleccionadas">🗑</button>
         <button onclick="salirModoSeleccionMultiple()" title="Salir">✕</button>
       </div>
@@ -27569,6 +27576,7 @@ function renderRielAdaptativo(){
     <button class="cad-riel-btn" id="btn-drawer-revisar" data-nombre-corto="SELECCIONAR" onclick="toggleDrawerHerramientas('revisar')" title="Seleccionar: piezas (recuadro, forma libre, interferencias) o etiquetas"><span class="ico"><i class="ph-bold ph-check-square"></i></span></button>
     <button class="cad-riel-btn" id="btn-drawer-etiquetas" data-nombre-corto="ANOTAC." onclick="toggleDrawerHerramientas('etiquetas')" title="Anotaciones: cotas, texto, tabla de medidas, seleccionar en lote"><span class="ico"><i class="ph-bold ph-tag"></i></span></button>
     <div class="cad-riel-sep"></div>
+    <button class="cad-riel-btn" id="btn-copiar-pieza-directo" data-nombre-corto="COPIAR" onclick="toggleModoCopiarPiezaDirecto()" title="Copiar una pieza o etiqueta ya hecha: tocá este botón y después tocala -- sin depender del doble-tap"><span class="ico"><i class="ph-bold ph-copy"></i></span></button>
     <button class="cad-riel-btn" id="btn-mover-elementos" data-nombre-corto="MOVER" onclick="iniciarMoverElementos()" title="Mover: elegí una o varias piezas/etiquetas y desplazalas juntas"><span class="ico"><i class="ph-bold ph-arrows-out-cardinal"></i></span></button>
     <button class="cad-riel-btn" data-nombre-corto="DESHACER" onclick="deshacerGeneral()" title="Deshace la última acción (cerrar área, editar, eliminar, duplicar, ajustar %, mover o borrar un cuadro de texto)"><span class="ico"><i class="ph-bold ph-arrow-u-up-left"></i></span></button>
     <button class="cad-riel-btn" data-nombre-corto="REHACER" onclick="rehacerGeneral()" title="Rehace lo último que deshiciste (se pierde si después hacés algo nuevo)"><span class="ico"><i class="ph-bold ph-arrow-u-up-right"></i></span></button>
@@ -30699,7 +30707,7 @@ function toggleModoCopiarPiezaDirecto(){
   actualizarModoFlotante();
   if(modoCopiarPiezaDirecto){
     cerrarFlyoutsAbiertos(); // mismo motivo que en Copiar contorno: que el cierre del cajón no compita con el toque
-    showToast("📋 Tocá la pieza que querés copiar.", 5000);
+    showToast("📋 Tocá la pieza o la etiqueta que querés copiar.", 5000);
   }
 }
 function manejarTapCopiarPiezaDirecto(e){
@@ -30721,12 +30729,30 @@ function manejarTapCopiarPiezaDirecto(e){
       if(!poligonos[i].capa && anillosDe(poligonos[i]).some(an=>puntoDentroDePoligono(x, y, an))){ idxEncontrado = i; break; }
     }
   }
-  if(idxEncontrado===-1){ showToast("No encontré ninguna pieza justo ahí -- probá tocar más adentro del área."); return; }
+  if(idxEncontrado===-1){ showToast("No encontré ninguna pieza justo ahí -- probá tocar más adentro del área, o tocá una etiqueta para copiarla a ella."); return; }
   modoCopiarPiezaDirecto = false;
   const btn = document.getElementById("btn-copiar-pieza-directo");
   if(btn) btn.classList.remove("btn-primary");
   actualizarModoFlotante();
   copiarPiezaCercana(idxEncontrado);
+}
+// Copia UNA etiqueta mientras "Copiar pieza" está activo y el toque cayó sobre su cartel (en vez
+// de un área) -- llamada desde activarArrastreAnotacion(), que es la capa de toques que sí recibe
+// el tap en ese caso. Igual que copiarPiezaCercana(): copia corrida al costado, de un solo toque,
+// sin pedir confirmación.
+async function copiarEtiquetaDesdeModoDirecto(idx){
+  const original = anotacionesTexto[idx];
+  if(!original) return;
+  modoCopiarPiezaDirecto = false;
+  const btn = document.getElementById("btn-copiar-pieza-directo");
+  if(btn) btn.classList.remove("btn-primary");
+  actualizarModoFlotante();
+  guardarEnHistorial();
+  const OFFSET = 24;
+  anotacionesTexto.push({...original, x: original.x+OFFSET, y: original.y+OFFSET});
+  redibujar();
+  await guardarAnotacionesTexto();
+  showToast("✓ Etiqueta copiada");
 }
 // ================= CAMBIAR DE CAPA =================
 // Reasigna una pieza YA DIBUJADA a otra capa de la misma actividad (o al área total), sin tocar
@@ -32876,6 +32902,27 @@ async function confirmarCambioMasivoEstado(estadoId){
   cerrarFotoAvanceOverlay();
   showToast(`✓ Estado cambiado en ${anotacionesSeleccionadas.size} etiqueta${anotacionesSeleccionadas.size===1?"":"s"}`);
 }
+// Duplica TODAS las seleccionadas de una, corridas un poco al costado (mismo offset que usa
+// "Copiar pieza" para áreas) -- la selección pasa a las copias nuevas, no a las originales, para
+// poder arrastrarlas a su lugar o cambiarles la categoría/estado de una sin tocar las de antes.
+async function copiarSeleccionMultiple(){
+  if(anotacionesSeleccionadas.size===0){ showToast("Tocá al menos una etiqueta para seleccionarla primero."); return; }
+  guardarEnHistorial();
+  const OFFSET = 24;
+  const idxOriginales = [...anotacionesSeleccionadas];
+  const idxNuevas = [];
+  idxOriginales.forEach(idx=>{
+    const a = anotacionesTexto[idx];
+    if(!a) return;
+    anotacionesTexto.push({...a, x: a.x+OFFSET, y: a.y+OFFSET});
+    idxNuevas.push(anotacionesTexto.length-1);
+  });
+  anotacionesSeleccionadas = new Set(idxNuevas);
+  actualizarTextoSeleccionMultiple();
+  redibujar();
+  await guardarAnotacionesTexto();
+  showToast(`✓ ${idxNuevas.length} etiqueta${idxNuevas.length===1?"":"s"} copiada${idxNuevas.length===1?"":"s"}`);
+}
 document.addEventListener("click", (e)=>{
   const chipMasivo = e.target.closest("#masivo-categoria .chip-opt");
   if(chipMasivo){
@@ -33370,7 +33417,7 @@ function activarArrastreAnotacion(btn, idx){
   const UMBRAL_MOV = 10;
   btn.addEventListener("pointerdown", (e)=>{
     if(moviendoGrupoActivo){ iniciarColocarPunto(e); return; } // arrastrando el grupo del botón "Mover" -- el toque cae sobre una etiqueta, pero el gesto es para todo el grupo
-    if(modoSeleccionMultiple || modoMoverTapSeleccionando) return; // en modo selección no se arma el temporizador de mover -- un toque siempre es "marcar/desmarcar"
+    if(modoSeleccionMultiple || modoMoverTapSeleccionando || modoCopiarPiezaDirecto) return; // en estos modos un toque es una acción directa (marcar/desmarcar, elegir para mover, copiar) -- no se arma el temporizador de "mantener para mover"
     inicioX = e.clientX; inicioY = e.clientY;
     moviendo = false;
     timer = setTimeout(()=>{
@@ -33394,6 +33441,12 @@ function activarArrastreAnotacion(btn, idx){
     clearTimeout(timer);
     if(modoMoverTapSeleccionando){ alternarEtiquetaParaMover(idx); return; }
     if(modoSeleccionMultiple){ alternarSeleccionEtiqueta(idx); return; }
+    // "Copiar pieza" (antes solo buscaba un área bajo el dedo) -- si el toque cae sobre una
+    // etiqueta en vez de un área, también se puede copiar. Antes esto no pasaba por acá (las
+    // etiquetas tienen su propia capa de toques encima del canvas, que esta función SÍ recibe,
+    // a diferencia del buscador de áreas del canvas) y el toque quedaba sin ningún efecto visible,
+    // o terminaba mostrando "no encontré ninguna pieza" si el dedo rozaba el canvas de al lado.
+    if(modoCopiarPiezaDirecto){ e.preventDefault(); e.stopPropagation(); copiarEtiquetaDesdeModoDirecto(idx); return; }
     if(moviendo){
       moviendo = false;
       quitarGhostAnotacion();
