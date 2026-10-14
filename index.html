@@ -23416,9 +23416,10 @@ function renderSelectorPlanos(){
         ${p.contratistaNombre ? `<span class="chip-contratista">${esc(p.contratistaNombre)}</span>` : ""}
       </div>
       <div class="plano-card-acciones">
-        ${p.tipo==='maestro' ? `<button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); abrirRenombrarPlano('${p.id}')" title="Cambiarle el nombre a este Plano Maestro">🏷️ Renombrar</button>` : `<button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); abrirVincularPlano('${p.id}')" title="Vincular este plano a un contratista (o cambiarlo/quitarlo)">🔗 ${p.contratistaNombre ? "Vinculado" : "Vincular"}</button>`}
+        ${p.tipo!=='maestro' ? `<button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); abrirVincularPlano('${p.id}')" title="Vincular este plano a un contratista (o cambiarlo/quitarlo)">🔗 ${p.contratistaNombre ? "Vinculado" : "Vincular"}</button>` : ""}
+        <button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); abrirRenombrarPlano('${p.id}')" title="Cambiarle el nombre a este plano">🏷️ Renombrar</button>
         <button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); alternarOrientacionPlano('${p.id}')" title="Orientación del reporte PDF de este plano: ${p.orientacionReporte==='landscape'?'Horizontal':'Vertical'} (tocá para cambiar)">${p.orientacionReporte==='landscape' ? '↔️' : '↕️'}</button>
-        <button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); duplicarPlano('${p.id}')" title="Duplicar este plano entero (imagen, capas y cuadro de medidas) como uno nuevo, independiente">📄 Duplicar</button>
+        <button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); duplicarPlano('${p.id}')" title="Duplicar este plano entero (imagen, capas, escala, cotas y cuadro de medidas) como uno nuevo, independiente">📄 Duplicar</button>
         ${p.tipo==='maestro' ? "" : `<button type="button" class="mini-accion-plano" onclick="event.stopPropagation(); duplicarComoMaestro('${p.id}')" title="Usar la MISMA imagen de este plano (con todos sus niveles) como base de un Plano Maestro nuevo, con pines">🏛️ A Maestro</button>`}
       </div>
     </div>
@@ -24558,6 +24559,19 @@ async function duplicarPlano(idOriginal){
       await window.storage.set(`plano_avance_poligonos_${obra}_${nuevoId}`, JSON.stringify(poligonosCopia), true);
     }
     if(rTxt && rTxt.value) await window.storage.set(`plano_avance_textos_${obra}_${nuevoId}`, rTxt.value, true);
+    // El resto de los datos propios del plano (escala calibrada, ejes, dibujo libre, cotas,
+    // recorrido lineal, cuadro "proyecto vs real", estados y prefijos de código personalizados) se
+    // copian tal cual, sin transformar -- antes NINGUNO de estos viajaba a la copia (se "duplicaba
+    // el plano entero" pero la escala, por ejemplo, quedaba descalibrada de nuevo sin ningún
+    // aviso). Si el original nunca tuvo alguno de estos datos, simplemente no se escribe nada para
+    // la copia (mismo comportamiento que si fuera un plano nuevo).
+    const PREFIJOS_CLAVES_PLANO_A_COPIAR = ["plano_avance_calibracion", "plano_avance_ejes", "plano_avance_formas", "plano_avance_cotas", "plano_avance_lineas", "plano_avance_proyecto", "plano_avance_estados", "plano_avance_prefijos_categoria"];
+    await Promise.all(PREFIJOS_CLAVES_PLANO_A_COPIAR.map(async prefijo=>{
+      try{
+        const r = await window.storage.get(`${prefijo}_${obra}_${idOriginal}`, true);
+        if(r && r.value) await window.storage.set(`${prefijo}_${obra}_${nuevoId}`, r.value, true);
+      }catch(e){ /* ese dato en particular no estaba cargado en el original -- no es un error */ }
+    }));
     // Si el plano original es un Plano Maestro, hay que conservar su tipo (si no, la copia queda
     // como un plano de contratista común, sin el badge 🏛️ MAESTRO) Y copiar sus pines -- si no,
     // la copia sale vacía de pines/checklists, perdiendo todo ese trabajo sin ningún aviso.
@@ -25060,6 +25074,35 @@ function generarImagenSnapshotIndividual(snapshot){
     ctx.stroke();
     ctx.restore();
   });
+  // Etiquetas (cuadros de texto/medidas) y dibujo libre (línea/flecha/círculo) -- SOLO para el
+  // estado actual de un plano de AVANCE (snapshot===null). Un snapshot histórico (semana cerrada)
+  // nunca guardó estos datos en su momento -- no hay cómo reconstruir "cómo estaban las etiquetas
+  // esa semana", así que mezclarlas ahí sería mostrar el estado de HOY encima de un hito de otra
+  // fecha. Un Plano Maestro tampoco los tiene (ver seleccionarPlano(): ni anotacionesTexto ni
+  // formasPlano se cargan para él) -- dibujarlos ahí mostraría sobras en memoria del último plano
+  // de avance que estuvo abierto, no datos de ESTE plano. Antes esta función (usada por Vista
+  // rápida y "Compartir avance") no los dibujaba nunca, en ningún caso -- la previsualización solo
+  // mostraba la imagen + las áreas pintadas.
+  if(!snapshot && !modoPlanoMaestro){
+    dibujarFormasPlano(ctx, canvas);
+    const grosorTexto = Math.max(1.5, canvas.width/500);
+    anotacionesTexto.forEach(a=>{
+      const texto = textoDeAnotacion(a);
+      const fontSize = Math.max(14, canvas.width/55);
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const anchoTexto = ctx.measureText(texto).width;
+      const padX = fontSize*0.5, padY = fontSize*0.35;
+      const estadoObj = (a.tipo==="numero" && a.estado) ? estadosPersonalizados.find(e=>e.id===a.estado) : null;
+      const color = estadoObj ? estadoObj.color : "#8B5CF6";
+      ctx.fillStyle = "rgba(255,255,255,.92)";
+      ctx.fillRect(a.x-anchoTexto/2-padX, a.y-fontSize/2-padY, anchoTexto+padX*2, fontSize+padY*2);
+      ctx.strokeStyle = color; ctx.lineWidth = grosorTexto;
+      ctx.strokeRect(a.x-anchoTexto/2-padX, a.y-fontSize/2-padY, anchoTexto+padX*2, fontSize+padY*2);
+      ctx.fillStyle = color;
+      ctx.fillText(texto, a.x, a.y+1);
+    });
+  }
   return canvas.toDataURL("image/jpeg", 0.85);
 }
 // ---------------- Compartir el avance actual (con la leyenda de capas incluida) ----------------
