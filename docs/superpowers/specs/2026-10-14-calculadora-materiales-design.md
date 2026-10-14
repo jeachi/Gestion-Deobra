@@ -36,7 +36,11 @@ tienen más de un "modo" (ej. Mampostería elige entre 4 tipos de unidad).
 2. **Pared de Durlock** (tabique de placas de yeso sobre estructura
    metálica vertical).
 3. **Cielorraso** — modos: Junta tomada (placas de yeso suspendidas) /
-   Modular 60x60 (paneles de fibra mineral + perfilería T vista).
+   Modular 60x60 (paneles de fibra mineral + perfilería T vista) /
+   Suspendido 60x120 (paneles de fibra mineral más grandes + perfilería
+   T vista). Los 3 modos incluyen tarugos y tornillos de fijación del
+   perfil perimetral a la pared, y alambre galvanizado para los puntos
+   de suspensión.
 4. **Techo** (chapas + tornillos autoperforantes).
 5. **Malla electrosoldada**.
 6. **Pintura**.
@@ -179,10 +183,33 @@ piezas de tabique vertical; usa perfilería de suspensión propia)
   - **Perfil perimetral** (moldura en L en todo el borde, apoya el
     panel contra la pared): metros = perímetro.
   - **Varillas de suspensión**: cantidad ≈ área / 1.2 m², editable.
+- *Suspendido 60x120* (paneles de fibra mineral de mayor formato sobre
+  la misma perfilería T vista, pero con cruces más espaciados):
+  - Paneles = ceil(área / 0.72 m² × (1 + % desperdicio)) -- panel de
+    0.60x1.20m = 0.72 m².
+  - **Perfil T principal**: metros ≈ área / 1.20 m², editable (igual
+    espaciamiento que 60x60).
+  - **Perfil T secundario / transversal** (ahora cada 1.20m en vez de
+    0.60m, porque el panel es el doble de largo): metros ≈ área / 1.20
+    m², editable.
+  - **Perfil perimetral**: metros = perímetro.
+  - **Varillas de suspensión**: cantidad ≈ área / 1.2 m², editable.
+- **Accesorios de fijación, comunes a los 3 modos** (se habían omitido
+  en el primer diseño):
+  - **Tarugos y tornillos** (fijan el perfil perimetral a la
+    mampostería, cada ~30-40cm, editable): cantidad ≈ ceil(perímetro /
+    0.35), igual cantidad de tarugos que de tornillos.
+  - **Alambre galvanizado N°8** (ata y refuerza cada punto de
+    suspensión -- varilla o nonio -- a la losa/techo superior): metros
+    ≈ varillas de suspensión × 1 m/punto, editable.
+  - Tornillos TN (~25-30/m²) + cinta de juntas + masilla siguen siendo
+    exclusivos de *Junta tomada* (los modos modulares no llevan placas
+    atornilladas ni juntas tomadas).
 - Salida: según modo, "N placas/paneles" + una línea POR CADA tipo de
-  perfil (perimetral, primario/maestra, secundario/transversal) en
-  metros + "N varillas de suspensión" + accesorios (tornillos/cinta/
-  masilla, solo en junta tomada).
+  perfil (perimetral, principal/maestra, secundario/transversal) en
+  metros + "N varillas de suspensión" + "N tarugos" + "N tornillos de
+  fijación" + "N m de alambre" + accesorios de terminado
+  (tornillos TN/cinta/masilla, solo en junta tomada).
 
 **4. Techo**
 - Ancho útil por formato de chapa (ej. acanalada ~0.91m, trapezoidal
@@ -317,7 +344,8 @@ el editor de Plano de avance:
    de formulario/resultado genérico, "Mi cómputo" (acumular/editar/
    borrar), reporte PDF vacío/con un rubro de prueba. Primer rubro real:
    Mampostería (los 4 modos).
-2. **PR 2**: Pared de Durlock + Cielorraso (los 2 modos).
+2. **PR 2**: Pared de Durlock + Cielorraso (los 3 modos: junta tomada,
+   modular 60x60 y suspendido 60x120).
 3. **PR 3**: Techo + Malla electrosoldada + Losa de viguetas y ladrillos
    (los 2 modos) -- se agrupan porque Losa reutiliza directamente la
    malla y el cálculo de hormigón de las otras dos.
