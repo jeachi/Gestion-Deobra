@@ -3414,6 +3414,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
       <h2 style="margin-top:18px;">Gastos</h2>
       <div id="asistente-avisos-box-gasto" style="display:none;"></div>
       <button class="btn btn-outline btn-sm" style="margin-bottom:10px;" onclick="agregarFilaGasto()">+ Agregar gasto</button>
+      <button class="btn btn-outline btn-sm" id="btn-ordenar-gastos" style="margin-bottom:10px;margin-left:8px;" onclick="ordenarGastosPorFecha()" title="Ordenar los gastos por fecha">↑ Fecha: antiguo→reciente</button>
       <div class="table-wrap">
         <table class="trab" id="tabla-gastos-caja">
           <thead><tr>
@@ -4140,7 +4141,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <div class="chip-opt" data-val="Reja">⛓️ Reja</div>
         <div class="chip-opt" id="chip-categoria-otra" data-val="__otra__">+ Otra</div>
       </div>
-      <input type="text" id="prompt-texto-plano-categoria-otra" placeholder="Escribí la categoría (ej: Desagüe)" style="display:none;width:100%;padding:9px 10px;border:1.5px solid var(--morado, #8B5CF6);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:10px;">
+      <input type="text" id="prompt-texto-plano-categoria-otra" placeholder="Escribí la categoría (ej: Desagüe)" oninput="actualizarVisibilidadCodigoPrompt()" style="display:none;width:100%;padding:9px 10px;border:1.5px solid var(--morado, #8B5CF6);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:10px;">
+    </div>
+    <div id="prompt-texto-plano-codigo-wrap" style="display:none;">
+      <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:6px;">Código (correlativo) -- se arma solo, pero lo podés corregir a mano</div>
+      <input type="text" id="prompt-texto-plano-codigo" placeholder="automático" style="width:100%;padding:9px 10px;border:1.5px solid var(--borde);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:10px;">
     </div>
     <div id="prompt-texto-plano-ubicacion-wrap">
       <div style="font-size:11px;color:var(--tinta-suave);margin-bottom:6px;">Ubicación (opcional)</div>
@@ -11049,6 +11054,7 @@ let correlativoCajaSiguiente = 1;
 let rendicionesIndex = [];   // [{id,numero,obra,responsable,mes,quincena,totalGastos,totalCaja,diferencia}]
 let rendicionesCache = {};
 let rcGastos = [];
+let ordenGastosAscendente = true; // true = antiguo→reciente, false = reciente→antiguo
 let rcFondo = [];
 let rendicionEditandoId = null;
 let rendicionAbiertoId = null;
@@ -11252,8 +11258,10 @@ function prepararFormularioNuevaRendicion(rendicionExistente){
     document.getElementById("rc-semana").value = rendicionExistente.semana||"";
     document.getElementById("rc-saldo-anterior").value = rendicionExistente.saldoAnterior || "";
     actualizarSugerenciaSaldoAnteriorEditar();
+    ordenGastosAscendente = true;
   }else{
     rendicionEditandoId = null;
+    ordenGastosAscendente = true;
     rcGastos = [{fecha:hoyISO(),ticket:"",tipoCosto:"",observaciones:"",centroCosto:"",monto:""}];
     rcFondo = [{detalle:"",monto:""}];
     document.getElementById("rc-numero-preview").textContent = numeroFormateado(correlativoCajaSiguiente);
@@ -11282,6 +11290,7 @@ function prepararFormularioNuevaRendicion(rendicionExistente){
   }
   document.getElementById("estado-guardado-caja").textContent = "";
   document.getElementById("fab-guardar-texto").textContent = rendicionEditandoId ? "Guardar cambios" : "Guardar rendición";
+  actualizarBotonOrdenGastos();
   renderTablaGastos();
   renderTablaFondo();
   renderChipCajaBase();
@@ -11361,6 +11370,26 @@ function renderTablaGastos(){
     if(sel) sel.value = rcGastos[i].tipoCosto || "";
   });
   actualizarTotalesForm();
+}
+// Ordena la lista de gastos por fecha -- cada toque alterna el sentido (antiguo→reciente o al
+// revés), igual que la cabecera de una columna en una planilla. Las filas sin fecha todavía
+// (recién agregadas, en blanco) quedan siempre al final, sea cual sea el sentido elegido: no
+// tiene sentido intercalarlas entre fechas reales.
+function ordenarGastosPorFecha(){
+  rcGastos.sort((a,b)=>{
+    if(!a.fecha && !b.fecha) return 0;
+    if(!a.fecha) return 1;
+    if(!b.fecha) return -1;
+    return ordenGastosAscendente ? a.fecha.localeCompare(b.fecha) : b.fecha.localeCompare(a.fecha);
+  });
+  renderTablaGastos();
+  ordenGastosAscendente = !ordenGastosAscendente; // el próximo toque alterna al sentido contrario
+  actualizarBotonOrdenGastos();
+}
+function actualizarBotonOrdenGastos(){
+  const btn = document.getElementById("btn-ordenar-gastos");
+  if(!btn) return;
+  btn.textContent = ordenGastosAscendente ? "↑ Fecha: antiguo→reciente" : "↓ Fecha: reciente→antiguo";
 }
 function agregarFilaGasto(){
   // Al principio de la lista, no al final: así la última factura cargada queda arriba de todo
@@ -33041,6 +33070,11 @@ function abrirPromptTextoPlano(anclaONull, idxExistente){
     inputOtraCategoria.style.display = "block";
     inputOtraCategoria.value = categoriaGuardada;
   }
+  // Código (correlativo): si ya tenía uno (edición), se precarga tal cual para poder corregirlo a
+  // mano -- si es una etiqueta nueva, queda vacío y el placeholder muestra cuál sería el siguiente
+  // automático, sin forzarlo todavía (se termina de decidir recién al confirmar).
+  document.getElementById("prompt-texto-plano-codigo").value = (esEdicion && datos.codigo) ? datos.codigo : "";
+  actualizarVisibilidadCodigoPrompt();
   document.getElementById("btn-borrar-texto-plano").style.display = esEdicion ? "" : "none";
   document.getElementById("btn-mover-texto-plano").style.display = esEdicion ? "" : "none";
   document.getElementById("btn-copiar-texto-plano").style.display = esEdicion ? "" : "none";
@@ -33107,6 +33141,7 @@ document.addEventListener("click", (e)=>{
     }else{
       inputOtra.style.display = "none";
     }
+    actualizarVisibilidadCodigoPrompt();
   }
   // Mismos 2 patrones de arriba, pero para el formulario de "Proyecto vs Real" (categoría y
   // unidad ahí son chips propios, separados de los del cuadro de texto normal del plano).
@@ -33155,8 +33190,13 @@ async function confirmarPromptTextoPlano(){
   // nueva o cambió, se le asigna el siguiente número libre de ESA categoría.
   let codigo = "";
   if(categoria){
-    const previa = idxAnotacionEditando!==null ? anotacionesTexto[idxAnotacionEditando] : null;
-    codigo = (previa && previa.categoria===categoria && previa.codigo) ? previa.codigo : generarCodigoParaCategoria(categoria, idxAnotacionEditando);
+    const codigoATmano = document.getElementById("prompt-texto-plano-codigo").value.trim().toUpperCase();
+    if(codigoATmano){
+      codigo = codigoATmano; // el usuario corrigió el correlativo a mano -- se usa tal cual, sin pisarlo
+    }else{
+      const previa = idxAnotacionEditando!==null ? anotacionesTexto[idxAnotacionEditando] : null;
+      codigo = (previa && previa.categoria===categoria && previa.codigo) ? previa.codigo : generarCodigoParaCategoria(categoria, idxAnotacionEditando);
+    }
   }
   if(idxAnotacionEditando!==null){
     anotacionesTexto[idxAnotacionEditando] = {...anotacionesTexto[idxAnotacionEditando], valor, tipo, unidad, cantidad, ubicacion, categoria, codigo, estado};
@@ -33331,6 +33371,18 @@ function categoriaSeleccionadaEnPromptTexto(){
   const categoriaChip = document.querySelector("#prompt-texto-plano-categoria .chip-opt.sel");
   if(!categoriaChip) return "";
   return categoriaChip.dataset.val==="__otra__" ? document.getElementById("prompt-texto-plano-categoria-otra").value.trim() : categoriaChip.dataset.val;
+}
+// El código (correlativo) solo tiene sentido si hay categoría elegida -- sin categoría, la
+// etiqueta no se numera (textoDeAnotacion muestra la medida entera en vez de un código corto).
+// Además de mostrar/ocultar el campo, actualiza su placeholder con cuál sería el próximo número
+// automático de ESA categoría, para que quede claro qué va a pasar si se deja vacío.
+function actualizarVisibilidadCodigoPrompt(){
+  const wrap = document.getElementById("prompt-texto-plano-codigo-wrap");
+  const categoria = categoriaSeleccionadaEnPromptTexto();
+  if(!categoria){ wrap.style.display = "none"; return; }
+  wrap.style.display = "";
+  const sugerido = generarCodigoParaCategoria(categoria, idxAnotacionEditando);
+  document.getElementById("prompt-texto-plano-codigo").placeholder = `automático (sería "${sugerido}")`;
 }
 let prefijoCategoriaPendiente = null; // nombre de la categoría cuyo prefijo se está editando
 function abrirPrefijoCategoriaActual(){
