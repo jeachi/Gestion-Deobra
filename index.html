@@ -3884,6 +3884,13 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
           <button class="tool-card destacado" onclick="iniciarDibujoRectangulo()" title="Traza un rectángulo tocando dos esquinas opuestas"><span class="ico"><i class="ph-bold ph-rectangle"></i></span><span class="lbl">Rectángulo</span></button>
           <button class="tool-card" onclick="iniciarRecorridoLineal()" title="Traza una línea (no un área cerrada) para medir un recorrido, ej: una cañería"><span class="ico"><i class="ph-bold ph-flow-arrow"></i></span><span class="lbl">Recorrido lineal</span></button>
         </div>
+        <div class="grupo-herramientas-tit">Dibujo libre</div>
+        <div class="grid-tools">
+          <button class="tool-card destacado" onclick="iniciarFormaPlano('linea')" title="Traza una línea libre entre dos puntos -- no suma área ni pertenece a ninguna actividad"><span class="ico">📏</span><span class="lbl">Línea</span></button>
+          <button class="tool-card destacado" onclick="iniciarFormaPlano('flecha')" title="Traza una flecha entre dos puntos, para señalar algo en el plano"><span class="ico">➜</span><span class="lbl">Flecha</span></button>
+          <button class="tool-card destacado" onclick="iniciarFormaPlano('circulo')" title="Traza un círculo: tocá el centro y después un punto del borde"><span class="ico">⭕</span><span class="lbl">Círculo</span></button>
+          <button class="tool-card" onclick="abrirGestionFormasPlano()" title="Ver y borrar las líneas/flechas/círculos ya puestos"><span class="ico"><i class="ph-bold ph-eraser"></i></span><span class="lbl">Gestionar</span></button>
+        </div>
         <div class="grupo-herramientas-tit">Modificar</div>
         <div class="grid-tools">
           <button class="tool-card" onclick="iniciarModoRecorte()" title="Marcá una zona para recortarla de cualquier área que la toque, sea de la actividad que sea"><span class="ico"><i class="ph-bold ph-scissors"></i></span><span class="lbl">Recortar</span></button>
@@ -22582,6 +22589,7 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
   }catch(e){ poligonos = []; }
   lineasAvance = await cargarLineasAvance(obra, id);
   lineasReferencia = await cargarLineasReferencia(obra, id);
+  formasPlano = await cargarFormasPlano(obra, id);
   try{
     const rTxt = await window.storage.get(`plano_avance_textos_${obra}_${id}`, true);
     anotacionesTexto = rTxt && rTxt.value ? JSON.parse(rTxt.value) : [];
@@ -28024,6 +28032,7 @@ function iniciarColocarPunto(e){
   if(e.touches && e.touches.length>=2){ iniciarPinch(e); return; }
   if(modoLineal){ manejarTapLineal(e); return; }
   if(modoCinta){ iniciarColocacionConLupa(e, "cinta", confirmarPuntoCinta); return; }
+  if(modoFormaPlano){ iniciarColocacionConLupa(e, "cinta", confirmarPuntoFormaPlano); return; }
   if(modoUbicarOrigenGrid){ iniciarColocacionConLupa(e, "grid", confirmarUbicarOrigenGrid); return; }
   if(modoAgregarPin){ iniciarColocacionConLupa(e, "pin", manejarTapAgregarPin); return; }
   if(modoCopiarContorno){ manejarTapCopiarContorno(e); return; }
@@ -29418,6 +29427,10 @@ function comandosDisponibles(){
     {n:"Líneas de referencia", d:"Poner ejes para alinear cortes", i:"📏", solo:"avance", f:()=>iniciarColocarReferencia()},
     {n:"Gestionar líneas de referencia", d:"Ver y borrar las líneas ya puestas", i:"🗑️", solo:"avance", f:()=>abrirGestionLineasReferencia()},
     {n:"Rectángulo", d:"Marcar un área rectangular", i:"▭", solo:"avance", f:()=>iniciarDibujoRectangulo()},
+    {n:"Línea", d:"Dibujo libre: una línea entre dos puntos", i:"📏", solo:"avance", f:()=>iniciarFormaPlano("linea")},
+    {n:"Flecha", d:"Dibujo libre: una flecha para señalar algo", i:"➜", solo:"avance", f:()=>iniciarFormaPlano("flecha")},
+    {n:"Círculo", d:"Dibujo libre: un círculo (centro + borde)", i:"⭕", solo:"avance", f:()=>iniciarFormaPlano("circulo")},
+    {n:"Gestionar formas dibujadas", d:"Ver y borrar líneas/flechas/círculos puestos", i:"🗑️", solo:"avance", f:()=>abrirGestionFormasPlano()},
     {n:"Recorrido lineal", d:"Medir avance en metros de recorrido", i:"📏", solo:"avance", f:()=>iniciarRecorridoLineal()},
     {n:"Recortar", d:"Borrar una zona de cualquier área", i:"✂️", solo:"avance", f:()=>iniciarModoRecorte()},
     {n:"Copiar contorno", d:"Calcar la forma de otra pieza", i:"🖈", solo:"avance", f:()=>toggleModoCopiarContorno()},
@@ -29883,6 +29896,159 @@ function borrarTodasLasReferencias(){
   redibujar();
   showToast("✓ Líneas de referencia borradas");
 }
+
+/* ==================== Formas libres: Línea, Flecha, Círculo ====================
+   Pedido del usuario: tener herramientas de dibujo libre (línea, flecha, círculo) visibles en
+   el cajón "Dibujar" -- no existían antes (lo único parecido era "Recorrido lineal", que es
+   seguimiento de % de avance, no una línea libre). Son anotaciones gráficas puras: no suman
+   área, no pertenecen a ninguna actividad/capa, se pueden borrar en cualquier momento sin
+   afectar nada ya dibujado -- mismo espíritu que las líneas de referencia (Ejes), pero con dos
+   puntos arbitrarios en vez de uno ortogonal, y persistidas en su propia clave por plano. */
+let formasPlano = [];
+let modoFormaPlano = null; // null | "linea" | "flecha" | "circulo"
+let puntoFormaPlanoInicio = null;
+async function cargarFormasPlano(obra, planoId){
+  try{
+    const r = await window.storage.get(`plano_avance_formas_${obra}_${planoId}`, true);
+    return r && r.value ? JSON.parse(r.value) : [];
+  }catch(e){ return []; }
+}
+async function guardarFormasPlano(){
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return;
+  try{ await window.storage.set(`plano_avance_formas_${obra}_${planoActualId}`, JSON.stringify(formasPlano), true); }
+  catch(e){ showToast("No se pudo guardar la forma (revisá conexión)"); }
+}
+const FORMAS_PLANO_INFO = {
+  linea: {ico:"📏", nombre:"Línea", instruccionInicio:"📏 Tocá el punto de inicio de la línea.", instruccionFin:"📏 Tocá el punto final."},
+  flecha: {ico:"➜", nombre:"Flecha", instruccionInicio:"➜ Tocá de dónde sale la flecha.", instruccionFin:"➜ Tocá hacia dónde apunta."},
+  circulo: {ico:"⭕", nombre:"Círculo", instruccionInicio:"⭕ Tocá el centro del círculo.", instruccionFin:"⭕ Tocá un punto del borde (define el radio)."},
+};
+function iniciarFormaPlano(tipo){
+  if(dibujando){ showToast("Terminá o cancelá lo que estás dibujando antes."); return; }
+  modoFormaPlano = tipo;
+  puntoFormaPlanoInicio = null;
+  dibujando = true;
+  cerrarFlyoutsAbiertos();
+  ["drawer-vista","drawer-capas","drawer-dibujar","drawer-mas"].forEach(id=>{ const el=document.getElementById(id); if(el) el.style.display="none"; });
+  document.getElementById("cad-riel").style.display = "none";
+  document.getElementById("cad-bottom-actions").style.display = "flex";
+  document.getElementById("btn-cerrar").disabled = true;
+  const est = document.getElementById("estado-dibujo");
+  est.style.display = "block";
+  est.textContent = FORMAS_PLANO_INFO[tipo].instruccionInicio;
+}
+function confirmarPuntoFormaPlano(x,y){
+  if(referenciasSnapActivo){
+    const snap = buscarPuntoCercano(x, y, null);
+    if(snap){ x=snap[0]; y=snap[1]; }
+  }
+  if(!puntoFormaPlanoInicio){
+    puntoFormaPlanoInicio = {x,y};
+    document.getElementById("estado-dibujo").textContent = FORMAS_PLANO_INFO[modoFormaPlano].instruccionFin;
+    redibujar();
+    return;
+  }
+  const forma = {
+    id: uid(), tipo: modoFormaPlano,
+    x1: puntoFormaPlanoInicio.x, y1: puntoFormaPlanoInicio.y, x2: x, y2: y,
+    color: "#3B82F6",
+  };
+  formasPlano.push(forma);
+  guardarFormasPlano();
+  salirDeFormaPlano();
+  redibujar();
+  showToast(`✓ ${FORMAS_PLANO_INFO[forma.tipo].nombre} agregada`);
+}
+function salirDeFormaPlano(){
+  modoFormaPlano = null;
+  puntoFormaPlanoInicio = null;
+  dibujando = false;
+  document.getElementById("estado-dibujo").style.display = "none";
+  document.getElementById("cad-bottom-actions").style.display = "none";
+  document.getElementById("cad-riel").style.display = "flex";
+  redibujar();
+}
+// Dibuja una punta de flecha (triángulo) en (x2,y2), apuntando en la dirección (x1,y1)->(x2,y2).
+function dibujarPuntaFlecha(ctx, x1, y1, x2, y2, largo, color){
+  const angulo = Math.atan2(y2-y1, x2-x1);
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - largo*Math.cos(angulo - Math.PI/6), y2 - largo*Math.sin(angulo - Math.PI/6));
+  ctx.lineTo(x2 - largo*Math.cos(angulo + Math.PI/6), y2 - largo*Math.sin(angulo + Math.PI/6));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+function dibujarFormasPlano(ctx, canvas){
+  const grosor = Math.max(2, canvas.width/480);
+  function trazarForma(f, enPreview){
+    ctx.save();
+    ctx.strokeStyle = f.color; ctx.lineWidth = grosor;
+    if(enPreview) ctx.setLineDash([grosor*3, grosor*2]);
+    if(f.tipo==="circulo"){
+      const radio = Math.hypot(f.x2-f.x1, f.y2-f.y1);
+      ctx.beginPath();
+      ctx.arc(f.x1, f.y1, radio, 0, Math.PI*2);
+      ctx.stroke();
+    }else{
+      ctx.beginPath();
+      ctx.moveTo(f.x1, f.y1);
+      ctx.lineTo(f.x2, f.y2);
+      ctx.stroke();
+      if(f.tipo==="flecha") dibujarPuntaFlecha(ctx, f.x1, f.y1, f.x2, f.y2, grosor*5, f.color);
+    }
+    ctx.restore();
+  }
+  formasPlano.forEach(f=>trazarForma(f, false));
+  // Previsualización de la forma en curso: primer punto ya puesto, segundo sigue al dedo.
+  if(modoFormaPlano && puntoFormaPlanoInicio && colocandoPunto){
+    trazarForma({tipo:modoFormaPlano, x1:puntoFormaPlanoInicio.x, y1:puntoFormaPlanoInicio.y, x2:colocandoPunto.x, y2:colocandoPunto.y, color:"#3B82F6"}, true);
+  }
+}
+function abrirGestionFormasPlano(){
+  const cont = document.getElementById("foto-avance-cuerpo");
+  cont.innerHTML = `
+    <h2 style="margin-top:0;color:#fff;">✏️ Formas dibujadas</h2>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Líneas, flechas y círculos puestos a mano -- son solo anotaciones gráficas, no suman área ni pertenecen a ninguna actividad. Se pueden borrar en cualquier momento.</p>
+    <div id="lista-formas-plano"></div>
+    <button onclick="borrarTodasLasFormasPlano()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1.5px solid #DC5B4A;background:transparent;color:#FF8A80;font-weight:700;font-size:12.5px;">🗑️ Borrar todas</button>
+    <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:8px;padding:11px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-weight:700;">Cerrar</button>`;
+  document.getElementById("foto-avance-overlay").style.display = "flex";
+  _fotoAvanceAbiertoTs = Date.now();
+  habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
+  renderListaFormasPlano();
+}
+function renderListaFormasPlano(){
+  const cont = document.getElementById("lista-formas-plano");
+  if(!cont) return;
+  if(formasPlano.length===0){
+    cont.innerHTML = `<p style="color:#9fb0b8;font-size:11px;font-style:italic;">No hay ninguna todavía.</p>`;
+    return;
+  }
+  cont.innerHTML = formasPlano.map((f,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;background:#111820;border-radius:9px;padding:9px 12px;margin-bottom:6px;">
+      <span style="color:${f.color};font-weight:800;">${FORMAS_PLANO_INFO[f.tipo].ico}</span>
+      <span style="flex:1;color:#e7eef1;font-size:12px;">${FORMAS_PLANO_INFO[f.tipo].nombre}</span>
+      <button onclick="borrarFormaPlano(${i})" style="border:none;background:transparent;color:#9fb0b8;font-size:14px;cursor:pointer;">🗑</button>
+    </div>`).join("");
+}
+function borrarFormaPlano(i){
+  formasPlano.splice(i,1);
+  guardarFormasPlano();
+  renderListaFormasPlano();
+  redibujar();
+}
+function borrarTodasLasFormasPlano(){
+  formasPlano = [];
+  guardarFormasPlano();
+  cerrarFotoAvanceOverlay();
+  redibujar();
+  showToast("✓ Formas borradas");
+}
+
 let modoSeleccionRectangulo = false;
 let modoSeleccionLibre = false;
 let seleccionAreaResultado = []; // índices de poligonos, o ids de pines (según modoPlanoMaestro)
@@ -30037,6 +30203,7 @@ function deshacerPunto(){
 function cancelarDibujo(){
   if(modoLineal){ cancelarLineal(); return; }
   if(modoCinta){ salirDeCinta(); return; }
+  if(modoFormaPlano){ salirDeFormaPlano(); return; }
   dibujando = false;
   puntosActuales = [];
   cerrandoPorPrimerPunto = false;
@@ -33496,6 +33663,7 @@ function redibujar(){
   renderPorcentajesFlotantes();
   // Polígono en construcción
   dibujarLineasReferencia(ctx, canvas);
+  dibujarFormasPlano(ctx, canvas);
   dibujarCruzLupa(ctx, canvas);
   dibujarCintaMetrica(ctx, canvas);
   if((modoSeleccionRectangulo || modoSeleccionLibre)){
