@@ -26,6 +26,9 @@ const {
 const { calcularMamposteria } = cargarDesdeApp([{ nombre: "calcularMamposteria" }]);
 const { calcularParedDurlock } = cargarDesdeApp([{ nombre: "calcularParedDurlock" }]);
 const { calcularCielorraso } = cargarDesdeApp([{ nombre: "calcularCielorraso" }]);
+const { calcularTecho } = cargarDesdeApp([{ nombre: "calcularTecho" }]);
+const { calcularMallaElectrosoldada } = cargarDesdeApp([{ nombre: "calcularMallaElectrosoldada" }]);
+const { calcularLosaViguetas } = cargarDesdeApp([{ nombre: "calcularLosaViguetas" }]);
 
 test("pad2 rellena con cero a la izquierda", () => {
   assert.equal(pad2(1), "01");
@@ -192,4 +195,41 @@ test("calcularCielorraso: suspendido 60x120 espacia el secundario cada 1.2m (mit
   assert.equal(r.placasLabel, "paneles 60x120");
   assert.equal(r.perfiles.secundario, 17); // round(20/1.2), no 33 como en modular
   assert.equal(r.tieneTerminado, false);
+});
+
+test("calcularTecho: chapas acanalada 5m de ancho, 6m de agua, chapa de 6m, 10% de solape", () => {
+  const r = calcularTecho({ ancho:5, largoAgua:6, anchoUtil:0.91, largoChapa:6, solape:10, tornillosPorChapa:13, desperdicio:0 });
+  assert.equal(r.chapasAncho, 7);  // ceil(5/0.91*1.1) = ceil(6.044)
+  assert.equal(r.hileras, 1);      // ceil(6/6)
+  assert.equal(r.totalChapas, 7);
+  assert.equal(r.tornillos, 91);   // 7*13
+});
+
+test("calcularTecho: una agua mas larga que la chapa pide varias hileras", () => {
+  const r = calcularTecho({ ancho:5, largoAgua:13, anchoUtil:0.91, largoChapa:6, solape:0, tornillosPorChapa:13, desperdicio:0 });
+  assert.equal(r.hileras, 3); // ceil(13/6)
+});
+
+test("calcularMallaElectrosoldada: panel estandar 2.15x5.00 (10.75 m2), con 10% de solape", () => {
+  const r = calcularMallaElectrosoldada({ ancho:10, largo:5, solape:10, m2PorPanel:10.75 });
+  assert.equal(r.area, 50);
+  assert.equal(r.paneles, 6); // ceil(50*1.1/10.75) = ceil(5.116)
+});
+
+test("calcularLosaViguetas: h=16cm, separacion 50cm, 4x5m", () => {
+  const r = calcularLosaViguetas({ modo:"ceramico", altura:"16", ancho:4, largo:5 });
+  assert.equal(r.area, 20);
+  assert.equal(r.viguetasCant, 9);      // ceil(4/0.5)+1
+  assert.equal(r.viguetasMetros, 45);   // 9*5
+  assert.equal(r.ladrillos, 140);       // 20*7 piezas/m2
+  assert.equal(r.malla, 2);             // ceil(20/10.75)
+  assert.equal(r.cemento, 7);           // ceil(1.0*7)
+  assert.equal(r.arena, 0.5);
+  assert.equal(r.piedra, 0.5);
+});
+
+test("calcularLosaViguetas: a menor altura, menos separacion entre viguetas y mas viguetas", () => {
+  const h12 = calcularLosaViguetas({ modo:"telgopor", altura:"12", ancho:4, largo:5 });
+  assert.equal(h12.separacion, 42);
+  assert.equal(h12.viguetasCant, 11); // ceil(4/0.42)+1
 });
