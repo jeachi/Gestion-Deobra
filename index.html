@@ -15673,6 +15673,31 @@ async function quitarItemComputoCalcUI(id){
   document.getElementById("prompt-generico-cuerpo").innerHTML = htmlMiComputoCalc();
 }
 
+/* ---------------- Calculadora de Materiales — reporte PDF ----------------
+   Reutiliza el mismo motor que el resto de la app (mostrarModalPDF + construirEncabezadoReportePDF,
+   el mismo que usa generarReporteHerramientasPDF) -- nada de PDF nuevo. */
+function generarReporteCalcMaterialesPDF(){
+  if(calcMaterialesItems.length===0){ showToast("No hay ítems en Mi cómputo."); return; }
+  const filas = calcMaterialesItems.map(it=>`
+    <tr>
+      <td>${esc(it.rubro)}</td>
+      <td>${esc(it.modo)}</td>
+      <td>${esc(it.obra)}</td>
+      <td>${Object.entries(it.resultado).map(([k,v])=>`${esc(k)}: ${esc(v)}`).join("<br>")}</td>
+    </tr>
+  `).join("");
+  const html = `<div class="print-page" style="width:700px !important;min-width:700px !important;min-height:990px;box-sizing:border-box;">
+    ${construirEncabezadoReportePDF("MATERIALES NECESARIOS")}
+    <div class="rc-semana-row">Generado el ${new Date().toLocaleDateString("es-AR")}</div>
+    <table class="trab" width="700" cellspacing="0" cellpadding="0" style="font-size:11.5px;margin-top:14px;">
+      <thead><tr><th>Rubro</th><th>Detalle</th><th>Obra</th><th>Materiales</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <p style="font-family:Arial;font-size:10px;color:#6B7A82;margin-top:14px;">Cantidades de referencia — no incluye precios. Ajustá los rendimientos según tu proveedor real.</p>
+  </div>`;
+  mostrarModalPDF(html, "portrait", `Materiales_Necesarios_${nombreArchivoSeguro(hoyISO())}.pdf`);
+}
+
 // Regla de escalado: nunca baja sola, solo sube según cuántos días faltan para la fecha.
 function diasHastaRecordatorio(r){
   if(!r.fecha) return null;
