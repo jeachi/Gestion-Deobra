@@ -3713,6 +3713,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <div class="card" id="pa-panel-selector">
       <h2>📐 Planos de avance — <span id="pa-obra-actual"></span></h2>
       <p class="helper" style="margin-bottom:10px;">Podés tener varios planos independientes por obra (ej: "Solados PB", "Durlock 1er piso") — cada uno con sus propias actividades y capas, sin mezclarse entre sí.</p>
+      <button type="button" onclick="abrirMonitorAvance()" style="width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--vidrio-borde);border-radius:9px;font-size:12.5px;background:rgba(255,255,255,.05);color:#e7eef1;font-weight:700;text-align:left;">📊 Monitor de avance (etiquetas y pines de toda la obra)</button>
       <button type="button" id="btn-buscar-actividad-obra" onclick="abrirBuscadorActividadesObra()" style="display:none;width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--vidrio-borde);border-radius:9px;font-size:12.5px;background:rgba(255,255,255,.05);color:#e7eef1;font-weight:700;text-align:left;">🔍 Buscar una actividad en TODOS los planos de la obra...</button>
       <input type="text" id="buscador-planos" placeholder="🔎 Buscar plano por nombre..." oninput="renderSelectorPlanos()" style="display:none;width:100%;box-sizing:border-box;padding:9px 10px;margin-bottom:10px;border:1.5px solid var(--vidrio-borde);border-radius:9px;font-size:12.5px;background:rgba(255,255,255,.05);color:#e7eef1;">
       <div id="pa-selector-planos" style="margin-bottom:10px;"></div>
@@ -4383,6 +4384,17 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
     <button type="button" onclick="exportarInformeMaestroTexto()" style="border:none;background:rgba(255,255,255,.15);color:#fff;font-size:11px;font-weight:800;padding:6px 10px;border-radius:8px;cursor:pointer;">📤 Texto</button>
   </div>
   <div id="informe-maestro-body" style="flex:1;overflow-y:auto;padding:14px;"></div>
+</div>
+
+<!-- ---- Monitor de avance: panel aparte (no reemplaza nada) con el % por categoría de etiqueta
+     y por tipo de ambiente de pines, sumando TODOS los planos de avance y TODOS los Planos
+     Maestro de la obra -- no solo el que esté abierto en ese momento. ---- -->
+<div id="monitor-avance-overlay" style="display:none;position:fixed;inset:0;background:#fff;z-index:2370;flex-direction:column;">
+  <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--navy,#0A2540);color:#fff;">
+    <button type="button" onclick="cerrarMonitorAvance()" style="border:none;background:rgba(255,255,255,.15);color:#fff;width:30px;height:30px;border-radius:50%;font-size:13px;cursor:pointer;">✕</button>
+    <div style="font-weight:800;font-size:14px;flex:1;">📊 Monitor de avance</div>
+  </div>
+  <div id="monitor-avance-body" style="flex:1;overflow-y:auto;padding:14px;"></div>
 </div>
 
 <!-- ---- Foto → avance: overlay con el resultado que devuelve la IA, antes de marcar nada ---- -->
@@ -25505,7 +25517,7 @@ function abrirComparacionSemanas(snapshotId){
 // ya terminada (que dejaba el texto de las etiquetas de % de costado, ilegible), acá se dibuja el
 // plano y las áreas YA rotados, y recién DESPUÉS se agregan las etiquetas de %, bien horizontales,
 // calculando dónde cae el centro de cada área una vez rotado el plano.
-function generarCanvasRotadoConEtiquetas(){
+function generarCanvasRotadoConEtiquetas(pinesVinc){
   const canvasOrig = document.getElementById("canvas-plano");
   const W = canvasOrig.width, H = canvasOrig.height;
   const rot = document.createElement("canvas");
@@ -25571,10 +25583,66 @@ function generarCanvasRotadoConEtiquetas(){
     ctx.fillStyle = p.color;
     ctx.fillText(texto, rx, ry+1);
   });
+  // Cuadros de texto libres (medidas, notas) -- esta función reconstruye el canvas desde cero
+  // para el reporte en horizontal, así que no hereda lo que ya dibuja redibujar() sobre el canvas
+  // real: sin este bloque, el reporte apaisado salía SIN las etiquetas de medidas (el bug que
+  // reportó el usuario), aunque en el canvas en pantalla sí se vieran.
+  const fontSizeEtiquetas = Math.max(14, W/55);
+  const grosorEtiquetas = Math.max(2, W/500);
+  anotacionesTexto.forEach(a=>{
+    if(a.categoria && categoriasOcultasCad.has(a.categoria)) return;
+    const texto = textoDeAnotacion(a);
+    const estadoObj = (a.tipo==="numero" && a.estado) ? estadosPersonalizados.find(e=>e.id===a.estado) : null;
+    const color = estadoObj ? estadoObj.color : "#8B5CF6";
+    const rx = H - a.y, ry = a.x; // mismo punto, convertido al giro de 90° horario (igual que las etiquetas de % arriba)
+    ctx.font = `bold ${fontSizeEtiquetas}px sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    const anchoTexto = ctx.measureText(texto).width;
+    const padX = fontSizeEtiquetas*0.5, padY = fontSizeEtiquetas*0.35;
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.fillRect(rx-anchoTexto/2-padX, ry-fontSizeEtiquetas/2-padY, anchoTexto+padX*2, fontSizeEtiquetas+padY*2);
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, grosorEtiquetas*0.6);
+    ctx.strokeRect(rx-anchoTexto/2-padX, ry-fontSizeEtiquetas/2-padY, anchoTexto+padX*2, fontSizeEtiquetas+padY*2);
+    ctx.fillStyle = color;
+    ctx.fillText(texto, rx, ry+1);
+  });
+  // Pines del Plano Maestro vinculados a este plano (ver pinesVinculadosAPlano) -- mismo criterio
+  // de coordenadas que ya usa actualizarBadgesPctPines() para cruzar pin.x/pin.y con las capas de
+  // ESTE plano, así que convertirlos al giro es el mismo cálculo que el resto de este canvas.
+  (pinesVinc||[]).forEach(pin=>{
+    const color = colorEstadoPinMaestro(pin);
+    const rx = H - pin.y, ry = pin.x;
+    const r = Math.max(8, W/80);
+    ctx.beginPath();
+    ctx.arc(rx, ry, r, 0, Math.PI*2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, W/700);
+    ctx.strokeStyle = "#fff";
+    ctx.stroke();
+  });
   return rot;
 }
-function imagenCanvasParaReporte(canvasOrigen, ladoMaximo, rotar90){
-  const fuente = rotar90 ? generarCanvasRotadoConEtiquetas() : canvasOrigen;
+function imagenCanvasParaReporte(canvasOrigen, ladoMaximo, rotar90, pinesVinc){
+  const fuente = rotar90 ? generarCanvasRotadoConEtiquetas(pinesVinc) : canvasOrigen;
+  // Sin rotar, "fuente" es el canvas EN VIVO del editor -- ya tiene las etiquetas dibujadas (las
+  // dibuja redibujar()), pero nunca los pines del Maestro (viven aparte, como overlay). Se
+  // dibujan encima acá mismo, justo antes de capturar la imagen -- el llamador tiene que volver a
+  // llamar redibujar() después de esto para sacarlos del canvas en vivo (ver generarReportePlanoAvancePDF).
+  if(!rotar90 && pinesVinc && pinesVinc.length>0){
+    const ctxFuente = fuente.getContext("2d");
+    const r = Math.max(8, fuente.width/80);
+    pinesVinc.forEach(pin=>{
+      const color = colorEstadoPinMaestro(pin);
+      ctxFuente.beginPath();
+      ctxFuente.arc(pin.x, pin.y, r, 0, Math.PI*2);
+      ctxFuente.fillStyle = color;
+      ctxFuente.fill();
+      ctxFuente.lineWidth = Math.max(2, fuente.width/700);
+      ctxFuente.strokeStyle = "#fff";
+      ctxFuente.stroke();
+    });
+  }
   const w = fuente.width, h = fuente.height;
   const ladoMayor = Math.max(w, h);
   if(ladoMayor <= ladoMaximo) return fuente.toDataURL("image/jpeg", 0.85);
@@ -25611,11 +25679,19 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
   const nombrePlano = planoIndexObj.nombre || "Plano";
   const obra = claveObraPlanoAvance();
   const canvas = document.getElementById("canvas-plano");
+  // Pines del Plano Maestro vinculados a este plano -- se dibujan sobre la misma imagen (ver
+  // imagenCanvasParaReporte/generarCanvasRotadoConEtiquetas), así el reporte combinado muestra
+  // etiquetas y pines juntos en vez de solo las etiquetas.
+  const pinesVincReporte = await pinesVinculadosAPlano(obra, planoActualId);
   // En horizontal, el plano se ROTA 90° de verdad (no solo se reacomoda la hoja) -- como las
   // etiquetas de % están dibujadas directo sobre el canvas, giran junto con el plano sin hacer
   // nada más. Una vez rotado, un plano angosto y largo (como los de varios pisos en columna)
   // queda ancho y corto, que es justo lo que aprovecha una hoja apaisada.
-  const imgPlanoDataUrl = imagenCanvasParaReporte(canvas, 1500, orientacion==="landscape");
+  const imgPlanoDataUrl = imagenCanvasParaReporte(canvas, 1500, orientacion==="landscape", pinesVincReporte);
+  // En vertical, imagenCanvasParaReporte dibujó los pines directo sobre el canvas EN VIVO para
+  // poder capturarlos -- hay que volver a redibujar para que no queden pegados ahí al volver a
+  // la edición normal (en horizontal no hace falta: se dibujó todo en un canvas aparte).
+  if(orientacion!=="landscape" && pinesVincReporte.length>0) redibujar();
 
   // Si el plano está vinculado a un contratista con ítems de contrato (con su % de incidencia ya
   // cargado), lo usamos para calcular el "avance general" de cada actividad -- un promedio de
@@ -25774,14 +25850,65 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
   // 0.80") -- si todo lo cargado son números sueltos (una sola medida, sin "x"), aclarar
   // "Ancho x Alto" no aporta nada y confundiría, así que directamente no se muestra.
   const hayMedidasEnPar = resumenMedidas.some(m=>m.esPar);
-  const filasMedidasHtml = resumenMedidas.map(m=>`<tr>
-      <td align="center"><b style="color:#8B5CF6;">${m.codigo ? esc(m.codigo) : "—"}</b></td>
-      <td>${m.categoria ? esc(m.categoria) : "—"}</td>
-      <td>${esc(m.valor)}${m.unidad?" "+esc(m.unidad):""}</td>
-      <td>${m.ubicacion ? esc(m.ubicacion) : "—"}</td>
-      <td align="center">${m.cantidad}</td>
-      <td align="center">${m.area!==null ? (m.area+(m.unidad?" "+m.unidad+"²":"")) : "—"}</td>
-      <td align="center">${m.areaTotal!==null ? (m.areaTotal+(m.unidad?" "+m.unidad+"²":"")) : "—"}</td>
+  // Agrupado por categoría (con subtotal y % contra el estado ★ marcado en Configurar estados) en
+  // vez de una lista plana -- así se puede leer "de las 12 Ventana, 5 están Instaladas (42%)" de
+  // un vistazo, en vez de tener que contar fila por fila.
+  const reporteMedidas = agruparMedidasPorCategoriaParaReporte(resumenMedidas);
+  const filasMedidasHtml = reporteMedidas.categorias.map(cat=>{
+    const filasCategoria = cat.filas.map(m=>{
+      const medidaUnit = medidaUnitariaFila(m);
+      const medidaTot = medidaTotalFila(m);
+      const sufijo = sufijoMedidaFila(m);
+      return `<tr>
+        <td align="center"><b style="color:#8B5CF6;">${m.codigo ? esc(m.codigo) : "—"}</b></td>
+        <td>${m.categoria ? esc(m.categoria) : "—"}</td>
+        <td>${esc(m.valor)}${m.unidad?" "+esc(m.unidad):""}</td>
+        <td>${m.ubicacion ? esc(m.ubicacion) : "—"}</td>
+        <td align="center">${m.cantidad}</td>
+        <td align="center">${medidaUnit!==null ? (medidaUnit+sufijo) : "—"}</td>
+        <td align="center">${medidaTot!==null ? (medidaTot+sufijo) : "—"}</td>
+        <td>${textoEstadoFila(m)}</td>
+      </tr>`;
+    }).join("");
+    const medidaCatTxt = cat.medida
+      ? `${Math.round(cat.medida.total*100)/100}${cat.medida.sufijo} / <b style="color:#0E9488;">${Math.round(cat.medida.meta*100)/100}${cat.medida.sufijo} ★</b>`
+      : (cat.mezclaMedida ? "mezcla unid." : "—");
+    const subtotalHtml = `<tr style="background:#F8FAFA;border-top:1.5px solid #CBD5D9;">
+        <td colspan="4" style="font-weight:800;">Subtotal ${esc(cat.nombre)} — ${cat.cantidad} etiqueta${cat.cantidad===1?"":"s"}</td>
+        <td align="center" style="font-weight:800;">${cat.cantidad}</td>
+        <td align="center" colspan="2" style="font-weight:800;">${medidaCatTxt}</td>
+        <td style="font-weight:800;color:#0E9488;">${cat.pct}%</td>
+      </tr>`;
+    return `<tr><td colspan="8" style="font-weight:800;padding-top:10px;border-bottom:none;">${esc(cat.nombre)}</td></tr>` + filasCategoria + subtotalHtml;
+  }).join("");
+  const medidaTotalTxt = reporteMedidas.medidaTotalGeneral
+    ? `${Math.round(reporteMedidas.medidaTotalGeneral.total*100)/100}${reporteMedidas.medidaTotalGeneral.sufijo} / ${Math.round(reporteMedidas.medidaTotalGeneral.meta*100)/100}${reporteMedidas.medidaTotalGeneral.sufijo} ★`
+    : (reporteMedidas.mezclaMedidaTotal ? "mezcla unid." : "—");
+  const filaTotalMedidasHtml = resumenMedidas.length===0 ? "" : `<tr style="border-top:2px solid #0A2540;font-weight:800;">
+      <td colspan="4">Total general — ${reporteMedidas.totalCantidad} etiquetas</td>
+      <td align="center">${reporteMedidas.totalCantidad}</td>
+      <td align="center" colspan="2">${medidaTotalTxt}</td>
+      <td style="color:#0E9488;">${reporteMedidas.pctTotal}%</td>
+    </tr>`;
+  // Leyenda de colores -- el color de cada etiqueta en el plano es el de su ESTADO (no de su
+  // categoría), y el de cada pin es el semáforo del Maestro -- sin esto, alguien mirando solo la
+  // imagen del plano ve colores pero no sabe qué significa cada uno.
+  const leyendaEstadosHtml = estadosPersonalizados.map(e=>
+    `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:11px;"><span style="width:10px;height:10px;border-radius:50%;background:${e.color};display:inline-block;"></span>${esc(e.icono)} ${esc(e.nombre)}</span>`
+  ).join("");
+  const leyendaPinesHtml = `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:11px;"><span style="width:10px;height:10px;border-radius:50%;background:#0E9488;display:inline-block;"></span>Pin al día</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:11px;"><span style="width:10px;height:10px;border-radius:50%;background:#E9A23B;display:inline-block;"></span>Pin pendiente</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:11px;"><span style="width:10px;height:10px;border-radius:50%;background:#DC5B4A;display:inline-block;"></span>Pin urgente</span>`;
+  // Tabla de pines del Maestro vinculados a este plano, agrupados por tipo de ambiente -- mismos
+  // pines que ya se dibujaron sobre la imagen más arriba (ver pinesVincReporte).
+  const reportePines = agruparPinesPorTipoAmbiente(pinesVincReporte);
+  const filasPinesHtml = reportePines.grupos.map(g=>`<tr>
+      <td>${esc(g.nombre)}</td>
+      <td align="center">${g.pines}</td>
+      <td align="center">${g.urgentes}</td>
+      <td align="center">${g.pendientes}</td>
+      <td align="center">${g.alDia}</td>
+      <td align="center" style="color:#0E9488;font-weight:700;">${g.pct!==null ? g.pct+"%" : "—"}</td>
     </tr>`).join("");
   // "Horizontal" ahora rota el plano de verdad -- un plano angosto y largo (como los de varios
   // pisos en columna) queda ancho y corto una vez rotado, así que conviene apilarlo arriba a todo
@@ -25845,11 +25972,19 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
       </td>
       <td width="70" align="right" style="vertical-align:middle;"><img src="data:image/png;base64,${LOGO_CYLP_B64}" style="height:18px;"></td>
     </tr></table>
-    ${hayMedidasEnPar ? `<p style="font-family:Arial;font-size:10.5px;color:#4B5563;margin:0 0 6px;">Medidas expresadas como Ancho x Alto</p>` : ""}
+    <div style="font-family:Arial;margin-bottom:8px;">${leyendaEstadosHtml}${pinesVincReporte.length>0?leyendaPinesHtml:""}</div>
+    ${hayMedidasEnPar ? `<p style="font-family:Arial;font-size:10.5px;color:#4B5563;margin:0 0 6px;">Medidas expresadas como Ancho x Alto · ★ = estado marcado como "completa la actividad" en Configurar estados</p>` : `<p style="font-family:Arial;font-size:10.5px;color:#4B5563;margin:0 0 6px;">★ = estado marcado como "completa la actividad" en Configurar estados</p>`}
     <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
-      <thead><tr><th style="width:50px;">Cod</th><th style="width:110px;">Categoría</th><th>Medida</th><th>Ubicación</th><th style="width:70px;">Cantidad</th><th style="width:90px;">Área c/u</th><th style="width:90px;">Área total</th></tr></thead>
-      <tbody>${filasMedidasHtml}</tbody>
+      <thead><tr><th style="width:45px;">Cod</th><th style="width:95px;">Categoría</th><th>Medida</th><th>Ubicación</th><th style="width:60px;">Cant.</th><th style="width:75px;">Medida c/u</th><th style="width:75px;">Medida total</th><th style="width:110px;">Estado</th></tr></thead>
+      <tbody>${filasMedidasHtml}${filaTotalMedidasHtml}</tbody>
     </table>
+    ${pinesVincReporte.length>0 ? `<div style="margin:16px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Pines del Plano Maestro vinculados a este plano, por tipo de ambiente</div>
+    <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
+      <thead><tr><th>Tipo de ambiente</th><th style="width:60px;">Pines</th><th style="width:70px;">🔴 Urgente</th><th style="width:80px;">🟠 Pendiente</th><th style="width:70px;">🟢 Al día</th><th style="width:85px;">% Checklist</th></tr></thead>
+      <tbody>${filasPinesHtml}<tr style="border-top:2px solid #0A2540;font-weight:800;">
+        <td>Total general</td><td align="center">${reportePines.totalPines}</td><td align="center">${reportePines.totalUrgente}</td><td align="center">${reportePines.totalPendiente}</td><td align="center">${reportePines.totalAlDia}</td><td align="center" style="color:#0E9488;">${reportePines.pctTotal!==null?reportePines.pctTotal+"%":"—"}</td>
+      </tr></tbody>
+    </table>` : ""}
   </div>`;
   // OJO: a propósito NO se le pone un alto fijo a la hoja -- se deja que crezca según el
   // contenido real (header + plano + tabla), y es imprimirPDF() el que mide ese alto real y
@@ -26024,6 +26159,35 @@ function contarPinesMaestroPorEstado(pines){
     else alDia++;
   });
   return {urgentes, pendientes, alDia};
+}
+// Agrupa pines por tipoAmbiente (Aula, Baño...) para la tabla del reporte -- mismo semáforo que
+// contarPinesMaestroPorEstado(), más el % de checklist propio de cada pin promediado dentro del
+// grupo. Un pin sin checklist cargado no cuenta para ese promedio (ni suma 0% ni 100%, se excluye)
+// para no ensuciar el % de los que sí tienen tareas cargadas.
+function agruparPinesPorTipoAmbiente(pines){
+  const porTipo = {};
+  const orden = [];
+  (pines||[]).forEach(p=>{
+    const tipo = p.tipoAmbiente || "(sin tipo)";
+    if(!porTipo[tipo]){ porTipo[tipo] = []; orden.push(tipo); }
+    porTipo[tipo].push(p);
+  });
+  let totalPines=0, totalUrgente=0, totalPendiente=0, totalAlDia=0, sumaPctTotal=0, cantPctTotal=0;
+  const grupos = orden.map(tipo=>{
+    const lista = porTipo[tipo];
+    const c = contarPinesMaestroPorEstado(lista);
+    totalPines += lista.length; totalUrgente += c.urgentes; totalPendiente += c.pendientes; totalAlDia += c.alDia;
+    let sumaPct = 0, cantPct = 0;
+    lista.forEach(p=>{
+      const checklist = p.checklist || [];
+      if(checklist.length===0) return;
+      sumaPct += checklist.filter(t=>t.hecho).length / checklist.length;
+      cantPct++;
+    });
+    if(cantPct>0){ sumaPctTotal += sumaPct; cantPctTotal += cantPct; }
+    return { nombre:tipo, pines:lista.length, urgentes:c.urgentes, pendientes:c.pendientes, alDia:c.alDia, pct: cantPct>0 ? Math.round((sumaPct/cantPct)*100) : null };
+  });
+  return { grupos, totalPines, totalUrgente, totalPendiente, totalAlDia, pctTotal: cantPctTotal>0 ? Math.round((sumaPctTotal/cantPctTotal)*100) : null };
 }
 // Vista de Semáforo: en vez de mirar chinches sueltas, el plano entero se tiñe -- una mancha de
 // color radial detrás de cada pin (rojo/ámbar/verde, el mismo color que ya usa el pin), pensada
@@ -27365,6 +27529,112 @@ async function generarInformeMaestroPDF(){
 }
 function cerrarInformeMaestro(){
   document.getElementById("informe-maestro-overlay").style.display = "none";
+}
+// Junta, para TODA la obra (no solo el plano abierto), cuántas etiquetas hay de cada categoría y
+// cuántas ya están en el estado marcado como ★ ("completa la actividad") de CADA plano -- cada
+// plano de avance puede tener su propio ★, así que se lee el de cada uno, no uno fijo global.
+async function calcularMonitorAvance(obra){
+  let indice = [];
+  try{
+    const r = await window.storage.get("planos_avance_index_"+obra, true);
+    indice = r && r.value ? JSON.parse(r.value) : [];
+  }catch(e){ indice = []; }
+  const avances = indice.filter(p=>p.tipo!=="maestro");
+  const ESTADOS_DEFECTO_MONITOR = [
+    {id:"pendiente", nombre:"Pendiente", icono:"⚪", color:"#9CA3AF"},
+    {id:"marco", nombre:"Marco colocado", icono:"🔵", color:"#3B82F6"},
+    {id:"instalado", nombre:"Instalado", icono:"🟢", color:"#0E9488"}
+  ];
+  const porCategoria = {};
+  for(const p of avances){
+    let textos = [];
+    try{
+      const rt = await window.storage.get(`plano_avance_textos_${obra}_${p.id}`, true);
+      textos = rt && rt.value ? JSON.parse(rt.value) : [];
+    }catch(e){ textos = []; }
+    let estadosPlano = ESTADOS_DEFECTO_MONITOR;
+    try{
+      const re = await window.storage.get(`plano_avance_estados_${obra}_${p.id}`, true);
+      if(re && re.value) estadosPlano = JSON.parse(re.value);
+    }catch(e){}
+    const metaObj = estadosPlano.find(e=>e.completa) || estadosPlano[estadosPlano.length-1] || null;
+    const metaId = metaObj ? metaObj.id : null;
+    textos.forEach(a=>{
+      if(a.tipo!=="numero" || !a.valor) return;
+      const cat = a.categoria || "(sin categoría)";
+      if(!porCategoria[cat]) porCategoria[cat] = {cantidad:0, completado:0};
+      const cant = a.cantidad||1;
+      porCategoria[cat].cantidad += cant;
+      if(metaId && a.estado===metaId) porCategoria[cat].completado += cant;
+    });
+  }
+  const categoriasEtiquetas = Object.keys(porCategoria).map(nombre=>{
+    const c = porCategoria[nombre];
+    return { nombre, cantidad:c.cantidad, completado:c.completado, pct: c.cantidad>0 ? Math.round((c.completado/c.cantidad)*100) : 0 };
+  }).sort((a,b)=>b.cantidad-a.cantidad);
+  const totalEtiquetas = categoriasEtiquetas.reduce((s,c)=>s+c.cantidad,0);
+  const totalCompletadoEtiquetas = categoriasEtiquetas.reduce((s,c)=>s+c.completado,0);
+  const pctPromedioEtiquetas = totalEtiquetas>0 ? Math.round((totalCompletadoEtiquetas/totalEtiquetas)*100) : 0;
+
+  const todosPines = (await cargarTodosLosPinesMaestro(obra)).map(({pin})=>pin);
+  const reportePines = agruparPinesPorTipoAmbiente(todosPines);
+
+  return { categoriasEtiquetas, totalEtiquetas, pctPromedioEtiquetas, reportePines };
+}
+function barraMonitorAvance(nombre, pct, color, chipsHtml, extraTxt){
+  return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+    <div style="width:110px;flex-shrink:0;font-size:12.5px;font-weight:700;">${esc(nombre)}</div>
+    <div style="flex:1;background:#E5EAEC;border-radius:5px;height:10px;overflow:hidden;">
+      <div style="background:${color};height:10px;width:${Math.min(100,pct)}%;"></div>
+    </div>
+    <div style="width:36px;text-align:right;font-weight:800;font-size:12.5px;">${pct}%</div>
+    ${extraTxt ? `<div style="width:80px;text-align:right;font-size:10px;color:#64748B;flex-shrink:0;">${esc(extraTxt)}</div>` : ""}
+    ${chipsHtml ? `<div style="display:flex;gap:4px;flex-shrink:0;">${chipsHtml}</div>` : ""}
+  </div>`;
+}
+async function abrirMonitorAvance(){
+  const cont = document.getElementById("monitor-avance-body");
+  cont.innerHTML = `<p class="helper">Calculando…</p>`;
+  document.getElementById("monitor-avance-overlay").style.display = "flex";
+  const obra = claveObraPlanoAvance();
+  const datos = await calcularMonitorAvance(obra);
+  if(datos.totalEtiquetas===0 && datos.reportePines.totalPines===0){
+    cont.innerHTML = `<p class="helper">Todavía no hay etiquetas ni pines cargados en esta obra.</p>`;
+    return;
+  }
+  const chip = (color, bg, texto)=>`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:12px;background:${bg};color:${color};">${esc(texto)}</span>`;
+  const statCard = (valor, etiqueta, color)=>`<div style="flex:1;background:var(--fondo);border-radius:12px;padding:10px;text-align:center;min-width:90px;">
+    <div style="font-size:20px;font-weight:800;color:${color};">${valor}</div><div style="font-size:9.5px;color:var(--tinta-suave);">${esc(etiqueta)}</div></div>`;
+  let html = `<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+    ${statCard(datos.totalEtiquetas, "etiquetas totales", "var(--verde)")}
+    ${statCard(datos.pctPromedioEtiquetas+"%", "completado en promedio", "var(--verde)")}
+    ${statCard(datos.reportePines.totalPines, "pines (Plano Maestro)", "#13A89E")}
+    ${statCard(datos.reportePines.totalUrgente, "pines urgentes", "#DC5B4A")}
+  </div>`;
+  if(datos.categoriasEtiquetas.length>0){
+    html += `<div style="background:var(--papel);border:1px solid var(--borde);border-radius:12px;padding:14px 16px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:800;margin-bottom:2px;">Avance por categoría de etiqueta</div>
+      <div style="font-size:10.5px;color:var(--tinta-suave);margin-bottom:12px;">% contra el estado marcado con ★ en Configurar estados de cada plano.</div>
+      ${datos.categoriasEtiquetas.map(c=>barraMonitorAvance(c.nombre, c.pct, "#0E9488", "", `${c.completado}/${c.cantidad}`)).join("")}
+    </div>`;
+  }
+  if(datos.reportePines.grupos.length>0){
+    html += `<div style="background:var(--papel);border:1px solid var(--borde);border-radius:12px;padding:14px 16px;">
+      <div style="font-size:13px;font-weight:800;margin-bottom:2px;">Avance por tipo de ambiente (pines del Plano Maestro)</div>
+      <div style="font-size:10.5px;color:var(--tinta-suave);margin-bottom:12px;">% de checklist tildado, promediado entre los pines de ese tipo.</div>
+      ${datos.reportePines.grupos.map(g=>{
+        const chipTxt = g.urgentes>0 ? chip("#B91C1C","#FEE2E2",`${g.urgentes} urgente${g.urgentes===1?"":"s"}`)
+          : g.pendientes>0 ? chip("#92400E","#FEF3C7","pendiente")
+          : chip("#047857","#D1FAE5","sin urgencias");
+        const color = g.urgentes>0 ? "#DC5B4A" : g.pendientes>0 ? "#E9A23B" : "#0E9488";
+        return barraMonitorAvance(`${g.nombre} (${g.pines})`, g.pct||0, color, chipTxt, "");
+      }).join("")}
+    </div>`;
+  }
+  cont.innerHTML = html;
+}
+function cerrarMonitorAvance(){
+  document.getElementById("monitor-avance-overlay").style.display = "none";
 }
 async function exportarInformeMaestroTexto(){
   const obra = claveObraPlanoAvance();
@@ -30918,6 +31188,7 @@ function comandosDisponibles(){
     {n:"Informe de zonas", d:"Ver el checklist de todas las zonas", i:"📋", solo:"maestro", f:()=>abrirInformeMaestro()},
     {n:"Plantillas de checklist", d:"Editar las categorías por tipo de ambiente", i:"⚙️", solo:"maestro", f:()=>abrirGestionPlantillasChecklist()},
     // --- Los dos ---
+    {n:"Monitor de avance", d:"% por categoría de etiqueta y por tipo de ambiente, de toda la obra", i:"📊", solo:null, f:()=>abrirMonitorAvance()},
     {n:"Cotas", d:"Medir distancias sobre el plano (cinta métrica)", i:"📐", solo:null, f:()=>iniciarCintaMetrica()},
     {n:"Gestionar cotas", d:"Ver y borrar las cotas ya puestas", i:"🗑️", solo:null, f:()=>abrirGestionCotas()},
     {n:"Seleccionar con recuadro", d:"Elegir varios de una vez", i:"🔲", solo:null, f:()=>iniciarSeleccionRectangulo()},
@@ -33883,6 +34154,34 @@ async function confirmarAnclaTextoPlano(x,y){
   abrirPromptTextoPlano({x, y});
 }
 let ultimaCategoriaUsada = ""; // recuerda la última categoría elegida (ej: "Ventana") para que la próxima etiqueta nueva arranque ahí, en vez de "Ninguna" cada vez -- hasta que se elija otra a propósito
+let promptTextoPlanoToken = 0; // se incrementa cada vez que se abre el formulario -- evita que una sugerencia de ubicación que tarda en llegar se aplique sobre OTRA etiqueta abierta después
+// Pin del Maestro más cercano a (x,y), para sugerir la ubicación de una etiqueta nueva sin
+// escribirla a mano (ver abrirPromptTextoPlano). Busca SOLO en Planos Maestro que comparten la
+// MISMA imagen que este plano de avance (misma "miniatura" en planosIndex, igual criterio que ya
+// usa cargarEstadoVinculosPin) -- sin eso, las coordenadas del pin no corresponden a nada en este
+// plano y la sugerencia saldría de cualquier lugar.
+async function sugerirUbicacionPorPinCercano(x, y){
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return null;
+  const planoActual = planosIndex.find(p=>p.id===planoActualId);
+  if(!planoActual || !planoActual.miniatura) return null;
+  const maestros = planosIndex.filter(p=>p.tipo==="maestro" && p.miniatura===planoActual.miniatura);
+  if(maestros.length===0) return null;
+  let mejor = null, mejorDist = Infinity;
+  for(const m of maestros){
+    let pines;
+    try{
+      const r = await window.storage.get(`plano_maestro_pines_${obra}_${m.id}`, true);
+      pines = r && r.value ? JSON.parse(r.value) : [];
+    }catch(e){ pines = []; }
+    pines.forEach(pin=>{
+      if(!pin.nombre) return;
+      const d = Math.hypot((pin.x||0)-x, (pin.y||0)-y);
+      if(d<mejorDist){ mejorDist = d; mejor = pin; }
+    });
+  }
+  return mejor;
+}
 function abrirPromptTextoPlano(anclaONull, idxExistente){
   idxAnotacionEditando = (idxExistente!==undefined) ? idxExistente : null;
   const esEdicion = idxAnotacionEditando!==null;
@@ -33925,6 +34224,20 @@ function abrirPromptTextoPlano(anclaONull, idxExistente){
   document.getElementById("prompt-texto-plano-overlay").style.display = "flex";
   document.getElementById("prompt-texto-plano-overlay").dataset.ancla = anclaONull ? JSON.stringify(anclaONull) : "";
   setTimeout(()=>document.getElementById("prompt-texto-plano-input").focus(), 100);
+  // Etiqueta nueva (no edición) sin ubicación todavía puesta -- se sugiere la del pin del Plano
+  // Maestro más cercano, igual que si se hubiera tocado "📍" a mano. Es solo una sugerencia:
+  // queda en el campo de texto, totalmente editable/borrable antes de confirmar.
+  const miTokenPrompt = ++promptTextoPlanoToken;
+  if(!esEdicion && anclaONull && !datos.ubicacion){
+    sugerirUbicacionPorPinCercano(anclaONull.x, anclaONull.y).then(pin=>{
+      if(!pin || promptTextoPlanoToken!==miTokenPrompt) return; // se cerró o se abrió otra cosa mientras se buscaba
+      const overlay = document.getElementById("prompt-texto-plano-overlay");
+      const input = document.getElementById("prompt-texto-plano-ubicacion");
+      if(!overlay || overlay.style.display==="none" || !input || input.value) return; // ya se cerró, o el usuario ya escribió algo
+      input.value = pin.nombre;
+      showToast(`📍 Ubicación sugerida: ${pin.nombre}`);
+    });
+  }
 }
 // Arma los chips de estado a partir de lo que el usuario tenga configurado (no son fijos) --
 // esta misma función se usa tanto al abrir el formulario completo como al cambiar de tipo.
@@ -34066,6 +34379,22 @@ async function abrirSelectorUbicacionMaestro(){
   _fotoAvanceAbiertoTs = Date.now();
   habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
 }
+// Pines de cualquier Plano Maestro de la obra que estén vinculados a ESTE plano de avance (ver
+// vincularPinACategoriaPlano / toggleVinculoCapaPinDesdeInput) -- se usan para dibujarlos sobre la
+// imagen del reporte (ver imagenCanvasParaReporte/generarCanvasRotadoConEtiquetas) y para la tabla
+// de pines del reporte. Un pin puede estar vinculado más de una vez (una capa y una anotación, por
+// ejemplo) -- se devuelve una sola vez cada uno.
+async function pinesVinculadosAPlano(obra, planoId){
+  const todos = await cargarTodosLosPinesMaestro(obra);
+  const vistos = new Set();
+  const resultado = [];
+  todos.forEach(({pin})=>{
+    if(vistos.has(pin.id)) return;
+    const vinculado = (pin.capasVinculadas||[]).some(v=>v.planoId===planoId);
+    if(vinculado){ vistos.add(pin.id); resultado.push(pin); }
+  });
+  return resultado;
+}
 async function elegirUbicacionDesdeMaestro(planoId, pinId){
   const obra = claveObraPlanoAvance();
   const todos = await cargarTodosLosPinesMaestro(obra);
@@ -34182,15 +34511,18 @@ function abrirEdicionAnotacionTexto(idx){
 // Tocar (rápido, sin mantener) una etiqueta YA puesta abre este selector chico -- solo el
 // estado, con un botón aparte para llegar a la edición completa si hace falta cambiar la medida,
 // categoría, etc. Así cambiar "ya se instaló" es 1 solo toque en vez de abrir el formulario entero.
+let estadoRapidoPendiente = null; // estado tocado pero todavía no confirmado -- ver confirmarEstadoRapido()
 function abrirSelectorEstadoRapido(idx){
   const a = anotacionesTexto[idx];
   if(!a) return;
   if(a.tipo!=="numero"){ abrirEdicionAnotacionTexto(idx); return; } // una nota de texto libre no tiene estado -- va directo a editar
+  estadoRapidoPendiente = a.estado;
   const cont = document.getElementById("foto-avance-cuerpo");
   cont.innerHTML = `
     <h2 style="margin-top:0;color:#fff;">${esc(a.codigo || a.valor)}</h2>
-    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Tocá el estado -- se guarda solo.</p>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Tocá el estado y confirmá con el botón de abajo -- así un toque de más (por ejemplo, al abrir esto con doble toque) no cambia nada por accidente.</p>
     <div id="lista-estado-rapido"></div>
+    <button id="btn-confirmar-estado-rapido" onclick="confirmarEstadoRapido(${idx})" style="width:100%;margin-top:4px;padding:11px;border-radius:9px;border:none;background:#10B981;color:#06201a;font-weight:800;font-size:13px;cursor:pointer;">✓ Confirmar estado</button>
     <div class="row-flex" style="margin-top:10px;gap:8px;">
       <button onclick="moverDesdeSelectorRapido(${idx})" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #10B981;background:transparent;color:#10B981;font-weight:800;font-size:12px;">📍 Mover</button>
       <button onclick="copiarDesdeSelectorRapido(${idx})" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #8B5CF6;background:transparent;color:#8B5CF6;font-weight:800;font-size:12px;">📋 Copiar</button>
@@ -34201,16 +34533,31 @@ function abrirSelectorEstadoRapido(idx){
   document.getElementById("foto-avance-overlay").style.display = "flex";
   _fotoAvanceAbiertoTs = Date.now();
   habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
-  document.getElementById("lista-estado-rapido").innerHTML = estadosPersonalizados.map(e=>`
-    <button onclick="elegirEstadoRapido(${idx}, '${e.id}')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;background:#111820;border:1.5px solid ${e.id===a.estado?e.color:"transparent"};border-radius:9px;padding:10px 12px;margin-bottom:6px;color:#e7eef1;font-weight:700;font-size:12.5px;cursor:pointer;">
+  renderListaEstadoRapido(idx);
+}
+function renderListaEstadoRapido(idx){
+  const cont = document.getElementById("lista-estado-rapido");
+  if(!cont) return;
+  cont.innerHTML = estadosPersonalizados.map(e=>`
+    <button onclick="marcarEstadoRapidoPendiente(${idx}, '${e.id}')" style="width:100%;text-align:left;display:flex;align-items:center;gap:10px;background:#111820;border:1.5px solid ${e.id===estadoRapidoPendiente?e.color:"transparent"};border-radius:9px;padding:10px 12px;margin-bottom:6px;color:#e7eef1;font-weight:700;font-size:12.5px;cursor:pointer;">
       <span style="width:14px;height:14px;border-radius:50%;background:${e.color};flex-shrink:0;"></span>
       <span style="flex:1;">${e.icono} ${esc(e.nombre)}</span>
-      ${e.id===a.estado?'<span style="color:'+e.color+';font-weight:900;">✓</span>':""}
+      ${e.id===estadoRapidoPendiente?'<span style="color:'+e.color+';font-weight:900;">✓</span>':""}
     </button>`).join("");
 }
-async function elegirEstadoRapido(idx, estadoId){
+// Tocar un estado de la lista solo lo resalta (no guarda nada todavía) -- recién
+// confirmarEstadoRapido() lo aplica. Así un doble toque accidental sobre la etiqueta, que ya
+// requería 400ms para abrir este panel, necesita un toque MÁS, explícito, para cambiar algo.
+function marcarEstadoRapidoPendiente(idx, estadoId){
+  estadoRapidoPendiente = estadoId;
+  renderListaEstadoRapido(idx);
+}
+async function confirmarEstadoRapido(idx){
+  const a = anotacionesTexto[idx];
+  if(!a) return;
+  if(estadoRapidoPendiente === a.estado){ cerrarFotoAvanceOverlay(); return; } // no se tocó nada distinto, no hace falta pasar por el historial
   guardarEnHistorial();
-  anotacionesTexto[idx].estado = estadoId;
+  anotacionesTexto[idx].estado = estadoRapidoPendiente;
   redibujar();
   await guardarAnotacionesTexto();
   cerrarFotoAvanceOverlay();
@@ -34242,7 +34589,7 @@ function abrirConfigEstados(){
   const cont = document.getElementById("foto-avance-cuerpo");
   cont.innerHTML = `
     <h2 style="margin-top:0;color:#fff;">⚙️ Estados personalizados</h2>
-    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Son tuyos -- cambiá el nombre, el ícono o el color de cada uno, agregá los que necesites o borrá los que no uses. Se aplican a este plano.</p>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Son tuyos -- cambiá el nombre, el ícono o el color de cada uno, agregá los que necesites o borrá los que no uses. Se aplican a este plano. Tocá la ★ del que marca la actividad como "completada" -- el reporte y el Monitor de avance calculan el % contra ese estado.</p>
     <div id="lista-estados-config"></div>
     <button onclick="agregarEstadoNuevo()" style="width:100%;margin-top:6px;padding:10px;border-radius:9px;border:1.5px dashed #8B5CF6;background:transparent;color:#8B5CF6;font-weight:800;font-size:12.5px;">+ Agregar estado</button>
     <button onclick="volverAFormularioDesdeConfigEstados()" style="width:100%;margin-top:14px;padding:11px;border-radius:10px;border:none;background:var(--verde);color:#fff;font-weight:800;">✓ Listo</button>`;
@@ -34253,13 +34600,26 @@ function abrirConfigEstados(){
 function renderListaEstadosConfig(){
   const cont = document.getElementById("lista-estados-config");
   if(!cont) return;
+  const metaActual = estadoMetaActual();
   cont.innerHTML = estadosPersonalizados.map((e,i)=>`
     <div style="display:flex;align-items:center;gap:6px;background:#111820;border-radius:9px;padding:8px 9px;margin-bottom:6px;">
+      <button onclick="marcarEstadoCompleta(${i})" title="Marcar como estado que completa la actividad" style="background:none;border:none;font-size:17px;flex-shrink:0;cursor:pointer;color:${metaActual===e?"#F5B301":"#4b5a63"};">${metaActual===e?"★":"☆"}</button>
       <input type="color" value="${e.color}" onchange="cambiarColorEstado(${i}, this.value)" style="width:32px;height:32px;border:none;border-radius:8px;padding:0;background:none;flex-shrink:0;">
       <input type="text" value="${esc(e.icono)}" maxlength="4" oninput="cambiarIconoEstado(${i}, this.value)" style="width:38px;padding:6px;border:1.5px solid rgba(255,255,255,.15);border-radius:8px;background:rgba(255,255,255,.05);color:#e7eef1;font-size:15px;text-align:center;flex-shrink:0;">
       <input type="text" value="${esc(e.nombre)}" oninput="cambiarNombreEstado(${i}, this.value)" style="flex:1;min-width:0;padding:8px;border:1.5px solid rgba(255,255,255,.15);border-radius:8px;background:rgba(255,255,255,.05);color:#e7eef1;font-size:11.5px;">
       <button onclick="quitarEstadoConfig(${i})" style="background:none;border:none;color:#DC5A5A;font-size:16px;flex-shrink:0;cursor:pointer;">🗑</button>
     </div>`).join("");
+}
+// Cuál estado se considera "completado" para los % del reporte y el Monitor de avance -- si
+// nadie lo marcó todavía (planos viejos, antes de que existiera esta opción), se sigue asumiendo
+// el último de la lista, que era el comportamiento de siempre, para no romper reportes ya vistos.
+function estadoMetaActual(){
+  return estadosPersonalizados.find(e=>e.completa) || estadosPersonalizados[estadosPersonalizados.length-1] || null;
+}
+async function marcarEstadoCompleta(i){
+  estadosPersonalizados.forEach((e,j)=>{ e.completa = (j===i); });
+  await guardarEstadosPersonalizados();
+  renderListaEstadosConfig();
 }
 async function cambiarColorEstado(i, valor){ estadosPersonalizados[i].color = valor; await guardarEstadosPersonalizados(); redibujar(); }
 async function cambiarIconoEstado(i, valor){ estadosPersonalizados[i].icono = valor; await guardarEstadosPersonalizados(); redibujar(); }
@@ -34549,6 +34909,82 @@ function textoEstadoFila(g){
     const e = buscar(id);
     return `${e?e.icono:"·"}${cant}`;
   }).join(" ");
+}
+// Medida de UNA unidad de la fila -- si la fila es un par "Ancho x Alto" usa el área ya calculada
+// (m.area); si es un número suelto (ej. "8" en metros lineales), usa ese número directo. Null si
+// el valor cargado no es ninguna de las dos cosas (texto no numérico).
+function medidaUnitariaFila(m){
+  if(m.area!==null) return m.area;
+  const n = parseFloat(String(m.valor).replace(",","."));
+  return isNaN(n) ? null : n;
+}
+// Medida total de la fila (unitaria × cantidad) -- generaliza m.areaTotal (que solo cubre el caso
+// "Ancho x Alto") a cualquier medida numérica, para que un recorrido en metros lineales (un solo
+// número, sin "x") también sume un total en el reporte en vez de mostrar "—".
+function medidaTotalFila(m){
+  const unidad = medidaUnitariaFila(m);
+  return unidad===null ? null : Math.round(unidad*m.cantidad*1000)/1000;
+}
+// Clave que identifica "la misma clase de medida" para poder sumar entre filas sin mezclar
+// peras con manzanas -- incluye si es área (Ancho x Alto) o lineal/suelto, porque dos filas con
+// la misma unidad ("m") pueden ser una cosa u otra (m² vs m lineales).
+function claveMedidaFila(m){
+  return (m.unidad||"") + "|" + (m.area!==null ? "area" : "lineal");
+}
+function sufijoMedidaFila(m){
+  return m.unidad ? (m.area!==null ? " "+m.unidad+"²" : " "+m.unidad) : "";
+}
+// Agrupa las filas de calcularResumenMedidas() por categoría (con subtotal) para el reporte --
+// cada subtotal suma cantidad, desglose de estados y medida total/en el estado ★ configurado como
+// "completa la actividad" (ver estadoMetaActual). Si una categoría mezcla más de una clase de
+// medida (ej: algunas etiquetas en m² y otras sueltas en ml), el subtotal de medida de esa
+// categoría se deja en blanco en vez de sumar cosas que no se pueden sumar.
+function agruparMedidasPorCategoriaParaReporte(resumenMedidas){
+  const metaId = (estadoMetaActual()||{}).id || null;
+  const porCategoria = {};
+  const ordenCategorias = [];
+  resumenMedidas.forEach(m=>{
+    const cat = m.categoria || "(sin categoría)";
+    if(!porCategoria[cat]){ porCategoria[cat] = []; ordenCategorias.push(cat); }
+    porCategoria[cat].push(m);
+  });
+  let totalCantidad = 0;
+  const totalEstados = {};
+  const totalPorClave = {}; // clave -> {total, meta, sufijo}
+  const categorias = ordenCategorias.map(cat=>{
+    const filas = porCategoria[cat];
+    let cantidad = 0;
+    const estados = {};
+    const porClave = {};
+    filas.forEach(m=>{
+      cantidad += m.cantidad;
+      totalCantidad += m.cantidad;
+      Object.entries(m.estados).forEach(([id,cant])=>{
+        estados[id] = (estados[id]||0) + cant;
+        totalEstados[id] = (totalEstados[id]||0) + cant;
+      });
+      const medidaTot = medidaTotalFila(m);
+      if(medidaTot!==null){
+        const clave = claveMedidaFila(m);
+        const cantMeta = metaId ? (m.estados[metaId]||0) : 0;
+        const medidaMeta = medidaTot * (cantMeta/(m.cantidad||1));
+        if(!porClave[clave]) porClave[clave] = {total:0, meta:0, sufijo:sufijoMedidaFila(m)};
+        porClave[clave].total += medidaTot;
+        porClave[clave].meta += medidaMeta;
+        if(!totalPorClave[clave]) totalPorClave[clave] = {total:0, meta:0, sufijo:sufijoMedidaFila(m)};
+        totalPorClave[clave].total += medidaTot;
+        totalPorClave[clave].meta += medidaMeta;
+      }
+    });
+    const clavesCat = Object.keys(porClave);
+    const medida = clavesCat.length===1 ? porClave[clavesCat[0]] : null; // null = sin medida, o mezcla de más de una clase
+    const pct = cantidad>0 ? Math.round(((metaId?(estados[metaId]||0):0)/cantidad)*100) : 0;
+    return { nombre:cat, filas, cantidad, estados, medida, mezclaMedida: clavesCat.length>1, pct };
+  });
+  const clavesTotal = Object.keys(totalPorClave);
+  const medidaTotalGeneral = clavesTotal.length===1 ? totalPorClave[clavesTotal[0]] : null;
+  const pctTotal = totalCantidad>0 ? Math.round(((metaId?(totalEstados[metaId]||0):0)/totalCantidad)*100) : 0;
+  return { categorias, totalCantidad, totalEstados, medidaTotalGeneral, mezclaMedidaTotal: clavesTotal.length>1, pctTotal };
 }
 // ---------------- Proyecto vs Real ----------------
 // Compara lo cargado como "proyecto" (lo que dice el contrato, cargado a mano una vez) contra lo
