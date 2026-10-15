@@ -28153,6 +28153,7 @@ function activarTooltipRiel(btn, nombre){
       const texto = (nombre==="DESHACER" && describirProximoDeshacer()) ? `↩️ Deshacer: ${describirProximoDeshacer()}` : nombre;
       showToast(texto, 1600);
       if(navigator.vibrate) navigator.vibrate(10);
+      btn.dataset.holdTooltipMostrado = "1"; // el click que viene al soltar el dedo no debe ejecutar la acción (ver bloqueo más abajo)
     }, 450);
   });
   btn.addEventListener("pointerup", ()=>clearTimeout(timer));
@@ -28174,9 +28175,26 @@ document.addEventListener("pointerdown", (e)=>{
   _timerTooltipToolCard = setTimeout(()=>{
     showToast(texto, 2800);
     if(navigator.vibrate) navigator.vibrate(10);
+    btn.dataset.holdTooltipMostrado = "1";
   }, 450);
 });
 ["pointerup","pointercancel"].forEach(ev=>document.addEventListener(ev, ()=>clearTimeout(_timerTooltipToolCard)));
+// BUG real reportado: mostrar el aviso de "mantené pulsado" al soltar el dedo NO impedía que la
+// acción del botón se ejecutara igual -- el "click" que dispara el navegador al levantar el dedo
+// seguía corriendo el onclick de siempre. Resultado: "mantener pulsado para ver qué hace" terminaba
+// tocando el botón de verdad (entrando al modo de dibujo, borrando algo, etc), que es justo lo que
+// se quería evitar al "espiar" antes de animarse a tocarlo. Se corta ACÁ, en fase de captura
+// (antes de que el click llegue al botón), cualquier click que venga justo después de haber
+// mostrado el aviso -- un toque corto normal nunca llega a mostrar el aviso, así que sigue
+// funcionando exactamente igual que antes.
+document.addEventListener("click", (e)=>{
+  const btn = e.target.closest(".tool-card, .btn-pin-accion, .cad-riel-btn");
+  if(btn && btn.dataset.holdTooltipMostrado){
+    delete btn.dataset.holdTooltipMostrado;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
 function toggleDrawerHerramientas(cual){
   const drawers = {vista:"drawer-vista", capas:"drawer-capas", dibujar:"drawer-dibujar", medir:"drawer-medir", revisar:"drawer-revisar", etiquetas:"drawer-etiquetas", mas:"drawer-mas", herramientasMaestro:"drawer-herramientasMaestro", revisarMaestro:"drawer-revisarMaestro", medirMaestro:"drawer-medirMaestro"};
   const botones = {vista:"btn-drawer-vista", capas:"btn-drawer-capas", dibujar:"btn-drawer-dibujar", medir:"btn-drawer-medir", revisar:"btn-drawer-revisar", etiquetas:"btn-drawer-etiquetas", mas:"btn-drawer-mas", herramientasMaestro:"btn-drawer-herramientas-maestro", revisarMaestro:"btn-drawer-revisar-maestro", medirMaestro:"btn-drawer-medir-maestro"};
