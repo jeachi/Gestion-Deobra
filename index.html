@@ -3756,7 +3756,10 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
       <button type="button" class="btn btn-outline" id="vr-btn-certificar" style="width:100%;margin-top:8px;display:none;" onclick="usarAvanceEnNuevoCertificado()">🧾 Usar en un certificado nuevo</button>
       <button type="button" class="btn btn-outline" id="vr-btn-compartir" style="width:100%;margin-top:8px;" onclick="compartirAvancePlano()">📤 Compartir avance</button>
-      <button type="button" class="btn btn-outline" id="vr-btn-reporte" style="width:100%;margin-top:8px;" onclick="generarReporteDesdeVistaRapida()">🧾 Reporte PDF</button>
+      <div id="vr-reporte-row" style="display:flex;gap:6px;margin-top:8px;">
+        <button type="button" class="btn btn-outline" id="vr-btn-reporte" style="flex:1;" onclick="generarReporteDesdeVistaRapida()">🧾 Reporte PDF</button>
+        <button type="button" class="btn btn-outline" onclick="abrirConfigReporte()" title="Elegir qué tablas aparecen en el reporte" style="flex-shrink:0;width:46px;padding:0;">⚙️</button>
+      </div>
     </div>
 
   <div class="card" id="card-canvas" style="display:none;padding:8px;">
@@ -23798,6 +23801,12 @@ async function seleccionarPlano(id, entrarDirectoAEditor){
     const rPrefijos = await window.storage.get(`plano_avance_prefijos_categoria_${obra}_${id}`, true);
     prefijosCategoria = rPrefijos && rPrefijos.value ? JSON.parse(rPrefijos.value) : {};
   }catch(e){ prefijosCategoria = {}; }
+  try{
+    const rConfigRep = await window.storage.get(`plano_avance_reporte_config_${obra}_${id}`, true);
+    // Sin nada guardado todavía (planos de antes de esta opción), todas las tablas quedan activadas
+    // -- el reporte se sigue viendo igual que siempre hasta que alguien decida apagar algo a mano.
+    reporteConfigVisibilidad = rConfigRep && rConfigRep.value ? {...REPORTE_CONFIG_POR_DEFECTO, ...JSON.parse(rConfigRep.value)} : {...REPORTE_CONFIG_POR_DEFECTO};
+  }catch(e){ reporteConfigVisibilidad = {...REPORTE_CONFIG_POR_DEFECTO}; }
   document.getElementById("card-snapshots").style.display = "none"; // arranca oculto -- se abre con el botón 📅 del encabezado
   await cargarSnapshotsPlanoActual();
   await cargarEstadosCapas();
@@ -23884,7 +23893,7 @@ function mostrarVistaRapidaPlano(){
   document.getElementById("vr-btn-compartir").style.display = modoPlanoMaestro ? "none" : "block";
   // El reporte en PDF tiene la tabla de % POR ACTIVIDAD -- un Plano Maestro no tiene actividades
   // (solo pines), así que tampoco aplica ahí, igual que "Compartir avance".
-  document.getElementById("vr-btn-reporte").style.display = modoPlanoMaestro ? "none" : "block";
+  document.getElementById("vr-reporte-row").style.display = modoPlanoMaestro ? "none" : "flex";
   // "Usar en un certificado nuevo" solo tiene sentido si este plano ya está vinculado a un
   // contratista -- sin eso no hay a quién certificarle nada.
   document.getElementById("vr-btn-certificar").style.display = (!modoPlanoMaestro && plano && plano.contratistaId) ? "block" : "none";
@@ -24359,6 +24368,15 @@ async function guardarPrefijosCategoria(){
     await window.storage.set(`plano_avance_prefijos_categoria_${obra}_${planoActualId}`, JSON.stringify(prefijosCategoria), true);
   }catch(e){
     showToast("No se pudo guardar el prefijo (revisá conexión)");
+  }
+}
+async function guardarReporteConfigVisibilidad(){
+  const obra = claveObraPlanoAvance();
+  if(!obra || !planoActualId) return;
+  try{
+    await window.storage.set(`plano_avance_reporte_config_${obra}_${planoActualId}`, JSON.stringify(reporteConfigVisibilidad), true);
+  }catch(e){
+    showToast("No se pudo guardar la configuración del reporte (revisá conexión)");
   }
 }
 async function guardarEstadosPersonalizados(){
@@ -25915,39 +25933,33 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
   // el ancho de la hoja apaisada (no en columna al lado de la tabla, que lo dejaría más chico).
   const anchoHoja = orientacion==="landscape" ? 980 : 700;
   const anchoContenido = anchoHoja - 24;
+  // Qué tablas van después de la imagen -- "⚙️ Qué mostrar en el reporte" (ver abrirConfigReporte)
+  // puede apagar cualquiera de estas, por plano; la imagen del plano nunca se apaga.
+  const tablaActividadHtml = !reporteConfigVisibilidad.mostrarActividad ? "" : (anchoTabla=>`
+    <div style="margin:8px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Avance por actividad</div>
+    <table class="trab" width="${anchoTabla}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
+      <thead><tr><th style="width:${orientacion==="landscape"?180:130}px;">Actividad</th><th style="width:${orientacion==="landscape"?260:190}px;">Detalle</th><th>Avance</th></tr></thead>
+      <tbody>${filas || `<tr><td colspan="3" style="color:#999;">Todavía no hay actividades marcadas en este plano.</td></tr>`}</tbody>
+    </table>`)(orientacion==="landscape" ? anchoContenido : 676);
+  const tablaLinealHtml = (!reporteConfigVisibilidad.mostrarLineal || !filasLineales) ? "" : (anchoTabla=>`
+    <div style="margin:14px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Recorridos lineales (metros)</div>
+    <table class="trab" width="${anchoTabla}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
+      <thead><tr><th style="width:${orientacion==="landscape"?180:130}px;">Actividad</th><th style="width:${orientacion==="landscape"?260:190}px;">Detalle</th><th>Avance</th></tr></thead>
+      <tbody>${filasLineales}</tbody>
+    </table>`)(orientacion==="landscape" ? anchoContenido : 676);
   let cuerpoHtml;
   if(orientacion==="landscape"){
     cuerpoHtml = `
     <div style="text-align:center;">
       <img src="${imgPlanoDataUrl}" style="width:${anchoContenido}px;max-width:${anchoContenido}px;border:1px solid #D7E1E4;border-radius:6px;display:block;margin:0 auto;">
     </div>
-
-    <div style="margin:8px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Avance por actividad</div>
-    <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
-      <thead><tr><th style="width:180px;">Actividad</th><th style="width:260px;">Detalle</th><th>Avance</th></tr></thead>
-      <tbody>${filas || `<tr><td colspan="3" style="color:#999;">Todavía no hay actividades marcadas en este plano.</td></tr>`}</tbody>
-    </table>
-    ${filasLineales ? `<div style="margin:14px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Recorridos lineales (metros)</div>
-    <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
-      <thead><tr><th style="width:180px;">Actividad</th><th style="width:260px;">Detalle</th><th>Avance</th></tr></thead>
-      <tbody>${filasLineales}</tbody>
-    </table>` : ""}`;
+    ${tablaActividadHtml}${tablaLinealHtml}`;
   }else{
     cuerpoHtml = `
     <div style="text-align:center;">
       <img src="${imgPlanoDataUrl}" style="width:676px;max-width:676px;border:1px solid #D7E1E4;border-radius:6px;display:block;margin:0 auto;">
     </div>
-
-    <div style="margin:8px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Avance por actividad</div>
-    <table class="trab" width="676" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
-      <thead><tr><th style="width:130px;">Actividad</th><th style="width:190px;">Detalle</th><th>Avance</th></tr></thead>
-      <tbody>${filas || `<tr><td colspan="3" style="color:#999;">Todavía no hay actividades marcadas en este plano.</td></tr>`}</tbody>
-    </table>
-    ${filasLineales ? `<div style="margin:14px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Recorridos lineales (metros)</div>
-    <table class="trab" width="676" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
-      <thead><tr><th style="width:130px;">Actividad</th><th style="width:190px;">Detalle</th><th>Avance</th></tr></thead>
-      <tbody>${filasLineales}</tbody>
-    </table>` : ""}`;
+    ${tablaActividadHtml}${tablaLinealHtml}`;
   }
 
   const html = `<div class="print-page" style="width:${anchoHoja}px !important;min-width:${anchoHoja}px !important;max-width:${anchoHoja}px !important;padding:6px 12px !important;box-sizing:border-box;">
@@ -25964,27 +25976,34 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
   // así el plano se sigue viendo grande siempre, y la tabla de medidas tiene lugar de sobra para
   // crecer sin apretar nada. "print-page" ya hace que cada una salga en una hoja distinta al
   // imprimir/generar el PDF (ver .print-page{page-break-after:always} en el CSS).
-  const htmlMedidas = resumenMedidas.length===0 ? "" : `<div class="print-page" style="width:${anchoHoja}px !important;min-width:${anchoHoja}px !important;max-width:${anchoHoja}px !important;padding:6px 12px !important;box-sizing:border-box;">
-    <table width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;border-bottom:2px solid #0E9488;padding-bottom:4px;margin-bottom:4px;"><tr>
+  const encabezadoHojaAparte = (titulo)=>`<table width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;border-bottom:2px solid #0E9488;padding-bottom:4px;margin-bottom:4px;"><tr>
       <td style="vertical-align:middle;">
-        <span style="font-weight:800;font-size:13px;color:#0A2540;">📏 CUADRO DE MEDIDAS — ${esc(nombrePlano)}</span>
+        <span style="font-weight:800;font-size:13px;color:#0A2540;">${titulo} — ${esc(nombrePlano)}</span>
         <span style="font-size:10px;color:#4B5563;">&nbsp;· ${new Date().toLocaleDateString("es-AR")} · Obra: ${esc(obra||"—")}</span>
       </td>
       <td width="70" align="right" style="vertical-align:middle;"><img src="data:image/png;base64,${LOGO_CYLP_B64}" style="height:18px;"></td>
-    </tr></table>
-    <div style="font-family:Arial;margin-bottom:8px;">${leyendaEstadosHtml}${pinesVincReporte.length>0?leyendaPinesHtml:""}</div>
+    </tr></table>`;
+  const htmlMedidas = (!reporteConfigVisibilidad.mostrarMedidas || resumenMedidas.length===0) ? "" : `<div class="print-page" style="width:${anchoHoja}px !important;min-width:${anchoHoja}px !important;max-width:${anchoHoja}px !important;padding:6px 12px !important;box-sizing:border-box;">
+    ${encabezadoHojaAparte("📏 CUADRO DE MEDIDAS")}
+    <div style="font-family:Arial;margin-bottom:8px;">${leyendaEstadosHtml}</div>
     ${hayMedidasEnPar ? `<p style="font-family:Arial;font-size:10.5px;color:#4B5563;margin:0 0 6px;">Medidas expresadas como Ancho x Alto · ★ = estado marcado como "completa la actividad" en Configurar estados</p>` : `<p style="font-family:Arial;font-size:10.5px;color:#4B5563;margin:0 0 6px;">★ = estado marcado como "completa la actividad" en Configurar estados</p>`}
     <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
       <thead><tr><th style="width:45px;">Cod</th><th style="width:95px;">Categoría</th><th>Medida</th><th>Ubicación</th><th style="width:60px;">Cant.</th><th style="width:75px;">Medida c/u</th><th style="width:75px;">Medida total</th><th style="width:110px;">Estado</th></tr></thead>
       <tbody>${filasMedidasHtml}${filaTotalMedidasHtml}</tbody>
     </table>
-    ${pinesVincReporte.length>0 ? `<div style="margin:16px 0 4px;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Pines del Plano Maestro vinculados a este plano, por tipo de ambiente</div>
+  </div>`;
+  // Página aparte (no la de medidas) para que se pueda apagar una sin tocar la otra -- "⚙️ Qué
+  // mostrar en el reporte" las controla por separado (ver REPORTE_CONFIG_POR_DEFECTO).
+  const htmlPines = (!reporteConfigVisibilidad.mostrarPines || pinesVincReporte.length===0) ? "" : `<div class="print-page" style="width:${anchoHoja}px !important;min-width:${anchoHoja}px !important;max-width:${anchoHoja}px !important;padding:6px 12px !important;box-sizing:border-box;">
+    ${encabezadoHojaAparte("📍 PINES DEL PLANO MAESTRO")}
+    <div style="font-family:Arial;margin-bottom:8px;">${leyendaPinesHtml}</div>
+    <div style="margin:4px 0;font-family:Arial;font-size:13px;font-weight:bold;color:#0A2540;">Pines vinculados a este plano, por tipo de ambiente</div>
     <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
       <thead><tr><th>Tipo de ambiente</th><th style="width:60px;">Pines</th><th style="width:70px;">🔴 Urgente</th><th style="width:80px;">🟠 Pendiente</th><th style="width:70px;">🟢 Al día</th><th style="width:85px;">% Checklist</th></tr></thead>
       <tbody>${filasPinesHtml}<tr style="border-top:2px solid #0A2540;font-weight:800;">
         <td>Total general</td><td align="center">${reportePines.totalPines}</td><td align="center">${reportePines.totalUrgente}</td><td align="center">${reportePines.totalPendiente}</td><td align="center">${reportePines.totalAlDia}</td><td align="center" style="color:#0E9488;">${reportePines.pctTotal!==null?reportePines.pctTotal+"%":"—"}</td>
       </tr></tbody>
-    </table>` : ""}
+    </table>
   </div>`;
   // OJO: a propósito NO se le pone un alto fijo a la hoja -- se deja que crezca según el
   // contenido real (header + plano + tabla), y es imprimirPDF() el que mide ese alto real y
@@ -25996,7 +26015,7 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
   // "↔ Cambiar a horizontal/vertical" del cuadro de vista previa puede simplemente volver a
   // llamar a esta función pasándole la orientación contraria, sin tener que duplicar nada acá.
   reportePlanoOrientacionActual = orientacion;
-  mostrarModalPDF(html+htmlMedidas, orientacion, `Plano_Avance_${nombreArchivoSeguro(nombrePlano)}_${nombreArchivoSeguro(obra||"")}.pdf`, (o)=>generarReportePlanoAvancePDF(o));
+  mostrarModalPDF(html+htmlMedidas+htmlPines, orientacion, `Plano_Avance_${nombreArchivoSeguro(nombrePlano)}_${nombreArchivoSeguro(obra||"")}.pdf`, (o)=>generarReportePlanoAvancePDF(o));
   }catch(err){
     console.error("Error generando el reporte del plano:", err);
     showToast("No se pudo generar el reporte. Detalle: "+(err && err.message ? err.message : err), 6000);
@@ -26046,6 +26065,11 @@ let estadosPersonalizados = [
   {id:"marco", nombre:"Marco colocado", icono:"🔵", color:"#3B82F6"},
   {id:"instalado", nombre:"Instalado", icono:"🟢", color:"#0E9488"}
 ];
+// Qué tablas del Reporte PDF se muestran, por plano -- "no quiero que salga la tabla de pines en
+// la de ventanas, poder desactivarla". La imagen del plano nunca se apaga (siempre tiene sentido);
+// lo demás es opcional. Guardado por plano, igual que estadosPersonalizados/prefijosCategoria.
+const REPORTE_CONFIG_POR_DEFECTO = { mostrarActividad:true, mostrarLineal:true, mostrarMedidas:true, mostrarPines:true };
+let reporteConfigVisibilidad = {...REPORTE_CONFIG_POR_DEFECTO};
 // Prefijo del código automático (V1, P1...) por categoría -- editable por el usuario para que
 // coincida con la nomenclatura real del proyecto (ej: "Ventana" -> "VEA" en vez de "V"). Guardado
 // por plano, igual que estadosPersonalizados. La numeración NO se reinicia al cambiar el prefijo
@@ -31180,6 +31204,7 @@ function comandosDisponibles(){
     {n:"Colocar texto", d:"Poner una nota o etiqueta en el plano", i:"🔤", solo:"avance", f:()=>iniciarColocarTextoPlano()},
     {n:"Seleccionar por categoría", d:"Elegir todas las etiquetas de una categoría (ej: todas las Ventana)", i:"🎯", solo:"avance", f:()=>comandoSeleccionarPorCategoria()},
     {n:"Reporte PDF", d:"Generar el informe del plano", i:"🖨", solo:"avance", f:()=>generarReportePlanoAvancePDF()},
+    {n:"Qué mostrar en el reporte", d:"Activar o desactivar tablas del reporte PDF", i:"⚙️", solo:"avance", f:()=>abrirConfigReporte()},
     // --- Plano maestro ---
     {n:"Agregar pin", d:"Poner un pin nuevo en una zona", i:"📍", solo:"maestro", f:()=>toggleModoAgregarPin()},
     {n:"Detectar habitaciones", d:"Crear todos los pines automáticamente", i:"🪄", solo:"maestro", f:()=>detectarHabitacionesAutomatico()},
@@ -34585,6 +34610,41 @@ function borrarDesdeSelectorRapido(idx, btn){
   });
 }
 // ---------------- Configurar los estados (nombre, ícono, color) -- totalmente editables ----------------
+// Pedido del usuario: poder elegir qué tablas aparecen en el Reporte PDF de este plano (ej: "no
+// quiero que salga la tabla de pines en la de ventanas"). La imagen del plano no es opcional --
+// siempre tiene sentido mostrarla; lo demás se puede apagar sin romper nada (el reporte arma cada
+// sección solo si está activada, ver generarReportePlanoAvancePDF).
+function abrirConfigReporte(){
+  const cont = document.getElementById("foto-avance-cuerpo");
+  cont.innerHTML = `
+    <h2 style="margin-top:0;color:#fff;">⚙️ Qué mostrar en el reporte</h2>
+    <p style="font-size:11px;color:#9fb0b8;margin-bottom:10px;">Elegí qué tablas aparecen en el PDF de ESTE plano -- la imagen del plano (con etiquetas y pines dibujados) siempre se incluye.</p>
+    <div id="lista-config-reporte"></div>
+    <button onclick="cerrarFotoAvanceOverlay()" style="width:100%;margin-top:14px;padding:11px;border-radius:10px;border:none;background:var(--verde);color:#fff;font-weight:800;">✓ Listo</button>`;
+  document.getElementById("foto-avance-overlay").style.display = "flex";
+  _fotoAvanceAbiertoTs = Date.now();
+  habilitarDeslizarParaCerrar(document.querySelector("#foto-avance-panel .handle-deslizar-cerrar"), document.getElementById("foto-avance-panel"), cerrarFotoAvanceOverlay);
+  renderListaConfigReporte();
+}
+const OPCIONES_CONFIG_REPORTE = [
+  {clave:"mostrarActividad", nombre:"Avance por actividad (áreas/capas)"},
+  {clave:"mostrarLineal", nombre:"Recorridos lineales"},
+  {clave:"mostrarMedidas", nombre:"Cuadro de medidas (etiquetas, por categoría)"},
+  {clave:"mostrarPines", nombre:"Pines del Plano Maestro vinculados"},
+];
+function renderListaConfigReporte(){
+  const cont = document.getElementById("lista-config-reporte");
+  if(!cont) return;
+  cont.innerHTML = OPCIONES_CONFIG_REPORTE.map(o=>`
+    <label style="display:flex;align-items:center;gap:10px;background:#111820;border-radius:9px;padding:10px 12px;margin-bottom:6px;color:#e7eef1;font-weight:700;font-size:12.5px;cursor:pointer;">
+      <input type="checkbox" ${reporteConfigVisibilidad[o.clave]!==false?"checked":""} onchange="cambiarVisibilidadReporte('${o.clave}', this.checked)" style="width:18px;height:18px;flex-shrink:0;accent-color:#8B5CF6;">
+      <span>${esc(o.nombre)}</span>
+    </label>`).join("");
+}
+async function cambiarVisibilidadReporte(clave, valor){
+  reporteConfigVisibilidad[clave] = valor;
+  await guardarReporteConfigVisibilidad();
+}
 function abrirConfigEstados(){
   const cont = document.getElementById("foto-avance-cuerpo");
   cont.innerHTML = `

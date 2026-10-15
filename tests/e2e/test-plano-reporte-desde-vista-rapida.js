@@ -59,10 +59,13 @@ const { chromium } = require("playwright");
   const r1 = await page.evaluate(() => {
     const btnReporte = document.getElementById("vr-btn-reporte");
     const btnCompartir = document.getElementById("vr-btn-compartir");
+    // El botón de reporte ahora vive dentro de una fila junto con "⚙️ Qué mostrar en el reporte"
+    // (ver abrirConfigReporte) -- la fila entera es la que queda al lado de "Compartir avance".
+    const filaReporte = btnReporte && btnReporte.closest("#vr-reporte-row");
     return {
       existe: !!btnReporte,
       visible: btnReporte && btnReporte.offsetParent !== null,
-      estaCercaDeCompartir: btnReporte && btnCompartir && btnReporte.previousElementSibling === btnCompartir,
+      estaCercaDeCompartir: !!filaReporte && btnCompartir && filaReporte.previousElementSibling === btnCompartir,
       canvasEnBlancoAntes: document.getElementById("canvas-plano").width === 300 && document.getElementById("canvas-plano").height === 150,
     };
   });
