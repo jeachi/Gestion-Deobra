@@ -102,7 +102,8 @@ const { chromium } = require("playwright");
   if (!reporte.includes("V1") || !reporte.includes("V2")) throw new Error("El reporte no lista las etiquetas por código: " + reporte.slice(0,200));
   if (!reporte.includes("Subtotal Ventana")) throw new Error("El reporte no agrupa por categoría con subtotal.");
   if (!reporte.includes("★")) throw new Error("El reporte no marca el estado configurado como meta (★).");
-  if (!reporte.includes("Pines del Plano Maestro vinculados a este plano")) throw new Error("El reporte no incluye la tabla de pines vinculados.");
+  if (!reporte.includes("PINES DEL PLANO MAESTRO")) throw new Error("El reporte no incluye la página de pines vinculados.");
+  if (!reporte.includes("Pines vinculados a este plano, por tipo de ambiente")) throw new Error("El reporte no incluye la tabla de pines vinculados.");
   if (!reporte.includes("Aula")) throw new Error("La tabla de pines no muestra el tipo de ambiente 'Aula': " + reporte.slice(0,200));
 
   // ---- 4) Monitor de avance: % por categoría de etiqueta y por tipo de ambiente de pines ----
