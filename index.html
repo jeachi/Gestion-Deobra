@@ -2276,7 +2276,12 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   position:absolute;left:8px;right:74px;top:58px;z-index:34;
   background:rgba(15,22,27,.92);border:1px solid rgba(255,255,255,.12);border-radius:10px;
   padding:9px 12px;font-size:10.5px;font-weight:600;color:#dcecef;line-height:1.35;
-  backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);pointer-events:none;
+  /* Bug reportado: cuando el plano está paneado hasta el fondo (la imagen "pegada" arriba a la
+     izquierda), este cartel -- visible justo mientras se está dibujando -- quedaba encima de esa
+     franja del lienzo y, sin esto, se comía el toque antes de que llegara al <canvas>: tocar ahí
+     "no hacía nada". Es solo texto informativo, no tiene ningún botón adentro, así que puede dejar
+     pasar el toque sin perder nada. */
 }
 .cad-hint-idle{
   position:absolute;left:8px;right:74px;top:58px;z-index:31;text-align:center;
@@ -2298,11 +2303,12 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   border-radius:10px;padding:9px 12px;font-size:10.5px;font-weight:700;
   box-shadow:0 4px 14px rgba(0,0,0,.35);max-width:none;
   border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(6px);
+  pointer-events:none; /* mismo motivo que .cad-status -- el toque tiene que pasar al lienzo de abajo */
 }
 .cad-modo-flotante .ico{font-size:14px;flex-shrink:0;}
 .cad-modo-flotante .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;}
 .cad-modo-flotante .x{background:rgba(255,255,255,.25);border:none;color:#fff;width:22px;height:22px;
-  border-radius:50%;font-size:12px;font-weight:800;flex-shrink:0;cursor:pointer;}
+  border-radius:50%;font-size:12px;font-weight:800;flex-shrink:0;cursor:pointer;pointer-events:auto;}
 
 /* ---- Mini-leyenda flotante de capas: antes había que abrir el cajón "Capas" cada vez solo para
    ver qué actividades/capas ya existen en el plano y de qué color -- esto queda siempre a la
@@ -30364,9 +30370,28 @@ function actualizarLupa(clientX, clientY, canvasX, canvasY, modo){
     ctx.beginPath(); ctx.moveTo(TAM-30,24); ctx.lineTo(TAM-26,29); ctx.lineTo(TAM-18,18); ctx.stroke();
   }
   const MARGEN_COLITA = 15;
-  lupa.style.left = (clientX - TAM/2) + "px";
-  lupa.style.top = (clientY - TAM - MARGEN_COLITA - 14) + "px";
+  const MARGEN_PANTALLA = 8;
+  // Bug reportado: cerca del borde superior/izquierdo de la pantalla (típico cuando el plano está
+  // paneado hasta el fondo) la lupa se calculaba igual SIEMPRE arriba-centrada del dedo -- eso la
+  // mandaba fuera de la pantalla (top/left negativos), invisible. Sin la lupa no se puede ubicar
+  // un punto con precisión ahí, así que en los hechos esa franja quedaba inutilizable para dibujar.
+  // Si no entra arriba, se muestra abajo del dedo (con la colita apuntando para arriba en vez de
+  // para abajo); el ancho/alto siempre se recortan contra los bordes de la pantalla.
+  const colita = document.getElementById("lupa-colita");
+  const arribaDelDedo = (clientY - TAM - MARGEN_COLITA - 14) >= MARGEN_PANTALLA;
+  const top = arribaDelDedo ? (clientY - TAM - MARGEN_COLITA - 14) : (clientY + MARGEN_COLITA + 14);
+  const maxLeft = Math.max(MARGEN_PANTALLA, window.innerWidth - TAM - MARGEN_PANTALLA);
+  const left = Math.min(Math.max(clientX - TAM/2, MARGEN_PANTALLA), maxLeft);
+  lupa.style.left = left + "px";
+  lupa.style.top = top + "px";
   lupa.style.display = "block";
+  if(arribaDelDedo){
+    colita.style.bottom = "-13px"; colita.style.top = "";
+    colita.style.borderTop = "15px solid #fff"; colita.style.borderBottom = "";
+  }else{
+    colita.style.top = "-13px"; colita.style.bottom = "";
+    colita.style.borderBottom = "15px solid #fff"; colita.style.borderTop = "";
+  }
 }
 function ocultarLupa(){
   document.getElementById("lupa").style.display = "none";
