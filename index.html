@@ -29254,8 +29254,8 @@ function actualizarModoFlotante(){
   if(typeof modoCopiarContorno!=="undefined" && modoCopiarContorno){ ico="📐"; txt="Copiar contorno activo"; }
   else if(typeof modoCopiarPiezaDirecto!=="undefined" && modoCopiarPiezaDirecto){ ico="📋"; txt="Copiar pieza: tocá la que querés"; }
   else if(typeof modoColocarReferencia!=="undefined" && modoColocarReferencia){ ico="📏"; txt="Tocá un punto para poner los ejes ahí"; }
-  else if(typeof modoRejillaColumnas!=="undefined" && modoRejillaColumnas){ ico="🔲"; txt=`Tocá un punto para la columna ${rejillaEnCurso.columnas.length+1}`; }
-  else if(typeof modoRejillaFilas!=="undefined" && modoRejillaFilas){ ico="🔲"; txt=`Tocá un punto para la fila ${letraSecuencial(rejillaEnCurso.filas.length)}`; }
+  else if(typeof modoRejillaColumnas!=="undefined" && modoRejillaColumnas){ ico="🔲"; txt=`Tocá un punto para la columna ${rejillaEnCurso.columnas.length+1}${rejillaEnCurso.filas.length>0?` (${rejillaEnCurso.filas.length} fila${rejillaEnCurso.filas.length===1?"":"s"} ya puesta${rejillaEnCurso.filas.length===1?"":"s"})`:""}`; }
+  else if(typeof modoRejillaFilas!=="undefined" && modoRejillaFilas){ ico="🔲"; txt=`Tocá un punto para la fila ${letraSecuencial(rejillaEnCurso.filas.length)} (${rejillaEnCurso.columnas.length} columna${rejillaEnCurso.columnas.length===1?"":"s"} ya puesta${rejillaEnCurso.columnas.length===1?"":"s"})`; }
   else if(typeof modoSeleccionElementoPorElemento!=="undefined" && modoSeleccionElementoPorElemento){ ico="👆"; txt="Elegí elementos tocándolos -- tocá ✕ para salir"; }
   else if(typeof modoCopiarSeleccionArea!=="undefined" && modoCopiarSeleccionArea){ ico="📋"; txt="Tocá el punto destino para las copias"; }
   else if(modoAutoContorno){ ico="🪄"; txt="Auto contorno activo"; }
@@ -31904,15 +31904,28 @@ function abrirPromptPasoRejilla(orientacion){
   const botonPasarAFilas = esColumna
     ? `<button class="btn btn-outline" style="width:100%;margin-bottom:8px;" onclick="_rejillaCierreControlado=true; cerrarPromptGenerico(); iniciarRejillaFilas();">↳ Pasar a las filas (horizontales)</button>`
     : "";
+  // Mejora pedida: de un vistazo, cuántas columnas/filas ya quedaron puestas (antes solo se sabía
+  // mirando atrás en el plano) -- y una vista previa en vivo de a cuántos px equivale la distancia
+  // tipeada, para confiar que el número tiene sentido antes de confirmarlo.
+  const resumen = `${rejillaEnCurso.columnas.length} columna${rejillaEnCurso.columnas.length===1?"":"s"} · ${rejillaEnCurso.filas.length} fila${rejillaEnCurso.filas.length===1?"":"s"} puestas hasta ahora`;
   abrirPromptGenerico(`
     <h2 style="margin-top:0;">🔲 Rejilla -- ${tipoTxt} "${ultimaEtiqueta}" puesta</h2>
+    <p class="helper" style="margin-bottom:2px;">${resumen}</p>
     <p class="helper" style="margin-bottom:10px;">¿A qué distancia va la próxima ${tipoTxt}? (en metros)</p>
-    <input type="number" id="rejilla-distancia" step="0.01" placeholder="ej: 4.00" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;text-align:center;box-sizing:border-box;margin-bottom:10px;">
+    <input type="number" id="rejilla-distancia" step="0.01" placeholder="ej: 4.00" oninput="actualizarPreviewDistanciaRejilla()" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;text-align:center;box-sizing:border-box;">
+    <div id="rejilla-distancia-preview" style="font-size:10.5px;color:#0E9488;font-weight:700;text-align:center;min-height:16px;margin:4px 0 10px;"></div>
     <button class="btn btn-primary" style="width:100%;margin-bottom:8px;" onclick="confirmarSiguienteLineaRejilla('${orientacion}')">➕ Agregar ${esColumna?"otra columna":"otra fila"}</button>
     ${botonPasarAFilas}
     <button class="btn" style="width:100%;margin-bottom:8px;" onclick="_rejillaCierreControlado=true; cerrarPromptGenerico(); terminarRejilla();">✓ Terminar la rejilla</button>
     <button class="btn btn-outline" style="width:100%;color:#DC5B4A;" onclick="cancelarRejillaEnCurso()">✕ Cancelar esta rejilla</button>
   `);
+}
+function actualizarPreviewDistanciaRejilla(){
+  const prev = document.getElementById("rejilla-distancia-preview");
+  if(!prev) return;
+  const metros = parseFloat(document.getElementById("rejilla-distancia").value);
+  if(isNaN(metros) || metros<=0 || !metrosPorPixelPlano){ prev.textContent = ""; return; }
+  prev.textContent = `≈ ${Math.round(metros/metrosPorPixelPlano)}px en el plano`;
 }
 function confirmarSiguienteLineaRejilla(orientacion){
   const metros = parseFloat(document.getElementById("rejilla-distancia").value);
