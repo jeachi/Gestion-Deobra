@@ -100,6 +100,13 @@ const { chromium } = require("playwright");
   }
 
   // ---- 2) El zoom final y el paneo siguen funcionando bien (no se rompió la matemática del pellizco) ----
+  // OJO: si zoomFinal da NaN (como pasó de verdad -- ver más abajo), "Math.abs(NaN-1) < 0.05" da
+  // "false" (cualquier comparación con NaN da false) y este chequeo NO se dispara -- un NaN pasaba
+  // de largo como si el zoom "hubiera cambiado lo suficiente". Hace falta un chequeo aparte,
+  // explícito, de que el número sea válido.
+  if (!Number.isFinite(resultado.zoomFinal)) {
+    throw new Error("BUG: el zoom quedó en un valor inválido (NaN/Infinity) después del pellizco: " + resultado.zoomFinal);
+  }
   if (Math.abs(resultado.zoomFinal - 1) < 0.05) {
     throw new Error("El zoom debería haber cambiado con el pellizco (quedó prácticamente en 100%): " + resultado.zoomFinal);
   }
