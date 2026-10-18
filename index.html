@@ -18615,6 +18615,13 @@ function abrirPromptGenerico(html){
 function cerrarPromptGenerico(){
   const overlay = document.getElementById("prompt-generico-overlay");
   if(overlay) overlay.style.display = "none";
+  // Ver el comentario de _rejillaCierreControlado: si justo este diálogo era el de "¿a qué
+  // distancia va la próxima línea de la Rejilla?" y se cerró por afuera de sus propios botones,
+  // se termina sola (conservando lo ya puesto) en vez de dejarla en un limbo sin salida visible.
+  if(typeof rejillaEnCurso!=="undefined" && rejillaEnCurso && !modoRejillaColumnas && !modoRejillaFilas && !_rejillaCierreControlado){
+    terminarRejilla();
+  }
+  _rejillaCierreControlado = false;
 }
 // ---------------- Cargar un mes nuevo de certificación ----------------
 function abrirNuevoMesPresupuesto(){
@@ -28182,7 +28189,7 @@ function activarTooltipRiel(btn, nombre){
       showToast(texto, 1600);
       if(navigator.vibrate) navigator.vibrate(10);
       btn.dataset.holdTooltipMostrado = "1"; // el click que viene al soltar el dedo no debe ejecutar la acción (ver bloqueo más abajo)
-    }, 450);
+    }, 600);
   });
   btn.addEventListener("pointerup", ()=>clearTimeout(timer));
   btn.addEventListener("pointerleave", ()=>clearTimeout(timer));
@@ -28204,7 +28211,7 @@ document.addEventListener("pointerdown", (e)=>{
     showToast(texto, 2800);
     if(navigator.vibrate) navigator.vibrate(10);
     btn.dataset.holdTooltipMostrado = "1";
-  }, 450);
+  }, 600);
 });
 ["pointerup","pointercancel"].forEach(ev=>document.addEventListener(ev, ()=>clearTimeout(_timerTooltipToolCard)));
 // BUG real reportado: mostrar el aviso de "mantené pulsado" al soltar el dedo NO impedía que la
@@ -28221,6 +28228,10 @@ document.addEventListener("click", (e)=>{
     delete btn.dataset.holdTooltipMostrado;
     e.preventDefault();
     e.stopPropagation();
+    // Sin este aviso, para quien soltó recién después de ver la descripción, el botón "no hacía
+    // nada" -- indistinguible de un botón roto. Un toque corto (normal) nunca llega a mostrar la
+    // descripción ni pasa por acá.
+    showToast("👆 Soltaste después de ver la descripción -- tocá rápido para usarlo", 2200);
   }
 }, true);
 function toggleDrawerHerramientas(cual){
@@ -29250,7 +29261,7 @@ function salirDeModosDibujoActivos(){
   if(typeof modoCopiarContorno!=="undefined" && modoCopiarContorno) toggleModoCopiarContorno();
   else if(typeof modoCopiarPiezaDirecto!=="undefined" && modoCopiarPiezaDirecto) toggleModoCopiarPiezaDirecto();
   else if(typeof modoColocarReferencia!=="undefined" && modoColocarReferencia) salirDeColocarReferencia();
-  else if(typeof modoRejillaColumnas!=="undefined" && (modoRejillaColumnas || modoRejillaFilas)){ modoRejillaColumnas = false; modoRejillaFilas = false; actualizarModoFlotante(); }
+  else if(typeof modoRejillaColumnas!=="undefined" && (modoRejillaColumnas || modoRejillaFilas)) terminarRejilla(); // conserva las líneas ya puestas, igual que "Terminar la rejilla"
   else if(typeof modoSeleccionElementoPorElemento!=="undefined" && modoSeleccionElementoPorElemento){ modoSeleccionElementoPorElemento = false; cancelarSeleccionArea(); actualizarModoFlotante(); }
   else if(typeof modoCopiarSeleccionArea!=="undefined" && modoCopiarSeleccionArea){ modoCopiarSeleccionArea = false; actualizarModoFlotante(); }
   else if(modoAutoContorno) toggleModoAutoContorno();
@@ -31797,6 +31808,15 @@ function borrarTodasLasReferencias(){
 let modoRejillaColumnas = false; // esperando el toque de la próxima columna (vertical)
 let modoRejillaFilas = false; // esperando el toque de la próxima fila (horizontal)
 let rejillaEnCurso = null; // {grupoId, columnas:[...], filas:[...]} -- solo mientras se está armando
+// Mientras se espera que se tipee la distancia a la próxima línea (ninguno de los dos "modoRejilla"
+// está prendido -- no se está esperando un TOQUE, se está esperando un número), el diálogo se podía
+// cerrar por fuera de sus propios botones (la "✕" genérica de arriba a la derecha, deslizando hacia
+// abajo, o "atrás" del celular) y la rejilla quedaba en un limbo: ni esperando el próximo toque ni
+// terminada, sin ningún botón visible en pantalla para seguir o cancelar -- indistinguible de que
+// "se rompió". Este flag distingue un cierre CONTROLADO (los botones ✓/↳ de acá adentro, que ya
+// saben qué hacer) de uno inesperado, para que cerrarPromptGenerico() pueda terminar sola la
+// rejilla (conservando lo ya puesto) en el segundo caso. Ver cerrarPromptGenerico().
+let _rejillaCierreControlado = false;
 function letraSecuencial(n){
   // n es 0-based: 0->A, 1->B, ..., 25->Z, 26->AA, 27->AB...
   let s = "", num = n+1;
@@ -31849,7 +31869,7 @@ function abrirPromptPasoRejilla(orientacion){
   const ultimaEtiqueta = lista[lista.length-1].nombre;
   const tipoTxt = esColumna ? "columna" : "fila";
   const botonPasarAFilas = esColumna
-    ? `<button class="btn btn-outline" style="width:100%;margin-bottom:8px;" onclick="cerrarPromptGenerico(); iniciarRejillaFilas();">↳ Pasar a las filas (horizontales)</button>`
+    ? `<button class="btn btn-outline" style="width:100%;margin-bottom:8px;" onclick="_rejillaCierreControlado=true; cerrarPromptGenerico(); iniciarRejillaFilas();">↳ Pasar a las filas (horizontales)</button>`
     : "";
   abrirPromptGenerico(`
     <h2 style="margin-top:0;">🔲 Rejilla -- ${tipoTxt} "${ultimaEtiqueta}" puesta</h2>
@@ -31857,7 +31877,7 @@ function abrirPromptPasoRejilla(orientacion){
     <input type="number" id="rejilla-distancia" step="0.01" placeholder="ej: 4.00" style="width:100%;padding:10px;border:1.5px solid var(--borde);border-radius:8px;font-size:16px;text-align:center;box-sizing:border-box;margin-bottom:10px;">
     <button class="btn btn-primary" style="width:100%;margin-bottom:8px;" onclick="confirmarSiguienteLineaRejilla('${orientacion}')">➕ Agregar ${esColumna?"otra columna":"otra fila"}</button>
     ${botonPasarAFilas}
-    <button class="btn" style="width:100%;margin-bottom:8px;" onclick="cerrarPromptGenerico(); terminarRejilla();">✓ Terminar la rejilla</button>
+    <button class="btn" style="width:100%;margin-bottom:8px;" onclick="_rejillaCierreControlado=true; cerrarPromptGenerico(); terminarRejilla();">✓ Terminar la rejilla</button>
     <button class="btn btn-outline" style="width:100%;color:#DC5B4A;" onclick="cancelarRejillaEnCurso()">✕ Cancelar esta rejilla</button>
   `);
 }
@@ -31873,7 +31893,9 @@ function confirmarSiguienteLineaRejilla(orientacion){
   lineasReferencia.push(linea);
   lista.push(linea);
   guardarLineasReferencia();
-  cerrarPromptGenerico();
+  // No hace falta cerrar el diálogo antes -- abrirPromptPasoRejilla reutiliza el mismo overlay ya
+  // abierto (evita además, de paso, que el chequeo de cierre-inesperado de cerrarPromptGenerico()
+  // confunda este paso intermedio con un abandono real del diálogo).
   redibujar();
   abrirPromptPasoRejilla(orientacion);
 }
@@ -31882,6 +31904,10 @@ function terminarRejilla(){
   modoRejillaFilas = false;
   const cantColumnas = rejillaEnCurso ? rejillaEnCurso.columnas.length : 0;
   const cantFilas = rejillaEnCurso ? rejillaEnCurso.filas.length : 0;
+  // Si se sale del modo sin haber puesto ninguna línea todavía (ej: tocando la "✕" del cartel
+  // flotante apenas arrancado), no hay nada que "terminar" -- se cancela en silencio, en vez de
+  // mostrar un confuso "Rejilla lista: 0 columnas × 0 filas".
+  if(cantColumnas===0 && cantFilas===0){ cancelarRejillaEnCurso(); return; }
   rejillaEnCurso = null;
   actualizarModoFlotante();
   redibujar();

@@ -68,7 +68,7 @@ const { chromium } = require("playwright");
     const btn = document.querySelector('.btn-pin-accion[onclick="iniciarCopiarPin()"]');
     btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
   });
-  await page.waitForTimeout(550);
+  await page.waitForTimeout(700); // bien por encima del umbral de 600ms (antes 450ms) para no ser flaky
   const textoToast = await page.evaluate(() => document.getElementById("toast").textContent);
   await page.evaluate(() => {
     document.querySelector('.btn-pin-accion[onclick="iniciarCopiarPin()"]').dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));

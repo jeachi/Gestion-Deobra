@@ -54,7 +54,7 @@ const { chromium } = require("playwright");
   // ---- 1) Mantener pulsado (>450ms) muestra el aviso pero NO ejecuta la acción al soltar ----
   await page.evaluate(() => { window.__zoomAntesHold = zoomActual; });
   await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: cx, y: cy }] });
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(750); // bien por encima del umbral de 600ms para no ser flaky
   const duranteHold = await page.evaluate(() => ({ toastTexto: document.getElementById("toast").textContent }));
   await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   await page.waitForTimeout(100);
