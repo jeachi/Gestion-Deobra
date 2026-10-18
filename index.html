@@ -20972,9 +20972,17 @@ async function imprimirPDF(){
   // y quedaba un margen de sobra abajo en el PDF final.
   if(document.fonts && document.fonts.ready){ try{ await document.fonts.ready; }catch(e){} }
   await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  const hojas = [...document.querySelectorAll("#areaImpresion .print-page")];
-  const anchoPx = hojas.length ? Math.max(...hojas.map(h=>h.scrollWidth)) : null;
-  const altoPx = hojas.length ? Math.max(...hojas.map(h=>h.scrollHeight)) : null;
+  // OJO: #areaImpresion tiene "display:none" hasta que arranca @media print -- medirlo ACÁ (antes
+  // de imprimir de verdad) siempre daba scrollWidth/scrollHeight en 0 (un elemento sin layout no
+  // tiene medidas), así que esta función nunca lograba fijar el tamaño real de la hoja y caía
+  // siempre al tamaño A4 de respaldo. Eso pasaba inadvertido en los reportes angostos (entraban en
+  // un A4 cualquiera igual), pero en reportes más anchos que una A4 (como el de Pendientes, con la
+  // columna de fecha/cantidad empujada bien a la derecha) el sobrante quedaba directamente cortado
+  // al imprimir o guardar como PDF. #pdf-preview-content SÍ está visible en este momento (el modal
+  // de vista previa sigue abierto) y tiene exactamente el mismo HTML -- medir ahí da el tamaño real.
+  const hojas = [...document.querySelectorAll("#pdf-preview-content .print-page")];
+  const anchoPx = hojas.length ? Math.max(...hojas.map(h=>h.scrollWidth)) || null : null;
+  const altoPx = hojas.length ? Math.max(...hojas.map(h=>h.scrollHeight)) || null : null;
   fijarOrientacionImpresion(orientacionPdfActual, anchoPx, altoPx);
   const texto = orientacionPdfActual==="portrait"
     ? "Antes de continuar: en el cuadro que se abre ahora, elegí orientación VERTICAL (Portrait). Si tu celular lo abre en horizontal, cambialo a mano."
@@ -32021,8 +32029,25 @@ function abrirSelectorCategoriaParaRejilla(cruces){
     <h2 style="margin-top:0;">📍 Colocar etiquetas en la rejilla</h2>
     <p class="helper" style="margin-bottom:10px;">Se va a crear una etiqueta en cada uno de los ${cruces.length} cruces -- elegí antes la categoría (define el código automático).</p>
     ${CATEGORIAS_RAPIDAS_REJILLA.map(o=>`<button class="btn btn-outline" style="width:100%;margin-bottom:6px;text-align:left;" onclick="confirmarEtiquetasEnRejilla('${o.val}')">${o.lbl}</button>`).join("")}
+    <button class="btn btn-outline" style="width:100%;margin-bottom:6px;text-align:left;" onclick="mostrarCategoriaOtraRejilla()">✏️ Otra categoría…</button>
+    <div id="rejilla-categoria-otra-wrap" style="display:none;margin-bottom:6px;">
+      <input type="text" id="rejilla-categoria-otra" placeholder="Escribí la categoría (ej: Desagüe)" style="width:100%;padding:9px 10px;border:1.5px solid var(--morado, #8B5CF6);border-radius:8px;font-size:13px;box-sizing:border-box;margin-bottom:8px;">
+      <button class="btn btn-primary" style="width:100%;" onclick="confirmarCategoriaOtraRejilla()">✓ Usar esta categoría</button>
+    </div>
     <button class="btn" style="width:100%;margin-top:6px;" onclick="cerrarPromptGenerico()">Cancelar</button>
   `);
+}
+// Mismo patrón "+ Otra" que ya tiene el formulario manual de etiquetas (Ventana/Puerta/Portón/Reja
+// + categoría libre) -- sin esto, un plano con categorías distintas a esas 4 (ej: "Columna",
+// "Desagüe") no podía usar "Colocar en cada cruce" para su categoría real.
+function mostrarCategoriaOtraRejilla(){
+  document.getElementById("rejilla-categoria-otra-wrap").style.display = "block";
+  document.getElementById("rejilla-categoria-otra").focus();
+}
+function confirmarCategoriaOtraRejilla(){
+  const categoria = document.getElementById("rejilla-categoria-otra").value.trim();
+  if(!categoria){ showToast("Escribí una categoría."); return; }
+  confirmarEtiquetasEnRejilla(categoria);
 }
 function confirmarEtiquetasEnRejilla(categoria){
   const radioDuplicado = imagenPlano ? imagenPlano.width*0.02 : 60;
