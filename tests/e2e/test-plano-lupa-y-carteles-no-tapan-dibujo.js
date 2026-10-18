@@ -10,6 +10,12 @@
 //    inactividad (".cad-hint-idle") -- un toque que caía justo en ese cartel se lo comía el DIV en
 //    vez de llegarle al <canvas> de abajo: tocar ahí "no hacía nada" de verdad, no era solo un
 //    problema visual.
+// (Arreglo posterior, PR aparte: pointer-events:none solo evitaba que el toque se "perdiera", pero
+// el cartel seguía TAPANDO visualmente el dibujo si el plano quedaba paneado ahí -- ahora además
+// el lienzo (#canvas-wrap) se corre hacia abajo para no quedar nunca debajo del cartel, ver
+// test-plano-banner-reserva-espacio.js. Por eso la sección 2 de abajo ya no prueba que un toque en
+// esa zona llegue al <canvas> -- ahí ya no hay lienzo, es espacio reservado a propósito -- sino que
+// el cartel y el lienzo no se superponen.)
 const { chromium } = require("playwright");
 
 (async () => {
@@ -86,18 +92,13 @@ const { chromium } = require("playwright");
   if (estado.pointerEvents !== "none") {
     throw new Error("BUG: el cartel de estado de dibujo no tiene pointer-events:none -- se comería los toques que caigan encima: " + JSON.stringify(estado));
   }
-  // Toque dentro del rectángulo del cartel -- debería colocar un punto en el <canvas>, no perderse.
+  // El lienzo (#canvas-wrap) tiene que arrancar, en pantalla, debajo de donde termina el cartel --
+  // si no, el cartel seguiría tapando visualmente la franja de arriba del dibujo.
   {
-    const puntosAntes = await page.evaluate(() => puntosActuales.length);
-    const client = await page.context().newCDPSession(page);
-    const tx = estado.rect.left + estado.rect.width / 2;
-    const ty = estado.rect.top + estado.rect.height / 2;
-    await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: tx, y: ty }] });
-    await page.waitForTimeout(80);
-    await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    await page.waitForTimeout(150);
-    const puntosDespues = await page.evaluate(() => puntosActuales.length);
-    if (puntosDespues <= puntosAntes) throw new Error("BUG: tocar justo donde está el cartel de estado no colocó ningún punto -- el toque se perdió.");
+    const rectWrap = await page.evaluate(() => document.getElementById("canvas-wrap").getBoundingClientRect().top);
+    if (rectWrap < estado.rect.bottom) {
+      throw new Error("BUG: el cartel de estado (termina en " + estado.rect.bottom + "px) sigue tapando el lienzo (arranca en " + rectWrap + "px).");
+    }
   }
   await page.evaluate(() => { if (typeof cancelarDibujo === "function") cancelarDibujo(); });
 

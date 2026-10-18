@@ -27998,6 +27998,39 @@ function cargarPlano(file){
   abrirPromptNombrePlano(file);
 }
 
+// Bug reportado: la barra de estado/cartel flotante (#estado-dibujo, #cad-hint-idle,
+// #cad-modo-flotante) ya dejaba pasar el toque al lienzo (pointer-events:none), pero seguía
+// TAPANDO VISUALMENTE el dibujo -- está fijo en la esquina de la pantalla (position:absolute, no
+// se mueve con el plano), así que si paneás/zoomeás hasta que esa zona del dibujo caiga ahí, el
+// cartel la sigue cubriendo. En vez de adivinar un alto fijo (el texto de estos carteles varía:
+// "Dibujando..." vs un párrafo entero de instrucciones), se mide el alto REAL del cartel visible
+// más alto en cada momento, y el lienzo arranca justo debajo -- así nunca queda dibujo tapado,
+// sea cual sea el texto. Un solo ResizeObserver cubre los ~30 lugares del código que prenden/
+// apagan estos carteles, sin tener que tocar ninguno de ellos.
+function recalcularEspacioCadStatus(){
+  const wrap = document.getElementById("canvas-wrap");
+  if(!wrap) return;
+  const TOP_BASE = 58; // mismo top: fijo que ya usan estos carteles en su CSS
+  let topLienzo = TOP_BASE;
+  ["estado-dibujo","cad-hint-idle","cad-modo-flotante"].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el && el.style.display!=="none" && el.offsetHeight>0){
+      topLienzo = Math.max(topLienzo, TOP_BASE + el.offsetHeight + 8);
+    }
+  });
+  wrap.style.top = topLienzo+"px";
+}
+let _roCadStatus = null;
+function instalarObservadorEspacioCadStatus(){
+  if(_roCadStatus) return;
+  _roCadStatus = new ResizeObserver(recalcularEspacioCadStatus);
+  ["estado-dibujo","cad-hint-idle","cad-modo-flotante"].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) _roCadStatus.observe(el);
+  });
+  recalcularEspacioCadStatus();
+}
+
 let zoomActual = 1;
 // Separado del resto de aplicarZoom -- esto es lo único que hace falta para que el plano SE VEA
 // más grande/chico al toque (reescalar el <canvas> por CSS, sin volver a dibujarlo, es prácticamente
@@ -28562,6 +28595,7 @@ function iniciarCanvas(){
   // mostrar ahí, así que debe quedar oculto. Antes se mostraba siempre sin importar el modo,
   // pisando el "none" que seleccionarPlano() ya había puesto a propósito para Maestro.
   document.getElementById("card-actividades").style.display = modoPlanoMaestro ? "none" : "block";
+  instalarObservadorEspacioCadStatus();
   renderRielAdaptativo();
   actualizarBotonOrdenBadges();
   actualizarBotonAltoContraste();
