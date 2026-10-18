@@ -25872,6 +25872,12 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
   // vez de una lista plana -- así se puede leer "de las 12 Ventana, 5 están Instaladas (42%)" de
   // un vistazo, en vez de tener que contar fila por fila.
   const reporteMedidas = agruparMedidasPorCategoriaParaReporte(resumenMedidas);
+  // Pedido del usuario: "no se entiende bien las cantidades... más detalle de cuáles están en
+  // proceso, cuáles terminadas" -- antes el subtotal solo mostraba el % y la medida, sin decir
+  // CUÁNTAS etiquetas de esa categoría ya terminaron contra cuántas siguen en curso. Se agrega una
+  // fila aparte, bien separada visualmente, con "Terminado / En proceso" en números grandes más
+  // el desglose completo (con nombre, no solo el ícono) de cada estado intermedio.
+  const metaIdRep = (estadoMetaActual()||{}).id || null;
   const filasMedidasHtml = reporteMedidas.categorias.map(cat=>{
     const filasCategoria = cat.filas.map(m=>{
       const medidaUnit = medidaUnitariaFila(m);
@@ -25891,18 +25897,40 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
     const medidaCatTxt = cat.medida
       ? `${Math.round(cat.medida.total*100)/100}${cat.medida.sufijo} / <b style="color:#0E9488;">${Math.round(cat.medida.meta*100)/100}${cat.medida.sufijo} ★</b>`
       : (cat.mezclaMedida ? "mezcla unid." : "—");
+    const terminadasCat = metaIdRep ? (cat.estados[metaIdRep]||0) : 0;
+    const enProcesoCat = cat.cantidad - terminadasCat;
+    const resumenEstadoHtml = `<tr style="background:#F8FAFA;">
+        <td colspan="8" style="border-bottom:none;padding:8px 10px 4px;">
+          <div style="display:flex;gap:18px;align-items:baseline;margin-bottom:4px;">
+            <span style="font-size:13px;font-weight:800;color:#0E9488;">&#10003; Terminado: ${terminadasCat}</span>
+            <span style="font-size:13px;font-weight:800;color:#B45309;">&#9203; En proceso: ${enProcesoCat}</span>
+          </div>
+          <div style="font-size:11px;">${desglosarEstadosParaReporte(cat.estados, metaIdRep)}</div>
+        </td>
+      </tr>`;
     const subtotalHtml = `<tr style="background:#F8FAFA;border-top:1.5px solid #CBD5D9;">
         <td colspan="4" style="font-weight:800;">Subtotal ${esc(cat.nombre)} — ${cat.cantidad} etiqueta${cat.cantidad===1?"":"s"}</td>
         <td align="center" style="font-weight:800;">${cat.cantidad}</td>
         <td align="center" colspan="2" style="font-weight:800;">${medidaCatTxt}</td>
         <td style="font-weight:800;color:#0E9488;">${cat.pct}%</td>
       </tr>`;
-    return `<tr><td colspan="8" style="font-weight:800;padding-top:10px;border-bottom:none;">${esc(cat.nombre)}</td></tr>` + filasCategoria + subtotalHtml;
+    return `<tr><td colspan="8" style="font-weight:800;padding-top:10px;border-bottom:none;">${esc(cat.nombre)}</td></tr>` + filasCategoria + resumenEstadoHtml + subtotalHtml;
   }).join("");
   const medidaTotalTxt = reporteMedidas.medidaTotalGeneral
     ? `${Math.round(reporteMedidas.medidaTotalGeneral.total*100)/100}${reporteMedidas.medidaTotalGeneral.sufijo} / ${Math.round(reporteMedidas.medidaTotalGeneral.meta*100)/100}${reporteMedidas.medidaTotalGeneral.sufijo} ★`
     : (reporteMedidas.mezclaMedidaTotal ? "mezcla unid." : "—");
-  const filaTotalMedidasHtml = resumenMedidas.length===0 ? "" : `<tr style="border-top:2px solid #0A2540;font-weight:800;">
+  const terminadasTotal = metaIdRep ? (reporteMedidas.totalEstados[metaIdRep]||0) : 0;
+  const enProcesoTotal = reporteMedidas.totalCantidad - terminadasTotal;
+  const resumenEstadoTotalHtml = resumenMedidas.length===0 ? "" : `<tr style="border-top:2px solid #0A2540;">
+      <td colspan="8" style="padding:8px 10px 4px;">
+        <div style="display:flex;gap:18px;align-items:baseline;margin-bottom:4px;">
+          <span style="font-size:14px;font-weight:800;color:#0E9488;">&#10003; Total terminado: ${terminadasTotal}</span>
+          <span style="font-size:14px;font-weight:800;color:#B45309;">&#9203; Total en proceso: ${enProcesoTotal}</span>
+        </div>
+        <div style="font-size:11px;">${desglosarEstadosParaReporte(reporteMedidas.totalEstados, metaIdRep)}</div>
+      </td>
+    </tr>`;
+  const filaTotalMedidasHtml = resumenMedidas.length===0 ? "" : `<tr style="font-weight:800;">
       <td colspan="4">Total general — ${reporteMedidas.totalCantidad} etiquetas</td>
       <td align="center">${reporteMedidas.totalCantidad}</td>
       <td align="center" colspan="2">${medidaTotalTxt}</td>
@@ -25989,7 +26017,7 @@ async function generarReportePlanoAvancePDF(orientacionElegida){
     ${hayMedidasEnPar ? `<p style="font-family:Arial;font-size:10.5px;color:#4B5563;margin:0 0 6px;">Medidas expresadas como Ancho x Alto · ★ = estado marcado como "completa la actividad" en Configurar estados</p>` : `<p style="font-family:Arial;font-size:10.5px;color:#4B5563;margin:0 0 6px;">★ = estado marcado como "completa la actividad" en Configurar estados</p>`}
     <table class="trab" width="${anchoContenido}" cellspacing="0" cellpadding="0" style="min-width:0 !important;font-size:13px;">
       <thead><tr><th style="width:45px;">Cod</th><th style="width:95px;">Categoría</th><th>Medida</th><th>Ubicación</th><th style="width:60px;">Cant.</th><th style="width:75px;">Medida c/u</th><th style="width:75px;">Medida total</th><th style="width:110px;">Estado</th></tr></thead>
-      <tbody>${filasMedidasHtml}${filaTotalMedidasHtml}</tbody>
+      <tbody>${filasMedidasHtml}${resumenEstadoTotalHtml}${filaTotalMedidasHtml}</tbody>
     </table>
   </div>`;
   // Página aparte (no la de medidas) para que se pueda apagar una sin tocar la otra -- "⚙️ Qué
@@ -34987,6 +35015,23 @@ function textoEstadoFila(g){
     const e = buscar(id);
     return `${e?e.icono:"·"}${cant}`;
   }).join(" ");
+}
+// Desglose de estados con nombre completo (no solo el ícono) para el subtotal del reporte --
+// pedido del usuario: "no se entiende bien las cantidades... más detalle de cuáles están en
+// proceso, cuáles terminadas". El estado marcado ★ ("completa la actividad") se resalta aparte
+// del resto, que se agrupan todos como "en proceso" aunque sean varios estados intermedios
+// distintos (ej: "Pendiente" y "Marco colocado" cuentan igual como "todavía no terminado").
+function desglosarEstadosParaReporte(estados, metaId){
+  const buscar = (id)=>estadosPersonalizados.find(e=>e.id===id);
+  const entradas = Object.entries(estados||{}).filter(([,cant])=>cant>0);
+  if(entradas.length===0) return "—";
+  return entradas.map(([id,cant])=>{
+    const e = buscar(id);
+    const nombre = e ? esc(e.nombre) : "(estado borrado)";
+    const icono = e ? esc(e.icono) : "·";
+    const esMeta = metaId && id===metaId;
+    return `<span style="display:inline-block;margin-right:16px;white-space:nowrap;${esMeta?"font-weight:800;color:#0E9488;":"color:#475569;"}">${icono} ${nombre}: ${cant}${esMeta?" &#10003;":""}</span>`;
+  }).join("");
 }
 // Medida de UNA unidad de la fila -- si la fila es un par "Ancho x Alto" usa el área ya calculada
 // (m.area); si es un número suelto (ej. "8" en metros lineales), usa ese número directo. Null si
