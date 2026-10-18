@@ -27999,18 +27999,26 @@ function cargarPlano(file){
 }
 
 let zoomActual = 1;
-function aplicarZoom(factor){
+// Separado del resto de aplicarZoom -- esto es lo único que hace falta para que el plano SE VEA
+// más grande/chico al toque (reescalar el <canvas> por CSS, sin volver a dibujarlo, es prácticamente
+// gratis). El resto (manijas, badges de %, etiquetas tocables, pines) es la parte cara: recrea un
+// <div> por cada una, con sus listeners, desde cero. Separarlo deja a moverPinch() (que se dispara
+// decenas de veces por segundo mientras se pellizca) actualizar SOLO lo barato en cada toque.
+function aplicarZoomCanvas(factor){
   zoomActual = Math.max(0.1, Math.min(4, factor));
   const canvas = document.getElementById("canvas-plano");
   canvas.style.width = Math.round(canvas.width*zoomActual)+"px";
   canvas.style.height = Math.round(canvas.height*zoomActual)+"px";
   document.getElementById("zoom-pct").textContent = Math.round(zoomActual*100)+"%";
   document.getElementById("zoom-pct-bar").textContent = Math.round(zoomActual*100)+"%";
+  actualizarBarraEscala();
+}
+function aplicarZoom(factor){
+  aplicarZoomCanvas(factor);
   renderManijasEdicion();
   renderPorcentajesFlotantes();
   renderAnotacionesTocables();
   if(modoPlanoMaestro) renderPinesMaestro();
-  actualizarBarraEscala();
 }
 function zoomIn(){ aplicarZoom(zoomActual*1.25); }
 function zoomOut(){ aplicarZoom(zoomActual/1.25); }
@@ -29745,11 +29753,30 @@ function iniciarPinch(e){
   document.addEventListener("touchend", terminarPinch);
   document.addEventListener("touchcancel", terminarPinch);
 }
+// Bug reportado: el pellizco se "tildaba" (se trababa/entrecortaba) y en general el plano se
+// sentía lento. Causa real: este handler corre decenas de veces por segundo mientras se pellizca
+// (uno por cada micro-movimiento de los dedos), y antes llamaba a aplicarZoom() completo en CADA
+// toque -- eso recrea de cero, con sus listeners, un <div> por cada manija/badge de %/etiqueta/pin
+// del plano. En un plano con muchas etiquetas (común en estos planos de obra), eso es carísimo
+// hecho una vez, y mucho peor hecho 60+ veces por segundo. Ahora cada toque solo actualiza lo
+// barato (reescalar el <canvas> por CSS + paniar) y se junta con requestAnimationFrame -- varios
+// toques que lleguen antes de que el navegador pinte el frame anterior se funden en uno solo. Las
+// manijas/badges/etiquetas/pines se vuelven a dibujar UNA sola vez, al soltar los dedos.
+let pinchRAF = null;
 function moverPinch(e){
   if(!pinchEstado || e.touches.length<2) return;
   e.preventDefault();
+  pinchEstado.ultimoToque0 = {x: e.touches[0].clientX, y: e.touches[0].clientY};
+  pinchEstado.ultimoToque1 = {x: e.touches[1].clientX, y: e.touches[1].clientY};
+  if(pinchRAF) return; // ya hay un frame pendiente -- lo que llegó recién se procesa en ese
+  pinchRAF = requestAnimationFrame(aplicarPinchPendiente);
+}
+function aplicarPinchPendiente(){
+  pinchRAF = null;
+  if(!pinchEstado || !pinchEstado.ultimoToque0) return;
+  const t0 = pinchEstado.ultimoToque0, t1 = pinchEstado.ultimoToque1;
   const wrap = document.getElementById("canvas-wrap");
-  const distActual = distanciaEntreToques(e.touches[0], e.touches[1]);
+  const distActual = distanciaEntreToques(t0, t1);
   const factor = distActual / pinchEstado.distInicial;
   const nuevoZoom = Math.max(0.1, Math.min(4, pinchEstado.zoomInicial*factor));
   const f = nuevoZoom / pinchEstado.zoomInicial;
@@ -29757,18 +29784,28 @@ function moverPinch(e){
   // los dos dedos al arrancar el pellizco -- eso es lo que tiene que seguir bajo los dedos.
   const contenidoX = pinchEstado.scrollInicialX + (pinchEstado.midInicial.x - pinchEstado.rectInicial.left);
   const contenidoY = pinchEstado.scrollInicialY + (pinchEstado.midInicial.y - pinchEstado.rectInicial.top);
-  aplicarZoom(nuevoZoom);
-  const rectAhora = wrap.getBoundingClientRect();
-  const midActual = puntoMedioToques(e.touches[0], e.touches[1]);
-  wrap.scrollLeft = contenidoX*f - (midActual.x - rectAhora.left);
-  wrap.scrollTop = contenidoY*f - (midActual.y - rectAhora.top);
+  aplicarZoomCanvas(nuevoZoom);
+  // wrap.getBoundingClientRect() de nuevo acá sería otra lectura de layout forzada en cada frame --
+  // la posición del propio contenedor en la pantalla no cambia porque adentro se haya hecho zoom,
+  // así que reusar la medida tomada al arrancar el pellizco es válido y evita ese costo repetido.
+  const midActual = puntoMedioToques(t0, t1);
+  wrap.scrollLeft = contenidoX*f - (midActual.x - pinchEstado.rectInicial.left);
+  wrap.scrollTop = contenidoY*f - (midActual.y - pinchEstado.rectInicial.top);
 }
 function terminarPinch(e){
   if(e.touches && e.touches.length>=2) return; // todavía quedan 2+ dedos apoyados, seguimos
   document.removeEventListener("touchmove", moverPinch);
   document.removeEventListener("touchend", terminarPinch);
   document.removeEventListener("touchcancel", terminarPinch);
+  if(pinchRAF){ cancelAnimationFrame(pinchRAF); pinchRAF = null; }
+  const huboPinch = !!pinchEstado;
   pinchEstado = null;
+  if(huboPinch){
+    renderManijasEdicion();
+    renderPorcentajesFlotantes();
+    renderAnotacionesTocables();
+    if(modoPlanoMaestro) renderPinesMaestro();
+  }
 }
 function iniciarColocarPunto(e){
   if(e.touches && e.touches.length>=2){ iniciarPinch(e); return; }
