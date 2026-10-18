@@ -29766,8 +29766,8 @@ let pinchRAF = null;
 function moverPinch(e){
   if(!pinchEstado || e.touches.length<2) return;
   e.preventDefault();
-  pinchEstado.ultimoToque0 = {x: e.touches[0].clientX, y: e.touches[0].clientY};
-  pinchEstado.ultimoToque1 = {x: e.touches[1].clientX, y: e.touches[1].clientY};
+  pinchEstado.ultimoToque0 = {clientX: e.touches[0].clientX, clientY: e.touches[0].clientY};
+  pinchEstado.ultimoToque1 = {clientX: e.touches[1].clientX, clientY: e.touches[1].clientY};
   if(pinchRAF) return; // ya hay un frame pendiente -- lo que llegó recién se procesa en ese
   pinchRAF = requestAnimationFrame(aplicarPinchPendiente);
 }
