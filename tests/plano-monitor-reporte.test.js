@@ -20,6 +20,11 @@ const {
   { nombre: "agruparMedidasPorCategoriaParaReporte" },
 ]);
 
+const { esc, desglosarEstadosParaReporte } = cargarDesdeApp([
+  { nombre: "esc" },
+  { nombre: "desglosarEstadosParaReporte" },
+]);
+
 const { colorEstadoPinMaestro, contarPinesMaestroPorEstado, agruparPinesPorTipoAmbiente } = cargarDesdeApp([
   { nombre: "colorEstadoPinMaestro" },
   { nombre: "contarPinesMaestroPorEstado" },
@@ -162,4 +167,41 @@ test("agruparPinesPorTipoAmbiente: sin ningún pin con checklist, el % total que
   const r = agruparPinesPorTipoAmbiente(pines);
   assert.equal(r.pctTotal, null);
   assert.equal(r.grupos[0].pct, null);
+});
+
+test("desglosarEstadosParaReporte: separa el estado ★ (completa) del resto, con nombre completo no solo ícono", () => {
+  const estados = { pendiente: 3, marco: 4, instalado: 5 };
+  global.estadosPersonalizados = [
+    { id: "pendiente", nombre: "Pendiente", icono: "⚪" },
+    { id: "marco", nombre: "Marco colocado", icono: "🔵" },
+    { id: "instalado", nombre: "Instalado", icono: "🟢" },
+  ];
+  const html = desglosarEstadosParaReporte(estados, "instalado");
+  assert.ok(html.includes("Pendiente: 3"), "debe mostrar el nombre completo, no solo el ícono: " + html);
+  assert.ok(html.includes("Marco colocado: 4"), html);
+  assert.ok(html.includes("Instalado: 5"), html);
+  // El estado marcado como meta se resalta (color distinto) -- debe aparecer ANTES el bloque con ese color.
+  const idxInstalado = html.indexOf("Instalado: 5");
+  const bloqueInstalado = html.slice(Math.max(0, idxInstalado - 80), idxInstalado);
+  assert.ok(bloqueInstalado.includes("#0E9488"), "el estado ★ debería resaltarse con el color de 'terminado': " + bloqueInstalado);
+});
+
+test("desglosarEstadosParaReporte: sin estados activos devuelve un guion, no vacío ni error", () => {
+  global.estadosPersonalizados = [{ id: "pendiente", nombre: "Pendiente", icono: "⚪" }];
+  assert.equal(desglosarEstadosParaReporte({}, "pendiente"), "—");
+  assert.equal(desglosarEstadosParaReporte({ pendiente: 0 }, "pendiente"), "—");
+});
+
+test("desglosarEstadosParaReporte: un estado borrado de la lista no rompe, se muestra genérico", () => {
+  global.estadosPersonalizados = [{ id: "instalado", nombre: "Instalado", icono: "🟢" }];
+  const html = desglosarEstadosParaReporte({ borrado_hace_tiempo: 2, instalado: 1 }, "instalado");
+  assert.ok(html.includes("(estado borrado): 2"), html);
+  assert.ok(html.includes("Instalado: 1"), html);
+});
+
+test("desglosarEstadosParaReporte: escapa el nombre del estado contra HTML/XSS", () => {
+  global.estadosPersonalizados = [{ id: "x", nombre: "<script>alert(1)</script>", icono: "⚪" }];
+  const html = desglosarEstadosParaReporte({ x: 1 }, null);
+  assert.ok(!html.includes("<script>"), "no debería inyectar HTML crudo del nombre del estado: " + html);
+  assert.ok(html.includes(esc("<script>alert(1)</script>")), html);
 });

@@ -105,6 +105,12 @@ const { chromium } = require("playwright");
   if (!reporte.includes("PINES DEL PLANO MAESTRO")) throw new Error("El reporte no incluye la página de pines vinculados.");
   if (!reporte.includes("Pines vinculados a este plano, por tipo de ambiente")) throw new Error("El reporte no incluye la tabla de pines vinculados.");
   if (!reporte.includes("Aula")) throw new Error("La tabla de pines no muestra el tipo de ambiente 'Aula': " + reporte.slice(0,200));
+  // Pedido del usuario: separar con claridad cuántas etiquetas de cada categoría ya terminaron
+  // contra cuántas siguen en proceso, con el nombre completo de cada estado (no solo el ícono).
+  // V1 y V2 quedaron las dos en "instalado" (el estado ★) -- Terminado: 2, En proceso: 0.
+  if (!reporte.includes("Terminado: 2") || !reporte.includes("En proceso: 0")) throw new Error("El reporte no separa con claridad Terminado/En proceso por categoría: " + reporte.slice(0,400));
+  if (!reporte.includes("Instalado: 2")) throw new Error("El desglose de estados no muestra el nombre completo (solo ícono?): " + reporte.slice(0,400));
+  if (!reporte.includes("Total terminado") || !reporte.includes("Total en proceso")) throw new Error("El reporte no muestra el total general Terminado/En proceso.");
 
   // ---- 4) Monitor de avance: % por categoría de etiqueta y por tipo de ambiente de pines ----
   const monitor = await page.evaluate(async () => {
