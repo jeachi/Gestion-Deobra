@@ -2772,6 +2772,11 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <div class="dash-card-title">Configuración</div>
         <div class="dash-card-desc">Altas y bajas de personal, catálogos, usuarios y respaldo de datos.</div>
       </div>
+      <div class="dash-card" data-modulo="calcmateriales" onclick="irA('calcmateriales')">
+        <div class="dash-card-icon" data-modulo="calcmateriales" data-emoji="🧮">🧮</div>
+        <div class="dash-card-title">Calculadora de Materiales</div>
+        <div class="dash-card-desc">Cantidades de materiales por rubro, con reporte PDF.</div>
+      </div>
     </div>
     <div class="card" id="dash-actividad-reciente"></div>
   </section>
@@ -13665,7 +13670,7 @@ function pestanasVisiblesActuales(){
 const GRUPOS_MENU = [
   {id:"inicio", emoji:"🏠", lbl:"Inicio", items:[["dashboard","🏠","Dashboard"]]},
   {id:"obra", emoji:"🏗", lbl:"Obra", items:[["asistencia","📅","Asistencia"],["clima","🌤","Clima"],["minutas","📝","Minutas"],["planoavance","📐","Plano de avance"],["observaciones","📌","Pendientes"]]},
-  {id:"materiales", emoji:"📦", lbl:"Materiales", items:[["pedidos","📦","Pedidos"],["remitos","🚚","Remitos"]]},
+  {id:"materiales", emoji:"📦", lbl:"Materiales", items:[["pedidos","📦","Pedidos"],["remitos","🚚","Remitos"],["calcmateriales","🧮","Calculadora de Materiales"]]},
   {id:"administracion", emoji:"💼", lbl:"Administración", items:[["caja","💰","Caja Chica"],["certificados","🧾","Contratistas"],["presupuesto","📊","Presupuesto General"]]},
   {id:"recursos", emoji:"🧰", lbl:"Recursos", items:[["herramientas","🧰","Herramientas"]]},
   {id:"configuracion", emoji:"⚙", lbl:"Configuración", items:[["trabajadores","🔑","Config. general"]]}
@@ -13880,7 +13885,7 @@ const ETIQUETAS_NAV_CORTAS = {
   dashboard: "Inicio", asistencia: "Asist.", pedidos: "Pedidos", caja: "Caja",
   certificados: "Certif.", presupuesto: "Presup.", minutas: "Minutas", planoavance: "Plano",
   clima: "Clima", remitos: "Remitos", herramientas: "Herram.", observaciones: "Pend.",
-  trabajadores: "Config."
+  trabajadores: "Config.", calcmateriales: "Calc."
 };
 // Igual que el riel adaptativo del Plano de Avance: la barra de abajo recuerda los últimos
 // módulos usados y los va trayendo al frente -- así con el uso normal, lo que más se usa termina
@@ -13988,7 +13993,7 @@ const ICONOS_PHOSPHOR_MODULO = {
   dashboard:"house", asistencia:"calendar-check", caja:"wallet", certificados:"file-text",
   clima:"cloud-sun", herramientas:"wrench", minutas:"notepad", observaciones:"list-bullets",
   pedidos:"package", planoavance:"ruler", presupuesto:"chart-bar", remitos:"truck",
-  trabajadores:"users", mas:"dots-three-outline"
+  trabajadores:"users", calcmateriales:"calculator", mas:"dots-three-outline"
 };
 // Mismo sistema, para las 5 tarjetas de "Resumen" del Dashboard -- antes quedaban en emoji fijo
 // (👷📦💰🌤🔧) aunque el resto de la navegación ya respetara el tema elegido. No se puede

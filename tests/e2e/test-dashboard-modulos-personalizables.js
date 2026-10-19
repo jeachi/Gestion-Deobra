@@ -51,7 +51,7 @@ const { chromium } = require("playwright");
     irA("dashboard");
   });
 
-  // ---- Estado inicial: nadie tocó el ajuste todavía -- las 12 tarjetas visibles y tildadas ----
+  // ---- Estado inicial: nadie tocó el ajuste todavía -- las 13 tarjetas visibles y tildadas ----
   const inicial = await page.evaluate(async () => {
     await cargarDashModulosUsuario();
     const tarjetas = [...document.querySelectorAll("#view-dashboard .dash-grid.bento .dash-card[data-modulo]")];
@@ -84,7 +84,7 @@ const { chromium } = require("playwright");
     const checks = [...document.querySelectorAll("#dash-modulos-toggle-list input[type=checkbox]")];
     return {
       siguoOculto: tarjeta.style.display === "none",
-      totalChecksSigueSiendo12: checks.length,
+      totalChecksSigueSiendo13: checks.length,
       algunoDestildado: checks.some((c) => !c.checked),
     };
   });
@@ -118,9 +118,9 @@ const { chromium } = require("playwright");
   console.log("Resultado:", JSON.stringify(resultado, null, 2));
 
   const fallas = [];
-  if (inicial.totalTarjetas !== 12) fallas.push(`BUG: deberían existir 12 tarjetas de módulo en el Dashboard, hay ${inicial.totalTarjetas}`);
+  if (inicial.totalTarjetas !== 13) fallas.push(`BUG: deberían existir 13 tarjetas de módulo en el Dashboard, hay ${inicial.totalTarjetas}`);
   if (!inicial.todasVisibles) fallas.push("BUG: sin ninguna preferencia guardada, alguna tarjeta ya aparece oculta -- debería ser 'todo visible' por defecto");
-  if (inicial.totalChecks !== 12) fallas.push(`BUG: la lista de Personalización debería tener 12 checkboxes (uno por tarjeta), tiene ${inicial.totalChecks}`);
+  if (inicial.totalChecks !== 13) fallas.push(`BUG: la lista de Personalización debería tener 13 checkboxes (uno por tarjeta), tiene ${inicial.totalChecks}`);
   if (!inicial.todosTildados) fallas.push("BUG: por defecto todos los checkboxes deberían estar tildados");
 
   if (!trasOcultar.presupuestoOculto) fallas.push("BUG: destildar 'Presupuesto General' no ocultó su tarjeta en el Dashboard");
@@ -128,7 +128,7 @@ const { chromium } = require("playwright");
   if (!trasOcultar.guardadoTienePresupuesto) fallas.push("BUG: la preferencia no quedó guardada en window.storage para este usuario");
 
   if (!trasRecargar.siguoOculto) fallas.push("BUG: al volver a leer la preferencia guardada (como en un login real), la tarjeta oculta volvió a aparecer");
-  if (trasRecargar.totalChecksSigueSiendo12 !== 12) fallas.push("BUG: tras recargar la preferencia, la lista de checkboxes dejó de tener las 12 tarjetas");
+  if (trasRecargar.totalChecksSigueSiendo13 !== 13) fallas.push("BUG: tras recargar la preferencia, la lista de checkboxes dejó de tener las 13 tarjetas");
   if (!trasRecargar.algunoDestildado) fallas.push("BUG: tras recargar, ningún checkbox quedó destildado -- no refleja la preferencia guardada");
 
   if (!trasMostrar.presupuestoVisibleDeNuevo) fallas.push("BUG: volver a tildar 'Presupuesto General' no la mostró de nuevo en el Dashboard");
