@@ -23033,11 +23033,15 @@ function inicializarGoogleDrive(){
     callback: ""
   });
 }
+// esErrorDeAutorizacionDrive marca específicamente que lo que falló fue CONSEGUIR EL TOKEN (no
+// falta de red ni un error de la API de Drive más adelante) -- es lo que usa
+// verificarRespaldoSemanal para decidir si hace falta apagar el auto-respaldo hasta que alguien
+// reconecte a mano, ver el comentario ahí.
 function pedirTokenDrive(interactivo){
   return new Promise((resolve, reject)=>{
-    if(!tokenClientDrive){ reject(new Error("Google Drive no está configurado")); return; }
+    if(!tokenClientDrive){ const err=new Error("Google Drive no está configurado"); err.esErrorDeAutorizacionDrive=true; reject(err); return; }
     tokenClientDrive.callback = (resp)=>{
-      if(resp.error){ reject(resp); return; }
+      if(resp.error){ const err=new Error("No se pudo renovar el acceso a Google Drive: "+resp.error); err.esErrorDeAutorizacionDrive=true; reject(err); return; }
       driveAccessToken = resp.access_token;
       driveAccessTokenExp = Date.now() + (resp.expires_in*1000);
       resolve(driveAccessToken);
@@ -23166,6 +23170,22 @@ async function verificarRespaldoSemanal(forzado){
     renderEstadoRespaldoDrive();
   }catch(e){
     console.warn("No se pudo hacer el respaldo automático a Drive (puede que haga falta reconectar):", e);
+    // Bug reportado: le aparecía el cartel de "elegí tu cuenta" de Google en CADA inicio de
+    // sesión, no cada 7 días. Causa: cuando la renovación SILENCIOSA del token fallaba (algo que
+    // pasa cada vez más seguido en celulares, por cómo Chrome/Google vienen restringiendo las
+    // cookies de terceros), nunca se guardaba "ultimo_respaldo_drive" -- así que en el SIGUIENTE
+    // login volvía a intentarlo, volvía a fallar, y así sin parar. Esa renovación fallida es
+    // justo lo que puede terminar mostrando una pantalla de Google sin que nadie la haya pedido
+    // (y, al competir justo con la apertura de la app, puede sentirse como que todo "tarda" un
+    // poco más en responder recién entrando). Si fue ESPECÍFICAMENTE la autorización la que
+    // falló (no un problema de red subiendo el archivo después de haber conseguido el token), se
+    // apaga el auto-respaldo acá -- la próxima vez el Administrador va a ver "Todavía no
+    // autorizaste el acceso" con un botón para reconectar a mano, que sí puede mostrar el cartel
+    // de Google porque ahí la persona lo pidió a propósito.
+    if(e && e.esErrorDeAutorizacionDrive){
+      await window.storage.set("drive_autorizado", "false", true);
+      renderEstadoRespaldoDrive();
+    }
   }
 }
 async function renderEstadoRespaldoDrive(){
