@@ -2020,12 +2020,16 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   background:#0f161b;border:1px solid rgba(255,255,255,.1);border-radius:14px;color:#e7eef1;
   margin-top:8px;
 }
-#card-actividades .cad-card-header{
-  display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;
+/* El título ya no es el que abre/cierra -- ahora es solo una etiqueta fija, y la manija de abajo
+   (mismo estilo que la barra de arriba/abajo del visor) es la que pliega/despliega la lista. La
+   manija se estira con margen negativo para quedar al ras de los bordes de la tarjeta (el padding
+   de 16px de .card, si no, la dejaría como un botón angosto en vez de una franja completa). */
+.titulo-card-abajo h2{margin:0;color:#fff;font-size:13.5px;font-weight:800;}
+.manija-actividades{
+  width:calc(100% + 32px);height:22px;margin:10px -16px -16px -16px;border:none;cursor:pointer;
+  border-top:1px solid rgba(94,234,212,.25);background:rgba(21,30,36,.96);
+  border-radius:0 0 13px 13px;display:flex;align-items:center;justify-content:center;
 }
-#card-actividades .cad-card-header h2{margin:0;color:#fff;font-size:13.5px;font-weight:800;}
-#card-actividades .cad-card-header .chev{color:#5EEAD4;font-size:11px;transition:transform .18s ease;flex-shrink:0;}
-#card-actividades .cad-card-header .chev.cerrado{transform:rotate(-90deg);}
 #card-actividades .helper-cad{font-size:11px;color:#9fb0b8;margin:10px 0;}
 #card-actividades .lista-actividad{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);border-radius:10px;padding:10px 12px;margin-top:10px;}
 #card-actividades .lista-actividad .pa-nombre{color:#e7eef1;}
@@ -2142,8 +2146,27 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 /* ---- Encabezado flotante: ✕ cerrar, Type Selector (qué se está por marcar), 📅 semanal ----
    Ahora es una franja SÓLIDA de alto fijo (no un degradé encima del lienzo) para que el plano
    arranque justo debajo, sin quedar tapado por el cuadro de "Nueva actividad". ---- */
+/* El encabezado del editor (✕ / selector de actividad / calendario) ahora es colapsable, mismo
+   lenguaje visual que la barra inferior de referencias: arranca colapsado (solo la manija de
+   22px) para dejarle más lugar al plano, y se despliega tocando la manija. El orden importa: el
+   contenido va PRIMERO y la manija AL FINAL -- así, al colapsar (translateY hacia arriba), el
+   contenido queda tapado por encima y la manija es lo único que termina flush contra el borde
+   superior real del visor. */
+.cad-header-bar{
+  position:absolute;top:0;left:0;right:0;z-index:40;display:flex;flex-direction:column;
+  transform:translateY(calc(-100% + 22px));transition:transform .22s ease;
+}
+.cad-header-bar.abierta{transform:translateY(0);}
+.cad-header-handle{
+  width:100%;height:22px;flex-shrink:0;border:none;cursor:pointer;
+  border-top:1px solid rgba(94,234,212,.25);background:rgba(21,30,36,.96);
+  display:flex;align-items:center;justify-content:center;
+}
+.cad-header-handle .grabber,.cad-status-handle .grabber,#card-actividades .manija-actividades .grabber{
+  width:36px;height:4px;border-radius:3px;background:#5EEAD4;
+}
 .pa-editor-header{
-  position:absolute;top:0;left:0;right:0;z-index:40;height:58px;
+  height:58px;flex-shrink:0;
   display:flex;align-items:center;gap:8px;padding:0 8px;
   background:#0c1318;border-bottom:1px solid rgba(255,255,255,.1);
   box-shadow:0 4px 10px rgba(0,0,0,.25);
@@ -2181,10 +2204,16 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 .cad-riel-btn.btn-primary{background:var(--verde);color:#fff;}
 .cad-riel-btn.btn-primary .lbl{color:#fff;}
 /* Barra inferior tipo CAD/Revit: ortogonal, grid, referencias -- colapsada por defecto (solo se ve
-   la "manija" de 28px) para no comerse espacio del plano; se desliza hacia arriba al tocarla. */
-.cad-status-bar{position:absolute;left:0;right:0;bottom:0;z-index:32;display:flex;flex-direction:column;transform:translateY(calc(100% - 28px));transition:transform .22s ease;}
+   la "manija" de 22px) para no comerse espacio del plano; se desliza hacia arriba al tocarla.
+   Mismo estilo que .cad-header-bar (arriba) y la manija de "Actividades" -- un solo lenguaje
+   visual para las 3 franjas colapsables del editor. */
+.cad-status-bar{position:absolute;left:0;right:0;bottom:0;z-index:32;display:flex;flex-direction:column;transform:translateY(calc(100% - 22px));transition:transform .22s ease;}
 .cad-status-bar.abierta{transform:translateY(0);}
-.cad-status-handle{width:100%;height:28px;border:none;background:rgba(15,22,27,.9);color:#9fb0b8;font-size:13px;letter-spacing:3px;cursor:pointer;flex-shrink:0;}
+.cad-status-handle{
+  width:100%;height:22px;flex-shrink:0;border:none;cursor:pointer;
+  border-top:1px solid rgba(94,234,212,.25);background:rgba(21,30,36,.96);
+  display:flex;align-items:center;justify-content:center;
+}
 .cad-status-botones{display:flex;align-items:center;gap:7px;padding:9px 12px;flex-wrap:wrap;background:rgba(15,22,27,.9);backdrop-filter:blur(6px);border-top:1px solid rgba(255,255,255,.08);}
 /* Aviso de que alguien más guardó cambios en este mismo plano mientras lo tenías abierto --
    franja fija arriba de todo el editor, no se puede pasar por alto sin querer como un toast. */
@@ -3812,17 +3841,20 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
         <span class="txt"></span>
       </div>
 
-      <div class="pa-editor-header" id="pa-editor-header" style="display:none;">
-        <button type="button" class="pa-editor-icon" onclick="cerrarEditorPlanoConAviso()" title="Cerrar y volver a la lista de planos">✕</button>
-        <div class="cad-type-selector" id="cad-type-selector" onclick="tocarPildoraTipoCad()">
-          <span class="swatch" id="cad-swatch-actual"></span>
-          <div class="txt">
-            <div class="nombre" id="cad-nombre-actividad">Elegí qué marcar</div>
-            <div class="tipo" id="cad-tipo-actividad">Tocá para abrir Dibujar</div>
+      <div class="cad-header-bar" id="cad-header-bar">
+        <div class="pa-editor-header" id="pa-editor-header" style="display:none;">
+          <button type="button" class="pa-editor-icon" onclick="cerrarEditorPlanoConAviso()" title="Cerrar y volver a la lista de planos">✕</button>
+          <div class="cad-type-selector" id="cad-type-selector" onclick="tocarPildoraTipoCad()">
+            <span class="swatch" id="cad-swatch-actual"></span>
+            <div class="txt">
+              <div class="nombre" id="cad-nombre-actividad">Elegí qué marcar</div>
+              <div class="tipo" id="cad-tipo-actividad">Tocá para abrir Dibujar</div>
+            </div>
+            <span class="chev">▾</span>
           </div>
-          <span class="chev">▾</span>
+          <button type="button" class="pa-editor-icon" onclick="toggleSnapshotsPanel()" title="Seguimiento semanal">📅</button>
         </div>
-        <button type="button" class="pa-editor-icon" onclick="toggleSnapshotsPanel()" title="Seguimiento semanal">📅</button>
+        <button type="button" class="cad-header-handle" onclick="toggleHeaderPlano()" title="Mostrar/ocultar los controles de arriba"><span class="grabber"></span></button>
       </div>
 
       <div class="cad-riel" id="cad-riel"></div>
@@ -3839,7 +3871,7 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
 
       <!-- ---- Barra inferior de referencias (estilo CAD/Revit) ---- -->
       <div class="cad-status-bar" id="cad-status-bar">
-        <button type="button" class="cad-status-handle" onclick="toggleBarraReferencias()" title="Mostrar/ocultar la barra de referencias">⋯</button>
+        <button type="button" class="cad-status-handle" onclick="toggleBarraReferencias()" title="Mostrar/ocultar la barra de referencias"><span class="grabber"></span></button>
         <div class="cad-status-botones">
           <button type="button" class="cad-status-btn" id="btn-bloqueo-orto" onclick="toggleBloqueoOrtogonal()"><span class="ico"><i class="ph-bold ph-right-angle"></i></span><span class="lbl">ORTO</span></button>
           <button type="button" class="cad-status-btn" id="btn-grid-plano" onclick="toggleGridPlano()"><span class="ico"><i class="ph-bold ph-grid-four"></i></span><span class="lbl">GRID</span></button>
@@ -4085,10 +4117,8 @@ body.plano-fullscreen #card-actividades{margin-bottom:0 !important;}
   </div>
 
   <div class="card cad-card-abajo" id="card-actividades" style="display:none;">
-    <div class="cad-card-header" onclick="toggleCardActividades()">
-      <span class="chev cerrado" id="chev-actividades">▾</span>
-      <h2>📋 Actividades y % de avance</h2>
-    </div>
+    <div class="titulo-card-abajo"><h2>📋 Actividades y % de avance</h2></div>
+    <button type="button" class="manija-actividades" onclick="toggleCardActividades()" title="Mostrar/ocultar la lista de actividades"><span class="grabber"></span></button>
     <div id="cuerpo-card-actividades" style="display:none;">
       <p class="helper-cad">
         El primer polígono de un nombre nuevo define el <b>100%</b> (el área total de esa actividad).
@@ -28007,14 +28037,28 @@ function cargarPlano(file){
 // más alto en cada momento, y el lienzo arranca justo debajo -- así nunca queda dibujo tapado,
 // sea cual sea el texto. Un solo ResizeObserver cubre los ~30 lugares del código que prenden/
 // apagan estos carteles, sin tener que tocar ninguno de ellos.
+//
+// El encabezado (#cad-header-bar) ahora es colapsable -- arranca cerrado (solo su manija de 22px)
+// para dejarle más lugar al plano, y se abre tocando la manija. TOP_BASE pasa a depender de eso:
+// 22px si está cerrado, 80px (22 de manija + 58 del encabezado) si está abierto. Los carteles se
+// reposicionan al mismo TOP_BASE -- si no, quedarían flotando en un "58" fijo que ya no tiene
+// sentido cuando el encabezado está colapsado (o tapados por él, cuando está abierto).
+let headerPlanoAbierto = false;
+function toggleHeaderPlano(){
+  headerPlanoAbierto = !headerPlanoAbierto;
+  document.getElementById("cad-header-bar").classList.toggle("abierta", headerPlanoAbierto);
+  recalcularEspacioCadStatus();
+}
 function recalcularEspacioCadStatus(){
   const wrap = document.getElementById("canvas-wrap");
   if(!wrap) return;
-  const TOP_BASE = 58; // mismo top: fijo que ya usan estos carteles en su CSS
+  const TOP_BASE = headerPlanoAbierto ? 80 : 22;
   let topLienzo = TOP_BASE;
   ["estado-dibujo","cad-hint-idle","cad-modo-flotante"].forEach(id=>{
     const el = document.getElementById(id);
-    if(el && el.style.display!=="none" && el.offsetHeight>0){
+    if(!el) return;
+    el.style.top = TOP_BASE+"px";
+    if(el.style.display!=="none" && el.offsetHeight>0){
       topLienzo = Math.max(topLienzo, TOP_BASE + el.offsetHeight + 8);
     }
   });
@@ -28595,7 +28639,12 @@ function iniciarCanvas(){
   // mostrar ahí, así que debe quedar oculto. Antes se mostraba siempre sin importar el modo,
   // pisando el "none" que seleccionarPlano() ya había puesto a propósito para Maestro.
   document.getElementById("card-actividades").style.display = modoPlanoMaestro ? "none" : "block";
+  // Arranca siempre colapsado al entrar (cada vez, no solo la primera) -- así el plano usa el
+  // máximo espacio posible de entrada, aunque la sesión anterior lo hubiera dejado abierto.
+  headerPlanoAbierto = false;
+  document.getElementById("cad-header-bar").classList.remove("abierta");
   instalarObservadorEspacioCadStatus();
+  recalcularEspacioCadStatus();
   renderRielAdaptativo();
   actualizarBotonOrdenBadges();
   actualizarBotonAltoContraste();
@@ -36698,13 +36747,13 @@ function redibujar(){
 }
 
 // Cajón desplegable de "Actividades y % de avance" -- arranca cerrado para no ocupar pantalla;
-// se abre tocando su encabezado, igual que un acordeón.
+// se abre tocando su manija (mismo estilo que las otras 2 franjas colapsables del editor). El
+// título ya no dispara el toggle -- ahora es una etiqueta fija, la manija de abajo es la única
+// que abre/cierra.
 function toggleCardActividades(){
   const cuerpo = document.getElementById("cuerpo-card-actividades");
-  const chev = document.getElementById("chev-actividades");
   const abrir = cuerpo.style.display === "none";
   cuerpo.style.display = abrir ? "block" : "none";
-  chev.classList.toggle("cerrado", !abrir);
 }
 function toggleCardLineas(){
   const cuerpo = document.getElementById("cuerpo-card-lineas");

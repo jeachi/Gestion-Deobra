@@ -3,11 +3,14 @@
 // TAPANDO VISUALMENTE el dibujo cuando el plano quedaba paneado/zoomeado de forma que esa zona
 // cayera justo debajo del cartel -- el cartel es position:absolute fijo en la esquina de la
 // pantalla, no se mueve con el plano, y antes el lienzo (#canvas-wrap) arrancaba siempre en el
-// mismo lugar (top:58px) sin importar si había o no un cartel encima.
+// mismo lugar (top fijo) sin importar si había o no un cartel encima.
 // Arreglo: cuando cualquiera de los 3 carteles flotantes (#estado-dibujo, #cad-hint-idle,
 // #cad-modo-flotante) está visible, el lienzo tiene que arrancar más abajo, debajo de la altura
 // real de ESE cartel (que varía según el texto) -- así nunca hay píxeles del dibujo debajo del
 // cartel, sin importar cuánto texto tenga.
+// (Ronda posterior: el encabezado de arriba se volvió colapsable -- el "top fijo" de referencia
+// ya no es 58px siempre, sino TOP_BASE=22 con el encabezado colapsado (el estado por defecto al
+// entrar al editor, que es el que usa este test) o 80 si está desplegado.)
 const { chromium } = require("playwright");
 
 (async () => {
@@ -49,7 +52,8 @@ const { chromium } = require("playwright");
     await new Promise(r=>setTimeout(r, 200));
   });
 
-  // ---- 1) Sin ningún cartel visible, el lienzo arranca en el lugar de siempre (58px) ----
+  // ---- 1) Sin ningún cartel visible, el lienzo arranca en el lugar de siempre (TOP_BASE, con el
+  //          encabezado colapsado por defecto) ----
   const topSinCartel = await page.evaluate(() => {
     document.getElementById("estado-dibujo").style.display = "none";
     document.getElementById("cad-hint-idle").style.display = "none";
@@ -58,8 +62,8 @@ const { chromium } = require("playwright");
     if (typeof recalcularEspacioCadStatus === "function") recalcularEspacioCadStatus();
     return getComputedStyle(document.getElementById("canvas-wrap")).top;
   });
-  if (topSinCartel !== "58px") {
-    throw new Error("BUG: sin ningún cartel visible, el lienzo debería arrancar en 58px: " + topSinCartel);
+  if (topSinCartel !== "22px") {
+    throw new Error("BUG: sin ningún cartel visible (encabezado colapsado), el lienzo debería arrancar en 22px: " + topSinCartel);
   }
 
   // ---- 2) Con un cartel de texto LARGO (varias líneas) visible, el lienzo se corre hacia abajo
@@ -77,11 +81,12 @@ const { chromium } = require("playwright");
   if (!(resultado.alturaCartel > 30)) {
     throw new Error("El cartel de prueba debería haber ocupado varias líneas (texto largo): altura=" + resultado.alturaCartel);
   }
-  // El cartel arranca en top:58px (fijo en su CSS) -- el lienzo tiene que arrancar, como mínimo,
-  // donde termina el cartel (58 + su alto real), si no una parte del cartel multi-línea seguiría
-  // quedando por encima del lienzo (tapando el borde superior del dibujo).
-  if (resultado.topLienzo < 58 + resultado.alturaCartel) {
-    throw new Error("BUG: el lienzo (top=" + resultado.topLienzo + "px) debería arrancar debajo del cartel visible (que termina en " + (58 + resultado.alturaCartel) + "px) -- el cartel todavía tapa parte del dibujo.");
+  // El cartel arranca en el mismo TOP_BASE que el lienzo (22px, encabezado colapsado) -- el
+  // lienzo tiene que arrancar, como mínimo, donde termina el cartel (22 + su alto real), si no
+  // una parte del cartel multi-línea seguiría quedando por encima del lienzo (tapando el borde
+  // superior del dibujo).
+  if (resultado.topLienzo < 22 + resultado.alturaCartel) {
+    throw new Error("BUG: el lienzo (top=" + resultado.topLienzo + "px) debería arrancar debajo del cartel visible (que termina en " + (22 + resultado.alturaCartel) + "px) -- el cartel todavía tapa parte del dibujo.");
   }
 
   // ---- 3) Al ocultar el cartel de nuevo, el lienzo vuelve a su lugar de siempre ----
@@ -90,8 +95,8 @@ const { chromium } = require("playwright");
     if (typeof recalcularEspacioCadStatus === "function") recalcularEspacioCadStatus();
     return getComputedStyle(document.getElementById("canvas-wrap")).top;
   });
-  if (topTrasOcultar !== "58px") {
-    throw new Error("BUG: al ocultar el cartel, el lienzo debería volver a 58px: " + topTrasOcultar);
+  if (topTrasOcultar !== "22px") {
+    throw new Error("BUG: al ocultar el cartel, el lienzo debería volver a 22px: " + topTrasOcultar);
   }
 
   if (errs.length) throw new Error("Errores de página: " + errs.join(" | "));
