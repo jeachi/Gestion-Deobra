@@ -128,7 +128,7 @@ const { chromium } = require("playwright");
   if (!r2.climaSigueTonoC) fallas.push("BUG: Días trabajados perdió su color ámbar (tono-c) -- no debía tocarse");
   if (!r2.personalSinTono) fallas.push("BUG: Personal activo debería seguir con el verde por defecto, sin clase tono-X");
 
-  if (r3.totalTarjetas !== 12) fallas.push(`BUG REPRODUCIDO: la grilla de Módulos debería tener 12 tarjetas (10 + Presupuesto General + Pendientes), tiene ${r3.totalTarjetas}`);
+  if (r3.totalTarjetas !== 13) fallas.push(`BUG REPRODUCIDO: la grilla de Módulos debería tener 13 tarjetas (10 + Presupuesto General + Pendientes + Calculadora de Materiales), tiene ${r3.totalTarjetas}`);
   if (!r3.hayPresupuesto) fallas.push("BUG: falta la tarjeta de 'Presupuesto General' en el Dashboard");
   if (!r3.hayPendientes) fallas.push("BUG: falta la tarjeta de 'Pendientes' en el Dashboard");
   if (!r3.presupuestoDataModulo) fallas.push("BUG: la tarjeta de Presupuesto General no tiene data-modulo='presupuesto' -- no se le va a pintar bien el ícono con los otros temas");
